@@ -1,0 +1,14 @@
+{
+  "name": "charlie",
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "yarn@4.12.0",
+  "private": true,
+  "scripts": {
+    "test": "mocha \"test/**/*.spec.js\""
+  },
+  "devDependencies": {
+    "chai": "^6.2.2",
+    "mocha": "^11.7.5"
+  }
+}
