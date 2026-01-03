@@ -97,6 +97,11 @@ export class RuleEngine {
       return null
     }
 
+    // special case: allow 24:00 as end-of-day
+    if (hh === 24 && mm === 0) {
+      return 1440
+    }
+
     if (hh < 0 || hh > 23 || mm < 0 || mm > 59) {
       return null
     }
