@@ -113,19 +113,34 @@ export class TimeScheduler {
   }
 
   #rescheduleAll() {
+    const frozen = this.#clock.isFrozen()
+
     for (const timer of this.#timers.values()) {
       if (timer.handle) {
         clearTimeout(timer.handle)
         timer.handle = null
       }
 
-      this.#armTimer(timer)
+      this.#armTimer(timer, frozen)
     }
   }
 
-  #armTimer(timer) {
+  #armTimer(timer, frozen) {
     const now = this.#clock.nowMs()
     const delayMs = Math.max(0, timer.atMs - now)
+
+    if (delayMs === 0) {
+      timer.handle = setTimeout(() => {
+        this.#fire(timer.token)
+      }, 0)
+
+      return
+    }
+
+    if (frozen) {
+      /* clock is frozen: do not arm real-time timeouts */
+      return
+    }
 
     timer.handle = setTimeout(() => {
       this.#fire(timer.token)

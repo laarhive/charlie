@@ -95,10 +95,17 @@ export class Clock {
     this.setNowMs(utcMs)
   }
 
+// src/time/clock.js (additions)
+
+  isFrozen() {
+    return this.#isFrozen
+  }
+
   #emitChange(info) {
     const payload = {
       ...info,
-      nowMs: this.nowMs()
+      nowMs: this.nowMs(),
+      isFrozen: this.#isFrozen
     }
 
     for (const handler of this.#changeListeners) {
