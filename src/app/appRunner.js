@@ -9,6 +9,7 @@ import Clock from '../time/clock.js'
 import EventBus from '../core/eventBus.js'
 import TimeScheduler from '../core/timeScheduler.js'
 import CharlieCore from '../core/charlieCore.js'
+import Logger from '../logging/logger.js'
 
 import FakeConversationAdapter from '../testing/fakeConversationAdapter.js'
 import ConsoleLogger from '../logging/consoleLogger.js'
@@ -108,7 +109,7 @@ const makeContext = function makeContext({ logger, config }) {
 
 const main = function main() {
   const args = parseArgs(process.argv)
-  const logger = new ConsoleLogger({ level: args.level })
+  const logger = new Logger({ level: args.level })
 
   const defaultConfigFile = 'config/defaultConfig.json5'
   const initialConfigFile = args.config || defaultConfigFile

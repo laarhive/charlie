@@ -1,4 +1,5 @@
 // src/sim/cliSimController.js
+import readline from 'node:readline'
 import eventTypes from '../core/eventTypes.js'
 
 const CliSimController = class CliSimController {
@@ -7,7 +8,7 @@ const CliSimController = class CliSimController {
   #loadConfig
   #getContext
   #setContext
-  #onStdinData
+  #rl
 
   constructor({ logger, parser, loadConfig, getContext, setContext }) {
     this.#logger = logger
@@ -15,50 +16,54 @@ const CliSimController = class CliSimController {
     this.#loadConfig = loadConfig
     this.#getContext = getContext
     this.#setContext = setContext
-    this.#onStdinData = null
+    this.#rl = null
   }
 
   /**
-   * Starts the stdin CLI loop for sim mode.
+   * Starts the CLI prompt for sim mode.
    *
    * @example
-   * const cli = new CliSimController({ logger, parser, loadConfig, getContext, setContext })
    * cli.start()
    */
   start() {
-    if (this.#onStdinData) {
+    if (this.#rl) {
       return
     }
 
-    this.#printHelp()
+    this.#rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: true,
+    })
 
-    process.stdin.setEncoding('utf8')
+    this.#rl.setPrompt('charlie(sim)> ')
+    this.#rl.on('line', (line) => {
+      const cmd = this.#parser.parse(line)
+      this.#handleCommand(cmd)
+      this.#rl.prompt()
+    })
 
-    this.#onStdinData = (chunk) => {
-      const lines = String(chunk).split(/\r?\n/g)
+    this.#rl.on('close', () => {
+      this.#logger.notice('cli_closed', {})
+      process.exit(0)
+    })
 
-      for (const line of lines) {
-        const cmd = this.#parser.parse(line)
-        this.#handleCommand(cmd)
-      }
-    }
-
-    process.stdin.on('data', this.#onStdinData)
+    this.#rl.prompt()
   }
 
   /**
-   * Stops the stdin CLI loop.
+   * Stops the CLI prompt.
    *
    * @example
    * cli.dispose()
    */
   dispose() {
-    if (!this.#onStdinData) {
+    if (!this.#rl) {
       return
     }
 
-    process.stdin.off('data', this.#onStdinData)
-    this.#onStdinData = null
+    this.#rl.close()
+    this.#rl = null
   }
 
   #handleCommand(cmd) {
@@ -72,19 +77,17 @@ const CliSimController = class CliSimController {
     }
 
     if (cmd.kind === 'error') {
-      this.#logger.warn('command_error', { message: cmd.message })
+      console.log(cmd.message)
       return
     }
 
     if (cmd.kind === 'exit') {
-      this.#logger.info('app_exit', {})
       process.exit(0)
     }
 
     if (cmd.kind === 'state') {
       const { core } = this.#getContext()
-      const snap = core.getSnapshot()
-      this.#logger.info('snapshot', snap)
+      this.#logger.info('snapshot', core.getSnapshot())
       return
     }
 
@@ -111,7 +114,7 @@ const CliSimController = class CliSimController {
     if (cmd.kind === 'timeSet') {
       const dt = this.#parseDateTime(cmd.dateStr, cmd.timeStr)
       if (!dt) {
-        this.#logger.warn('command_error', { message: 'invalid datetime, usage: time set YYYY-MM-DD HH:MM' })
+        console.log('invalid datetime, usage: time set YYYY-MM-DD HH:MM')
         return
       }
 
@@ -126,12 +129,12 @@ const CliSimController = class CliSimController {
       return
     }
 
-    this.#logger.warn('command_error', { message: 'unknown command, type: help' })
+    console.log('unknown command, type: help')
   }
 
   #publishPresence(zone, on) {
     if (zone !== 'front' && zone !== 'back') {
-      this.#logger.warn('invalid_zone', { zone })
+      this.#logger.warning('invalid_zone', { zone })
       return
     }
 
@@ -144,16 +147,15 @@ const CliSimController = class CliSimController {
       payload: { zone },
     }
 
-    this.#logger.debug('sim_event_publish', event)
+    this.#logger.debug('event_publish', event)
     bus.publish(event)
   }
 
   #reloadConfig(filename) {
     try {
       const { config, fullPath } = this.#loadConfig(filename)
-
       this.#setContext({ config })
-      this.#logger.info('config_loaded', { configFile: fullPath })
+      this.#logger.notice('config_loaded', { configFile: fullPath })
     } catch (e) {
       this.#logger.error('config_load_failed', { configFile: filename, error: String(e?.message || e) })
     }
