@@ -5,10 +5,15 @@
   "packageManager": "yarn@4.12.0",
   "private": true,
   "scripts": {
+    "run:sim": "node src/app/appRunner.js --mode sim",
+    "run:hw": "node src/app/appRunner.js --mode hw",
     "test": "mocha \"test/**/*.spec.js\""
   },
   "devDependencies": {
     "chai": "^6.2.2",
     "mocha": "^11.7.5"
+  },
+  "dependencies": {
+    "json5": "^2.2.3"
   }
 }

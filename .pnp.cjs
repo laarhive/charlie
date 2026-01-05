@@ -30,6 +30,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["chai", "npm:6.2.2"],\
           ["charlie", "workspace:."],\
+          ["json5", "npm:2.2.3"],\
           ["mocha", "npm:11.7.5"]\
         ],\
         "linkType": "SOFT"\
@@ -173,6 +174,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["chai", "npm:6.2.2"],\
           ["charlie", "workspace:."],\
+          ["json5", "npm:2.2.3"],\
           ["mocha", "npm:11.7.5"]\
         ],\
         "linkType": "SOFT"\
@@ -450,6 +452,15 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["argparse", "npm:2.0.1"],\
           ["js-yaml", "npm:4.1.1"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["json5", [\
+      ["npm:2.2.3", {\
+        "packageLocation": "./.yarn/cache/json5-npm-2.2.3-9962c55073-5a04eed948.zip/node_modules/json5/",\
+        "packageDependencies": [\
+          ["json5", "npm:2.2.3"]\
         ],\
         "linkType": "HARD"\
       }]\
