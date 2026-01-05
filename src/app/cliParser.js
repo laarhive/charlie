@@ -1,199 +1,86 @@
-// src/sim/cliSimController.js
-import eventTypes from '../core/eventTypes.js'
-
-export class CliSimController {
-  #logger
-  #parser
-  #loadConfig
-  #getContext
-  #setContext
-  #onStdinData
-
-  constructor({ logger, parser, loadConfig, getContext, setContext }) {
-    this.#logger = logger
-    this.#parser = parser
-    this.#loadConfig = loadConfig
-    this.#getContext = getContext
-    this.#setContext = setContext
-    this.#onStdinData = null
-  }
-
+// src/app/cliParser.js
+export class CliParser {
   /**
-   * Starts the stdin CLI loop for sim mode.
+   * Parses a single input line into a command object.
+   *
+   * @param {string} line
    *
    * @example
-   * const cli = new CliSimController({ logger, parser, loadConfig, getContext, setContext })
-   * cli.start()
+   * const parser = new CliParser()
+   * const cmd = parser.parse('front on')
    */
-  start() {
-    if (this.#onStdinData) {
-      return
+  parse(line) {
+    const trimmed = String(line || '').trim()
+    if (!trimmed) {
+      return { kind: 'empty' }
     }
 
-    this.#printHelp()
+    const parts = trimmed.split(/\s+/g)
+    const [a, b, ...rest] = parts
 
-    process.stdin.setEncoding('utf8')
-
-    this.#onStdinData = (chunk) => {
-      const lines = String(chunk).split(/\r?\n/g)
-
-      for (const line of lines) {
-        const cmd = this.#parser.parse(line)
-        this.#handleCommand(cmd)
-      }
+    if (a === 'help') {
+      return { kind: 'help' }
     }
 
-    process.stdin.on('data', this.#onStdinData)
-  }
-
-  /**
-   * Stops the stdin CLI loop.
-   *
-   * @example
-   * cli.dispose()
-   */
-  dispose() {
-    if (!this.#onStdinData) {
-      return
+    if (a === 'exit' || a === 'quit') {
+      return { kind: 'exit' }
     }
 
-    process.stdin.off('data', this.#onStdinData)
-    this.#onStdinData = null
-  }
-
-  #handleCommand(cmd) {
-    if (cmd.kind === 'empty') {
-      return
+    if (a === 'state') {
+      return { kind: 'state' }
     }
 
-    if (cmd.kind === 'help') {
-      this.#printHelp()
-      return
-    }
-
-    if (cmd.kind === 'error') {
-      this.#logger.warn('command_error', { message: cmd.message })
-      return
-    }
-
-    if (cmd.kind === 'exit') {
-      this.#logger.info('app_exit', {})
-      process.exit(0)
-    }
-
-    if (cmd.kind === 'state') {
-      const { core } = this.#getContext()
-      const snap = core.getSnapshot()
-      this.#logger.info('snapshot', snap)
-      return
-    }
-
-    if (cmd.kind === 'presence') {
-      this.#publishPresence(cmd.zone, cmd.on)
-      return
-    }
-
-    if (cmd.kind === 'timeNow') {
-      const { clock, core } = this.#getContext()
-      const parts = clock.toLocalParts()
-      const snap = core.getSnapshot()
-      this.#logger.info('time_now', { ...parts, nowMs: clock.nowMs(), state: snap.state })
-      return
-    }
-
-    if (cmd.kind === 'timeAdvance') {
-      const { clock } = this.#getContext()
-      clock.advance(cmd.ms)
-      this.#logger.info('time_advanced', { deltaMs: cmd.ms, nowMs: clock.nowMs() })
-      return
-    }
-
-    if (cmd.kind === 'timeSet') {
-      const dt = this.#parseDateTime(cmd.dateStr, cmd.timeStr)
-      if (!dt) {
-        this.#logger.warn('command_error', { message: 'invalid datetime, usage: time set YYYY-MM-DD HH:MM' })
-        return
+    if (a === 'front' || a === 'back') {
+      if (b === 'on') {
+        return { kind: 'presence', zone: a, on: true }
       }
 
-      const { clock } = this.#getContext()
-      clock.setLocalDateTime(dt)
-      this.#logger.info('time_set', { ...dt, nowMs: clock.nowMs() })
-      return
+      if (b === 'off') {
+        return { kind: 'presence', zone: a, on: false }
+      }
+
+      return { kind: 'error', message: 'usage: front on|off or back on|off' }
     }
 
-    if (cmd.kind === 'configLoad') {
-      this.#reloadConfig(cmd.filename)
-      return
+    if (a === 'time') {
+      if (b === 'now') {
+        return { kind: 'timeNow' }
+      }
+
+      if (b && b.startsWith('+')) {
+        const ms = Number(b.slice(1))
+        if (Number.isNaN(ms) || ms < 0) {
+          return { kind: 'error', message: 'usage: time +MS (MS must be >= 0)' }
+        }
+
+        return { kind: 'timeAdvance', ms }
+      }
+
+      if (b === 'set') {
+        const dateStr = rest[0]
+        const timeStr = rest[1]
+
+        if (!dateStr || !timeStr) {
+          return { kind: 'error', message: 'usage: time set YYYY-MM-DD HH:MM' }
+        }
+
+        return { kind: 'timeSet', dateStr, timeStr }
+      }
+
+      return { kind: 'error', message: 'usage: time now | time +MS | time set YYYY-MM-DD HH:MM' }
     }
 
-    this.#logger.warn('command_error', { message: 'unknown command, type: help' })
-  }
+    if (a === 'config' && b === 'load') {
+      const filename = rest[0]
+      if (!filename) {
+        return { kind: 'error', message: 'usage: config load <filename>' }
+      }
 
-  #publishPresence(zone, on) {
-    if (zone !== 'front' && zone !== 'back') {
-      this.#logger.warn('invalid_zone', { zone })
-      return
+      return { kind: 'configLoad', filename }
     }
 
-    const { clock, bus } = this.#getContext()
-
-    const event = {
-      type: on ? eventTypes.presence.enter : eventTypes.presence.exit,
-      ts: clock.nowMs(),
-      source: 'cliSim',
-      payload: { zone },
-    }
-
-    this.#logger.debug('sim_event_publish', event)
-    bus.publish(event)
-  }
-
-  #reloadConfig(filename) {
-    try {
-      const { config, fullPath } = this.#loadConfig(filename)
-
-      this.#setContext({ config })
-      this.#logger.info('config_loaded', { configFile: fullPath })
-    } catch (e) {
-      this.#logger.error('config_load_failed', { configFile: filename, error: String(e?.message || e) })
-    }
-  }
-
-  #parseDateTime(dateStr, timeStr) {
-    const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr)
-    const tm = /^(\d{2}):(\d{2})$/.exec(timeStr)
-
-    if (!dm || !tm) {
-      return null
-    }
-
-    const year = Number(dm[1])
-    const month = Number(dm[2])
-    const day = Number(dm[3])
-    const hour = Number(tm[1])
-    const minute = Number(tm[2])
-
-    if ([year, month, day, hour, minute].some((n) => Number.isNaN(n))) {
-      return null
-    }
-
-    return { year, month, day, hour, minute }
-  }
-
-  #printHelp() {
-    console.log('')
-    console.log('Sim commands:')
-    console.log('  front on|off')
-    console.log('  back on|off')
-    console.log('  time now')
-    console.log('  time +MS')
-    console.log('  time set YYYY-MM-DD HH:MM')
-    console.log('  state')
-    console.log('  config load <filename>')
-    console.log('  help')
-    console.log('  exit')
-    console.log('')
+    return { kind: 'error', message: 'unknown command, type: help' }
   }
 }
 
-export default CliSimController
+export default CliParser
