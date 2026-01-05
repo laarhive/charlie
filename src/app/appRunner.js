@@ -1,8 +1,8 @@
 // src/app/appRunner.js
 import fs from 'node:fs'
-import path from 'node:path'
 import process from 'node:process'
-
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import JSON5 from 'json5'
 
 import Clock from '../time/clock.js'
@@ -15,6 +15,9 @@ import ConsoleLogger from '../logging/consoleLogger.js'
 
 import CliParser from './cliParser.js'
 import CliSimController from '../sim/cliSimController.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const parseArgs = function parseArgs(argv) {
   const args = {
@@ -57,7 +60,15 @@ const resolvePath = function resolvePath(filename) {
     return filename
   }
 
-  return path.resolve(process.cwd(), filename)
+  const projectRoot = path.resolve(__dirname, '../..')
+  const fromConfigDir = path.resolve(projectRoot, 'config', filename)
+
+  if (fs.existsSync(fromConfigDir)) {
+    return fromConfigDir
+  }
+
+  // explicit relative path fallback
+  return path.resolve(projectRoot, filename)
 }
 
 const loadConfigFile = function loadConfigFile(filename) {
