@@ -1,6 +1,6 @@
 // test/charlieCore.spec.js
 import { expect } from 'chai'
-import Clock from '../src/time/clock.js'
+import Clock from '../src/clock/clock.js'
 import EventBus from '../src/core/eventBus.js'
 import TimeScheduler from '../src/core/timeScheduler.js'
 import CharlieCore from '../src/core/charlieCore.js'

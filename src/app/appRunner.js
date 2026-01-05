@@ -5,7 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSON5 from 'json5'
 
-import Clock from '../time/clock.js'
+import Clock from '../clock/clock.js'
 import EventBus from '../core/eventBus.js'
 import TimeScheduler from '../core/timeScheduler.js'
 import CharlieCore from '../core/charlieCore.js'

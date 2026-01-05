@@ -36,10 +36,10 @@ const CliSimController = class CliSimController {
       terminal: true,
     })
 
-    this.#rl.setPrompt('charlie(sim)> ')
     this.#rl.on('line', (line) => {
       const cmd = this.#parser.parse(line)
       this.#handleCommand(cmd)
+      this.#updatePrompt()
       this.#rl.prompt()
     })
 
@@ -48,6 +48,8 @@ const CliSimController = class CliSimController {
       process.exit(0)
     })
 
+    this.#printHelp()
+    this.#updatePrompt()
     this.#rl.prompt()
   }
 
@@ -96,31 +98,65 @@ const CliSimController = class CliSimController {
       return
     }
 
-    if (cmd.kind === 'timeNow') {
+    if (cmd.kind === 'clockNow') {
       const { clock, core } = this.#getContext()
       const parts = clock.toLocalParts()
       const snap = core.getSnapshot()
-      this.#logger.info('time_now', { ...parts, nowMs: clock.nowMs(), state: snap.state })
+
+      this.#logger.info('clock_now', {
+        ...parts,
+        isFrozen: clock.isFrozen(),
+        nowMs: clock.nowMs(),
+        state: snap.state,
+      })
+
       return
     }
 
-    if (cmd.kind === 'timeAdvance') {
+    if (cmd.kind === 'clockStatus') {
+      const { clock } = this.#getContext()
+      const parts = clock.toLocalParts()
+
+      this.#logger.info('clock_status', {
+        ...parts,
+        isFrozen: clock.isFrozen(),
+        nowMs: clock.nowMs(),
+      })
+
+      return
+    }
+
+    if (cmd.kind === 'clockFreeze') {
+      const { clock } = this.#getContext()
+      clock.freeze()
+      this.#logger.notice('clock_frozen', { nowMs: clock.nowMs() })
+      return
+    }
+
+    if (cmd.kind === 'clockResume') {
+      const { clock } = this.#getContext()
+      clock.resume()
+      this.#logger.notice('clock_resumed', { nowMs: clock.nowMs() })
+      return
+    }
+
+    if (cmd.kind === 'clockAdvance') {
       const { clock } = this.#getContext()
       clock.advance(cmd.ms)
-      this.#logger.info('time_advanced', { deltaMs: cmd.ms, nowMs: clock.nowMs() })
+      this.#logger.info('clock_advanced', { deltaMs: cmd.ms, nowMs: clock.nowMs(), isFrozen: clock.isFrozen() })
       return
     }
 
-    if (cmd.kind === 'timeSet') {
+    if (cmd.kind === 'clockSet') {
       const dt = this.#parseDateTime(cmd.dateStr, cmd.timeStr)
       if (!dt) {
-        console.log('invalid datetime, usage: time set YYYY-MM-DD HH:MM')
+        console.log('invalid datetime, usage: clock set YYYY-MM-DD HH:MM')
         return
       }
 
       const { clock } = this.#getContext()
       clock.setLocalDateTime(dt)
-      this.#logger.info('time_set', { ...dt, nowMs: clock.nowMs() })
+      this.#logger.notice('clock_set', { ...dt, nowMs: clock.nowMs(), isFrozen: clock.isFrozen() })
       return
     }
 
@@ -182,14 +218,28 @@ const CliSimController = class CliSimController {
     return { year, month, day, hour, minute }
   }
 
+  #updatePrompt() {
+    const { clock } = this.#getContext()
+    const frozen = clock.isFrozen()
+    const glyph = frozen ? '❄' : '▶'
+    this.#rl.setPrompt(`charlie(sim${glyph})> `)
+  }
+
   #printHelp() {
     console.log('')
     console.log('Sim commands:')
     console.log('  front on|off')
     console.log('  back on|off')
-    console.log('  time now')
-    console.log('  time +MS')
-    console.log('  time set YYYY-MM-DD HH:MM')
+    console.log('')
+    console.log('  clock now')
+    console.log('  clock status')
+    console.log('  clock freeze')
+    console.log('  clock resume')
+    console.log('  clock +MS')
+    console.log('  clock set YYYY-MM-DD HH:MM')
+    console.log('')
+    console.log('  time ... (alias for clock)')
+    console.log('')
     console.log('  state')
     console.log('  config load <filename>')
     console.log('  help')
