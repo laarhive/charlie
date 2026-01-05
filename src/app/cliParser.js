@@ -42,18 +42,31 @@ export class CliParser {
       return { kind: 'error', message: 'usage: front on|off or back on|off' }
     }
 
-    if (a === 'time') {
+    const isClock = a === 'clock' || a === 'time'
+    if (isClock) {
       if (b === 'now') {
-        return { kind: 'timeNow' }
+        return { kind: 'clockNow' }
+      }
+
+      if (b === 'status') {
+        return { kind: 'clockStatus' }
+      }
+
+      if (b === 'freeze') {
+        return { kind: 'clockFreeze' }
+      }
+
+      if (b === 'resume') {
+        return { kind: 'clockResume' }
       }
 
       if (b && b.startsWith('+')) {
         const ms = Number(b.slice(1))
         if (Number.isNaN(ms) || ms < 0) {
-          return { kind: 'error', message: 'usage: time +MS (MS must be >= 0)' }
+          return { kind: 'error', message: 'usage: clock +MS (MS must be >= 0)' }
         }
 
-        return { kind: 'timeAdvance', ms }
+        return { kind: 'clockAdvance', ms }
       }
 
       if (b === 'set') {
@@ -61,13 +74,13 @@ export class CliParser {
         const timeStr = rest[1]
 
         if (!dateStr || !timeStr) {
-          return { kind: 'error', message: 'usage: time set YYYY-MM-DD HH:MM' }
+          return { kind: 'error', message: 'usage: clock set YYYY-MM-DD HH:MM' }
         }
 
-        return { kind: 'timeSet', dateStr, timeStr }
+        return { kind: 'clockSet', dateStr, timeStr }
       }
 
-      return { kind: 'error', message: 'usage: time now | time +MS | time set YYYY-MM-DD HH:MM' }
+      return { kind: 'error', message: 'usage: clock now|status|freeze|resume | clock +MS | clock set YYYY-MM-DD HH:MM' }
     }
 
     if (a === 'config' && b === 'load') {
