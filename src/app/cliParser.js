@@ -107,6 +107,22 @@ export class CliParser {
       return { kind: 'error', message: 'usage: core state' }
     }
 
+    if (a === 'tap') {
+      if (b === 'on') {
+        return { kind: 'tapOn' }
+      }
+
+      if (b === 'off') {
+        return { kind: 'tapOff' }
+      }
+
+      if (b === 'status') {
+        return { kind: 'tapStatus' }
+      }
+
+      return { kind: 'error', message: 'usage: tap on|off|status' }
+    }
+
     return { kind: 'error', message: 'unknown command, type: help' }
   }
 }

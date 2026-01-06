@@ -10,6 +10,7 @@ import EventBus from '../core/eventBus.js'
 import TimeScheduler from '../core/timeScheduler.js'
 import CharlieCore from '../core/charlieCore.js'
 import Logger from '../logging/logger.js'
+import BusTap from '../core/busTap.js'
 
 import FakeConversationAdapter from '../testing/fakeConversationAdapter.js'
 import ConsoleLogger from '../logging/consoleLogger.js'
@@ -96,15 +97,17 @@ const makeContext = function makeContext({ logger, config }) {
   const scheduler = new TimeScheduler({ clock, bus })
   const conversation = new FakeConversationAdapter()
   const core = new CharlieCore({ clock, bus, scheduler, conversation, config })
+  const tap = new BusTap({ bus, logger, enabled: false })
 
   logger.info('context_created', { nowMs: clock.nowMs() })
 
   const dispose = function dispose() {
+    tap.dispose()
     core.dispose()
     scheduler.dispose()
   }
 
-  return { clock, bus, scheduler, conversation, core, config, dispose }
+  return { clock, bus, scheduler, conversation, core, config, tap, dispose }
 }
 
 const main = function main() {

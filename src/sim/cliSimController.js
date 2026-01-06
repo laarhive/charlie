@@ -170,6 +170,24 @@ export class CliSimController {
       return
     }
 
+    if (cmd.kind === 'tapOn') {
+      const { tap } = this.#getContext()
+      tap.setEnabled(true)
+      return
+    }
+
+    if (cmd.kind === 'tapOff') {
+      const { tap } = this.#getContext()
+      tap.setEnabled(false)
+      return
+    }
+
+    if (cmd.kind === 'tapStatus') {
+      const { tap } = this.#getContext()
+      this.#logger.info('tap_status', { enabled: tap.isEnabled() })
+      return
+    }
+
     console.log('unknown command, type: help')
   }
 
@@ -251,6 +269,10 @@ export class CliSimController {
     console.log('  core state')
     console.log('  config load <filename>')
     console.log('  config print')
+    console.log('')
+    console.log('  tap on')
+    console.log('  tap off')
+    console.log('  tap status')
     console.log('')
     console.log('  help')
     console.log('  exit')
