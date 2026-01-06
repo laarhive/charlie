@@ -104,7 +104,7 @@ const makeContext = function makeContext({ logger, config }) {
     scheduler.dispose()
   }
 
-  return { clock, bus, scheduler, conversation, core, dispose }
+  return { clock, bus, scheduler, conversation, core, config, dispose }
 }
 
 const main = function main() {

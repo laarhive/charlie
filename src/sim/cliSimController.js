@@ -2,7 +2,7 @@
 import readline from 'node:readline'
 import eventTypes from '../core/eventTypes.js'
 
-const CliSimController = class CliSimController {
+export class CliSimController {
   #logger
   #parser
   #loadConfig
@@ -87,13 +87,13 @@ const CliSimController = class CliSimController {
       process.exit(0)
     }
 
-    if (cmd.kind === 'state') {
+    if (cmd.kind === 'coreState') {
       const { core } = this.#getContext()
       this.#logger.info('snapshot', core.getSnapshot())
       return
     }
 
-    if (cmd.kind === 'presence') {
+    if (cmd.kind === 'sensorPresence') {
       this.#publishPresence(cmd.zone, cmd.on)
       return
     }
@@ -165,6 +165,11 @@ const CliSimController = class CliSimController {
       return
     }
 
+    if (cmd.kind === 'configPrint') {
+      this.#printConfigInfo()
+      return
+    }
+
     console.log('unknown command, type: help')
   }
 
@@ -197,6 +202,11 @@ const CliSimController = class CliSimController {
     }
   }
 
+  #printConfigInfo() {
+    const { config } = this.#getContext()
+    this.#logger.info('config_print', config)
+  }
+
   #parseDateTime(dateStr, timeStr) {
     const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr)
     const tm = /^(\d{2}):(\d{2})$/.exec(timeStr)
@@ -220,16 +230,16 @@ const CliSimController = class CliSimController {
 
   #updatePrompt() {
     const { clock } = this.#getContext()
-    const frozen = clock.isFrozen()
-    const glyph = frozen ? '❄' : '▶'
+    const glyph = clock.isFrozen() ? '❄' : '▶'
     this.#rl.setPrompt(`charlie(sim${glyph})> `)
   }
 
   #printHelp() {
     console.log('')
-    console.log('Sim commands:')
-    console.log('  front on|off')
-    console.log('  back on|off')
+    console.log('Commands:')
+    console.log('')
+    console.log('  sensor front on|off')
+    console.log('  sensor back on|off')
     console.log('')
     console.log('  clock now')
     console.log('  clock status')
@@ -238,10 +248,10 @@ const CliSimController = class CliSimController {
     console.log('  clock +MS')
     console.log('  clock set YYYY-MM-DD HH:MM')
     console.log('')
-    console.log('  time ... (alias for clock)')
-    console.log('')
-    console.log('  state')
+    console.log('  core state')
     console.log('  config load <filename>')
+    console.log('  config print')
+    console.log('')
     console.log('  help')
     console.log('  exit')
     console.log('')

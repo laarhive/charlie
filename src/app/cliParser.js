@@ -7,7 +7,7 @@ export class CliParser {
    *
    * @example
    * const parser = new CliParser()
-   * const cmd = parser.parse('front on')
+   * const cmd = parser.parse('sensor front on')
    */
   parse(line) {
     const trimmed = String(line || '').trim()
@@ -16,7 +16,7 @@ export class CliParser {
     }
 
     const parts = trimmed.split(/\s+/g)
-    const [a, b, ...rest] = parts
+    const [a, b, c, ...rest] = parts
 
     if (a === 'help') {
       return { kind: 'help' }
@@ -26,24 +26,23 @@ export class CliParser {
       return { kind: 'exit' }
     }
 
-    if (a === 'state') {
-      return { kind: 'state' }
-    }
-
-    if (a === 'front' || a === 'back') {
-      if (b === 'on') {
-        return { kind: 'presence', zone: a, on: true }
+    if (a === 'sensor') {
+      if (b !== 'front' && b !== 'back') {
+        return { kind: 'error', message: 'usage: sensor front|back on|off' }
       }
 
-      if (b === 'off') {
-        return { kind: 'presence', zone: a, on: false }
+      if (c === 'on') {
+        return { kind: 'sensorPresence', zone: b, on: true }
       }
 
-      return { kind: 'error', message: 'usage: front on|off or back on|off' }
+      if (c === 'off') {
+        return { kind: 'sensorPresence', zone: b, on: false }
+      }
+
+      return { kind: 'error', message: 'usage: sensor front|back on|off' }
     }
 
-    const isClock = a === 'clock' || a === 'time'
-    if (isClock) {
+    if (a === 'clock') {
       if (b === 'now') {
         return { kind: 'clockNow' }
       }
@@ -70,8 +69,8 @@ export class CliParser {
       }
 
       if (b === 'set') {
-        const dateStr = rest[0]
-        const timeStr = rest[1]
+        const dateStr = c
+        const timeStr = rest[0]
 
         if (!dateStr || !timeStr) {
           return { kind: 'error', message: 'usage: clock set YYYY-MM-DD HH:MM' }
@@ -83,13 +82,29 @@ export class CliParser {
       return { kind: 'error', message: 'usage: clock now|status|freeze|resume | clock +MS | clock set YYYY-MM-DD HH:MM' }
     }
 
-    if (a === 'config' && b === 'load') {
-      const filename = rest[0]
-      if (!filename) {
-        return { kind: 'error', message: 'usage: config load <filename>' }
+    if (a === 'config') {
+      if (b === 'load') {
+        const filename = c
+        if (!filename) {
+          return { kind: 'error', message: 'usage: config load <filename>' }
+        }
+
+        return { kind: 'configLoad', filename }
       }
 
-      return { kind: 'configLoad', filename }
+      if (b === 'print') {
+        return { kind: 'configPrint' }
+      }
+
+      return { kind: 'error', message: 'usage: config load <filename> | config print' }
+    }
+
+    if (a === 'core') {
+      if (b === 'state') {
+        return { kind: 'coreState' }
+      }
+
+      return { kind: 'error', message: 'usage: core state' }
     }
 
     return { kind: 'error', message: 'unknown command, type: help' }
