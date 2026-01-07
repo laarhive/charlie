@@ -1,9 +1,51 @@
 {
-  // timers in ms
-  timers: {
+  sensors: [
+    {
+      id: 'presenceFront1',
+      type: 'ld2410',
+      role: 'presence',
+      zone: 'front',
+      enabled: true,
+      params: { debounceOnMs: 150, debounceOffMs: 400 }
+    },
+    {
+      id: 'presenceBack1',
+      type: 'ld2410',
+      role: 'presence',
+      zone: 'back',
+      enabled: true,
+      params: { debounceOnMs: 150, debounceOffMs: 400 }
+    },
+
+    {
+      id: 'vibLight1',
+      type: 'sw420',
+      role: 'vibration',
+      enabled: true,
+      level: 'light',
+      params: { cooldownMs: 600 }
+    },
+    {
+      id: 'vibHeavy1',
+      type: 'sw420',
+      role: 'vibration',
+      enabled: true,
+      level: 'heavy',
+      params: { cooldownMs: 600 }
+    },
+
+    {
+      id: 'button1',
+      type: 'gpioButton',
+      role: 'button',
+      enabled: true,
+      params: { cooldownMs: 250 }
+    }
+  ],
+
+  core: {
     armingDelayMs: 1200,
-    exitConfirmMs: 800,
-    conversationCooldownMs: 60000,
+    cooldownMs: 60000
   },
 
   rules: [

@@ -5,6 +5,15 @@ export const eventTypes = Object.freeze({
     exit: 'presence:exit',
   }),
 
+  vibration: Object.freeze({
+    hit: 'vibration:hit',
+  }),
+
+  button: Object.freeze({
+    press: 'button:press',
+  }),
+
+
   time: Object.freeze({
     armingExpired: 'time:armingExpired',
     exitConfirmExpired: 'time:exitConfirmExpired',
