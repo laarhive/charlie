@@ -2,12 +2,27 @@
 export class BusTap {
   #bus
   #logger
+  #name
   #enabled
   #unsubscribe
 
-  constructor({ bus, logger, enabled = false }) {
+  /**
+   * Bus tap logger for debugging. Can be enabled/disabled at runtime.
+   *
+   * @param {object} args
+   * @param {object} args.bus EventBus instance
+   * @param {object} args.logger Logger instance
+   * @param {string} args.name Tap name (e.g. "main", "presence")
+   * @param {boolean} [args.enabled=false] Initial enabled state
+   *
+   * @example
+   * const tap = new BusTap({ bus, logger, name: 'presence' })
+   * tap.setEnabled(true)
+   */
+  constructor({ bus, logger, name, enabled = false }) {
     this.#bus = bus
     this.#logger = logger
+    this.#name = name || 'bus'
     this.#enabled = false
     this.#unsubscribe = null
 
@@ -20,19 +35,19 @@ export class BusTap {
    * @returns {boolean}
    *
    * @example
-   * if (tap.isEnabled()) logger.info('tap_enabled', {})
+   * if (tap.isEnabled()) logger.info('tap_on', {})
    */
   isEnabled() {
     return this.#enabled
   }
 
   /**
-   * Enables or disables the bus tap.
+   * Enable/disable the tap.
    *
    * @param {boolean} enabled
    *
    * @example
-   * tap.setEnabled(true)
+   * tap.setEnabled(false)
    */
   setEnabled(enabled) {
     const next = Boolean(enabled)
@@ -44,16 +59,16 @@ export class BusTap {
 
     if (this.#enabled) {
       this.#subscribe()
-      this.#logger.notice('tap_enabled', {})
+      this.#logger.notice('tap_enabled', { bus: this.#name })
       return
     }
 
     this.#unsubscribeNow()
-    this.#logger.notice('tap_disabled', {})
+    this.#logger.notice('tap_disabled', { bus: this.#name })
   }
 
   /**
-   * Dispose unsubscribes if enabled.
+   * Cleanup.
    *
    * @example
    * tap.dispose()
@@ -62,13 +77,15 @@ export class BusTap {
     this.#unsubscribeNow()
   }
 
+  /* concise private bits */
+
   #subscribe() {
     if (this.#unsubscribe) {
       return
     }
 
     this.#unsubscribe = this.#bus.subscribe((event) => {
-      this.#logger.debug('bus_event', event)
+      this.#logger.debug('bus_event', { bus: this.#name, event })
     })
   }
 

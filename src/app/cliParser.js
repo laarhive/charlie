@@ -1,13 +1,23 @@
 // src/app/cliParser.js
+
+/**
+ * CLI parser for sim commands.
+ *
+ * Converts user input lines into command objects consumed by CliSimController.
+ *
+ * @example
+ * const parser = new CliParser()
+ * parser.parse('presence front on')
+ */
 export class CliParser {
   /**
    * Parses a single input line into a command object.
    *
    * @param {string} line
+   * @returns {object}
    *
    * @example
-   * const parser = new CliParser()
-   * const cmd = parser.parse('sensor front on')
+   * const cmd = parser.parse('tap presence on')
    */
   parse(line) {
     const trimmed = String(line || '').trim()
@@ -26,20 +36,67 @@ export class CliParser {
       return { kind: 'exit' }
     }
 
-    if (a === 'sensor') {
-      if (b !== 'front' && b !== 'back') {
-        return { kind: 'error', message: 'usage: sensor front|back on|off' }
+    if (a === 'tap') {
+      const bus = b
+      const action = c
+
+      const validBus = bus === 'main' || bus === 'presence' || bus === 'vibration' || bus === 'button' || bus === 'all'
+      if (!validBus) {
+        return { kind: 'error', message: 'usage: tap main|presence|vibration|button|all on|off|status' }
       }
 
-      if (c === 'on') {
-        return { kind: 'sensorPresence', zone: b, on: true }
+      if (action === 'on') {
+        return { kind: 'tapOn', bus }
       }
 
-      if (c === 'off') {
-        return { kind: 'sensorPresence', zone: b, on: false }
+      if (action === 'off') {
+        return { kind: 'tapOff', bus }
       }
 
-      return { kind: 'error', message: 'usage: sensor front|back on|off' }
+      if (action === 'status') {
+        return { kind: 'tapStatus', bus }
+      }
+
+      return { kind: 'error', message: 'usage: tap main|presence|vibration|button|all on|off|status' }
+    }
+
+    if (a === 'presence') {
+      const zone = b
+      const action = c
+
+      if (zone !== 'front' && zone !== 'back') {
+        return { kind: 'error', message: 'usage: presence front|back on|off' }
+      }
+
+      if (action === 'on') {
+        return { kind: 'presence', zone, present: true }
+      }
+
+      if (action === 'off') {
+        return { kind: 'presence', zone, present: false }
+      }
+
+      return { kind: 'error', message: 'usage: presence front|back on|off' }
+    }
+
+    if (a === 'vibration') {
+      const level = b
+
+      if (level !== 'low' && level !== 'high') {
+        return { kind: 'error', message: 'usage: vibration low|high' }
+      }
+
+      return { kind: 'vibration', level }
+    }
+
+    if (a === 'button') {
+      const kind = b
+
+      if (kind !== 'short' && kind !== 'long') {
+        return { kind: 'error', message: 'usage: button short|long' }
+      }
+
+      return { kind: 'button', pressType: kind }
     }
 
     if (a === 'clock') {
@@ -79,7 +136,7 @@ export class CliParser {
         return { kind: 'clockSet', dateStr, timeStr }
       }
 
-      return { kind: 'error', message: 'usage: clock now|status|freeze|resume | clock +MS | clock set YYYY-MM-DD HH:MM' }
+      return { kind: 'error', message: 'usage: clock now|status|freeze|resume|+MS|set YYYY-MM-DD HH:MM' }
     }
 
     if (a === 'config') {
@@ -96,7 +153,7 @@ export class CliParser {
         return { kind: 'configPrint' }
       }
 
-      return { kind: 'error', message: 'usage: config load <filename> | config print' }
+      return { kind: 'error', message: 'usage: config load <filename>|print' }
     }
 
     if (a === 'core') {
@@ -105,22 +162,6 @@ export class CliParser {
       }
 
       return { kind: 'error', message: 'usage: core state' }
-    }
-
-    if (a === 'tap') {
-      if (b === 'on') {
-        return { kind: 'tapOn' }
-      }
-
-      if (b === 'off') {
-        return { kind: 'tapOff' }
-      }
-
-      if (b === 'status') {
-        return { kind: 'tapStatus' }
-      }
-
-      return { kind: 'error', message: 'usage: tap on|off|status' }
     }
 
     return { kind: 'error', message: 'unknown command, type: help' }

@@ -2,6 +2,23 @@
 import readline from 'node:readline'
 import eventTypes from '../core/eventTypes.js'
 
+/**
+ * Sim CLI controller.
+ *
+ * Publishes semantic events directly onto the main bus:
+ * - presence front|back on|off
+ * - vibration low|high
+ * - button short|long
+ *
+ * Also provides debug tools:
+ * - tap per bus
+ * - clock control
+ * - config reload/print
+ *
+ * @example
+ * const cli = new CliSimController({ logger, parser, loadConfig, getContext, setContext })
+ * cli.start()
+ */
 export class CliSimController {
   #logger
   #parser
@@ -87,14 +104,39 @@ export class CliSimController {
       process.exit(0)
     }
 
+    if (cmd.kind === 'tapOn') {
+      this.#setTap(cmd.bus, true)
+      return
+    }
+
+    if (cmd.kind === 'tapOff') {
+      this.#setTap(cmd.bus, false)
+      return
+    }
+
+    if (cmd.kind === 'tapStatus') {
+      this.#tapStatus(cmd.bus)
+      return
+    }
+
     if (cmd.kind === 'coreState') {
       const { core } = this.#getContext()
       this.#logger.info('snapshot', core.getSnapshot())
       return
     }
 
-    if (cmd.kind === 'sensorPresence') {
-      this.#publishPresence(cmd.zone, cmd.on)
+    if (cmd.kind === 'presence') {
+      this.#publishPresence(cmd.zone, cmd.present)
+      return
+    }
+
+    if (cmd.kind === 'vibration') {
+      this.#publishVibration(cmd.level)
+      return
+    }
+
+    if (cmd.kind === 'button') {
+      this.#publishButton(cmd.pressType)
       return
     }
 
@@ -166,63 +208,106 @@ export class CliSimController {
     }
 
     if (cmd.kind === 'configPrint') {
-      this.#printConfigInfo()
-      return
-    }
-
-    if (cmd.kind === 'tapOn') {
-      const { tap } = this.#getContext()
-      tap.setEnabled(true)
-      return
-    }
-
-    if (cmd.kind === 'tapOff') {
-      const { tap } = this.#getContext()
-      tap.setEnabled(false)
-      return
-    }
-
-    if (cmd.kind === 'tapStatus') {
-      const { tap } = this.#getContext()
-      this.#logger.info('tap_status', { enabled: tap.isEnabled() })
+      const { config } = this.#getContext()
+      this.#logger.info('config_print', config)
       return
     }
 
     console.log('unknown command, type: help')
   }
 
-  #publishPresence(zone, on) {
-    if (zone !== 'front' && zone !== 'back') {
-      this.#logger.warning('invalid_zone', { zone })
+  #setTap(bus, enabled) {
+    const { taps } = this.#getContext()
+
+    if (bus === 'all') {
+      for (const t of Object.values(taps)) {
+        t.setEnabled(enabled)
+      }
+
       return
     }
 
-    const { clock, bus } = this.#getContext()
+    const tap = taps?.[bus]
+    if (!tap) {
+      this.#logger.warning('tap_unknown_bus', { bus })
+      return
+    }
+
+    tap.setEnabled(enabled)
+  }
+
+  #tapStatus(bus) {
+    const { taps } = this.#getContext()
+
+    if (bus === 'all') {
+      const status = {}
+      for (const [k, t] of Object.entries(taps)) {
+        status[k] = t.isEnabled()
+      }
+
+      this.#logger.info('tap_status', status)
+      return
+    }
+
+    const tap = taps?.[bus]
+    if (!tap) {
+      this.#logger.warning('tap_unknown_bus', { bus })
+      return
+    }
+
+    this.#logger.info('tap_status', { [bus]: tap.isEnabled() })
+  }
+
+  #publishPresence(zone, present) {
+    const { clock, buses } = this.#getContext()
 
     const event = {
-      type: on ? eventTypes.presence.enter : eventTypes.presence.exit,
+      type: present ? eventTypes.presence.enter : eventTypes.presence.exit,
       ts: clock.nowMs(),
       source: 'cliSim',
       payload: { zone },
     }
 
-    this.#logger.debug('event_publish', event)
-    bus.publish(event)
+    this.#logger.debug('event_publish', { bus: 'main', event })
+    buses.main.publish(event)
+  }
+
+  #publishVibration(level) {
+    const { clock, buses } = this.#getContext()
+
+    const event = {
+      type: eventTypes.vibration.hit,
+      ts: clock.nowMs(),
+      source: 'cliSim',
+      payload: { level },
+    }
+
+    this.#logger.debug('event_publish', { bus: 'main', event })
+    buses.main.publish(event)
+  }
+
+  #publishButton(kind) {
+    const { clock, buses } = this.#getContext()
+
+    const event = {
+      type: eventTypes.button.press,
+      ts: clock.nowMs(),
+      source: 'cliSim',
+      payload: { kind },
+    }
+
+    this.#logger.debug('event_publish', { bus: 'main', event })
+    buses.main.publish(event)
   }
 
   #reloadConfig(filename) {
     try {
-      const { config, fullPath } = this.#loadConfig(filename)
+      const { config } = this.#loadConfig(filename)
       this.#setContext({ config })
-      this.#logger.notice('config_loaded', { configFile: fullPath })
+      this.#logger.notice('config_loaded', { configFile: filename })
     } catch (e) {
       this.#logger.error('config_load_failed', { configFile: filename, error: String(e?.message || e) })
     }
-  }
-
-  #printConfigInfo() {
-    const { config } = this.#getContext()
-    this.#logger.info('config_print', config)
   }
 
   #parseDateTime(dateStr, timeStr) {
@@ -256,23 +341,15 @@ export class CliSimController {
     console.log('')
     console.log('Commands:')
     console.log('')
-    console.log('  sensor front on|off')
-    console.log('  sensor back on|off')
+    console.log('  presence front|back on|off')
+    console.log('  vibration low|high')
+    console.log('  button short|long')
     console.log('')
-    console.log('  clock now')
-    console.log('  clock status')
-    console.log('  clock freeze')
-    console.log('  clock resume')
-    console.log('  clock +MS')
-    console.log('  clock set YYYY-MM-DD HH:MM')
+    console.log('  tap main|presence|vibration|button|all on|off|status')
     console.log('')
+    console.log('  clock now|status|freeze|resume|+MS|set YYYY-MM-DD HH:MM')
     console.log('  core state')
-    console.log('  config load <filename>')
-    console.log('  config print')
-    console.log('')
-    console.log('  tap on')
-    console.log('  tap off')
-    console.log('  tap status')
+    console.log('  config load <filename>|print')
     console.log('')
     console.log('  help')
     console.log('  exit')
