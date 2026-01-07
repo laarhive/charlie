@@ -1,6 +1,6 @@
 // src/domain/presence/binaryPresenceController.js
 import PresenceController from './presenceController.js'
-import rawEventTypes from '../../core/rawEventTypes.js'
+import domainEventTypes from '../domainEventTypes.js'
 
 export class BinaryPresenceController extends PresenceController {
   #sensorsById
@@ -40,7 +40,7 @@ export class BinaryPresenceController extends PresenceController {
     this._logger().notice('presence_controller_started', { controllerId: this._controllerId(), mode: 'binary' })
 
     this.#unsubscribe = this._presenceBus().subscribe((event) => {
-      if (event?.type !== rawEventTypes.presence.binary) {
+      if (event?.type !== domainEventTypes.presence.binary) {
         return
       }
 

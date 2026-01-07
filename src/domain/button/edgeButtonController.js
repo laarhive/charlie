@@ -1,6 +1,6 @@
 // src/domain/button/edgeButtonController.js
 import PushButtonController from './pushButtonController.js'
-import rawEventTypes from '../../core/rawEventTypes.js'
+import domainEventTypes from '../domainEventTypes.js'
 
 export class EdgeButtonController extends PushButtonController {
   #sensorsById
@@ -33,7 +33,7 @@ export class EdgeButtonController extends PushButtonController {
     this._logger().notice('button_controller_started', { controllerId: this._controllerId(), mode: 'edge' })
 
     this.#unsubscribe = this._buttonBus().subscribe((event) => {
-      if (event?.type !== rawEventTypes.button.edge) {
+      if (event?.type !== domainEventTypes.button.edge) {
         return
       }
 

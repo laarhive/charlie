@@ -1,6 +1,6 @@
 // src/domain/vibration/hitVibrationController.js
 import VibrationController from './vibrationController.js'
-import rawEventTypes from '../../core/rawEventTypes.js'
+import domainEventTypes from '../domainEventTypes.js'
 
 export class HitVibrationController extends VibrationController {
   #sensorsById
@@ -33,7 +33,7 @@ export class HitVibrationController extends VibrationController {
     this._logger().notice('vibration_controller_started', { controllerId: this._controllerId(), mode: 'hit' })
 
     this.#unsubscribe = this._vibrationBus().subscribe((event) => {
-      if (event?.type !== rawEventTypes.vibration.hit) {
+      if (event?.type !== domainEventTypes.vibration.hit) {
         return
       }
 

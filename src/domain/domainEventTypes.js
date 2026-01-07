@@ -1,5 +1,5 @@
 // src/core/rawEventTypes.js
-export const rawEventTypes = Object.freeze({
+export const domainEventTypes = Object.freeze({
   presence: Object.freeze({
     binary: 'presenceRaw:binary',
     targets: 'presenceRaw:targets',
@@ -16,4 +16,4 @@ export const rawEventTypes = Object.freeze({
   }),
 })
 
-export default rawEventTypes
+export default domainEventTypes

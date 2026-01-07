@@ -1,6 +1,6 @@
 // src/domain/presence/targetsPresenceController.js
 import PresenceController from './presenceController.js'
-import rawEventTypes from '../../core/rawEventTypes.js'
+import domainEventTypes from '../domainEventTypes.js'
 
 export class TargetsPresenceController extends PresenceController {
   #sensorsById
@@ -30,7 +30,7 @@ export class TargetsPresenceController extends PresenceController {
     this._logger().notice('presence_controller_started', { controllerId: this._controllerId(), mode: 'targets' })
 
     this.#unsubscribe = this._presenceBus().subscribe((event) => {
-      if (event?.type !== rawEventTypes.presence.targets) {
+      if (event?.type !== domainEventTypes.presence.targets) {
         return
       }
 
