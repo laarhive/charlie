@@ -26,6 +26,8 @@
 
 ### LED
 - KY-016 RGB module (output only)
+or 
+- WS2812D (NeoPixel) for dynamic effects
 
 ## Notes on deployment
 - Outdoor requires good strain relief and stable power
