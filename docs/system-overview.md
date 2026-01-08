@@ -25,6 +25,6 @@ Charlie is a mascot that behaves like a character, not a robot. The system separ
 Sensors → domain raw buses → domain controllers → main bus → core → phone triggers
 
 ## Why this split
-- You can swap presence sensors (LD2410 → LD2450) without touching CharlieCore
-- You can test behavior without hardware using sim mode
-- You can debug only one subsystem by tapping the relevant bus
+- Can swap presence sensors (LD2410 → LD2450) without touching CharlieCore
+- Can test behavior without hardware using sim mode
+- Can debug only one subsystem by tapping the relevant bus
