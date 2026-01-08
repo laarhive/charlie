@@ -8,7 +8,7 @@ The phone is the “voice box”:
 - is orchestrated by Tasker
 
 ## Kiosk mode (optional)
-Kiosk mode can prevent accidental exits and keep the UI controlled. Options depend on your Android device and preferences. (Implementation details can be added when you choose a kiosk solution.)
+Kiosk mode can prevent accidental exits and keep the UI controlled. Options depend on your Android device and preferences. (Implementation details to be added when kiosk solution is chosen.)
 
 ## Tasker responsibilities
 - Receive start/stop triggers from the Pi (HTTP recommended)
