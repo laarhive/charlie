@@ -64,8 +64,8 @@ These carry raw-ish signals and are only consumed by their domain controller:
 * `vibrationBus`
 * `buttonBus`
 
-Producers: HW drivers + sim drivers
-Consumers: `presenceController`, `vibrationController`, `pushButtonController`
+**Producers**: HW drivers + sim drivers<br>
+**Consumers**: `presenceController`, `vibrationController`, `pushButtonController`
 
 2) App bus (main)
 
@@ -75,26 +75,26 @@ This carries normalized events only:
 * `button:press`
 * time events, core, conversation telemetry, etc.
 
-Producer: domain controllers
-Consumers: `CharlieCore`, rule engine, logging, etc.
+**Producer**: domain controllers<br>
+**Consumers**: `CharlieCore`, rule engine, logging, etc.
 
 This keeps CharlieCore stable forever, even as we swap sensors/drivers.
 
 ## Event Namespace
 
-Raw (on domain buses)
+On domain buses:
 
-1) Presence raw bus
+1) Presence bus
 * `presenceRaw:binary` payload `{ sensorId, zone?, present }` (LD2410)
 * `presenceRaw:targets` payload `{ sensorId, targets: [...] }` (LD2450)
 * `presenceRaw:status` (optional)
 
-2) Vibration raw bus
+2) Vibration bus
 
 * `vibrationRaw:hit` payload `{ sensorId }` (SW-420)
 * `vibrationRaw:sample` payload `{ sensorId, ax, ay, az }` (accelerometer)
 
-3) Button raw bus
+3) Button bus
 * `buttonRaw:level` payload `{ sensorId, down }`
 or
 * `buttonRaw:pressEdge`
@@ -103,40 +103,11 @@ Then controllers translate → app bus events.
 
 ## Tapping / debugging (your key requirement)
 
-Instead of one global busTap, you can have:
+`tap main` for app bus.
+`tap presence`, `tap vibration`, `tap button` for domain buses.
 
-tapMain for app bus
+Taps can be enabled independently:
 
-tapPresence, tapVibration, tapButton for domain buses
-
-And you can enable taps independently:
-
-debug only vibration by enabling tapVibration
-
-keep others off in production
-
-works identically in sim + hw
-
-This matches what you want: “tap into this bus only”.
-
-Why separate buses are better than “single raw bus”
-
-less noise per tap
-
-fewer accidental subscriptions
-
-domain controllers stay focused
-
-easier to unit test (you can feed just one bus)
-
-Where drivers attach (bus vs direct wiring)
-
-With your multi-bus approach, the cleanest is:
-
-drivers publish onto their domain bus
-
-controller subscribes to that bus
-
-controller publishes normalized events to main bus
-
-No direct driver→controller coupling needed, and you still keep the main bus clean.
+* debug only vibration by enabling `tap vibration`
+* keep others off in production
+* works identically in sim + hw
