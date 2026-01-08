@@ -1,113 +1,45 @@
-# charlie
+# Charlie — Interactive Restaurant Mascot
 
-## High-level module map
+Charlie is an outdoor restaurant mascot that detects people near the entrance, initiates voice conversations, and guides interactions in a friendly, human way. The Raspberry Pi handles sensing + decision logic. A phone handles voice (ChatGPT Voice) via Tasker automation.
 
-```
-src/
- ├─ app/
- │   ├─ CharlieApp
- │   └─ Bootstrap
- │
- ├─ core/
- │   ├─ CharlieCore
- │   ├─ StateMachine
- │   └─ ZoneArbiter
- │
- ├─ sensors/
- │   ├─ SensorsController
- │   ├─ PresenceSensor
- │   ├─ VibrationSensor
- │   └─ ButtonSensor
- │
- ├─ gpio/
- │   ├─ GpioInterface
- │   ├─ HwGpio
- │   └─ SimGpio
- │
- ├─ actuators/
- │   └─ LedController
- │
- ├─ config/
- │   ├─ ConfigStore
- │   ├─ RuleEngine
- │   └─ PromptRepository
- │
- ├─ conversation/
- │   ├─ ConversationAdapter
- │   ├─ TaskerClient
- │   └─ LocalTestAdapter
- │
- ├─ web/
- │   ├─ WebServer
- │   ├─ WsRouter
- │   └─ AdminApi
- │
- ├─ logging/
- │   ├─ EventStore
- │   └─ RuntimeStateStore
- │
- ├─ sim/
- │   └─ SimulationController
- │
- └─ test/
-     ├─ fakes/
-     ├─ scenarios/
-     └─ helpers/
+## What Charlie does
+- Detects presence in **front** (passersby) and **back** (people exiting) zones
+- Decides when to start/stop a conversation using configurable rules and timers
+- Triggers ChatGPT Voice on the phone with the right “conversation mode” and context
+- Logs events for debugging and future analytics
+- Supports simulation mode for development without hardware
 
-```
-## Bus Layout
+## High-level architecture
+Charlie is a distributed system with two main components:
 
-1) Domain buses (HW/internal)
+1) **Raspberry Pi (Node.js)**
+  - Reads sensors and normalizes their signals
+  - Runs the core state machine + scheduling
+  - Publishes events on internal buses
+  - Sends start/stop commands to the phone
+  - Receives callbacks (later) about conversation lifecycle
 
-These carry raw-ish signals and are only consumed by their domain controller:
-* `presenceBus`
-* `vibrationBus`
-* `buttonBus`
+2) **Android phone (ChatGPT Voice + Tasker)**
+  - Runs ChatGPT Voice (audio in/out)
+  - Tasker receives triggers from Pi and opens ChatGPT, injects prompts, starts voice mode
+  - Tasker sends callbacks (optional) to Pi with conversation started/ended + telemetry
 
-**Producers**: HW drivers + sim drivers<br>
-**Consumers**: `presenceController`, `vibrationController`, `pushButtonController`
+## Documentation
+- [System overview](docs/system-overview.md)
+- [Hardware](docs/hardware.md)
+- [Phone setup](docs/phone-setup.md)
+- [Node.js app architecture](docs/node-architecture.md)
+- [Configuration](docs/configuration.md)
+- [Simulation mode](docs/simulation.md)
 
-2) App bus (main)
+## Quick start (development)
+1) Install dependencies
+2) Create `config/defaultConfig.json5`
+3) Run in sim mode:
+  - `node src/app/appRunner.js --mode sim --log-level info`
 
-This carries normalized events only:
-* `presence:enter/exit (zone)`
-* `vibration:hit (level)`
-* `button:press`
-* time events, core, conversation telemetry, etc.
+## Modes
+- `--mode sim`: CLI tool injects semantic events (presence/vibration/button) to the main bus
+- `--mode hw`: Drivers publish raw domain events to domain buses, domain controllers normalize to main bus
 
-**Producer**: domain controllers<br>
-**Consumers**: `CharlieCore`, rule engine, logging, etc.
-
-This keeps CharlieCore stable forever, even as we swap sensors/drivers.
-
-## Event Namespace
-
-On domain buses:
-
-1) Presence bus
-* `presenceRaw:binary` payload `{ sensorId, zone?, present }` (LD2410)
-* `presenceRaw:targets` payload `{ sensorId, targets: [...] }` (LD2450)
-* `presenceRaw:status` (optional)
-
-2) Vibration bus
-
-* `vibrationRaw:hit` payload `{ sensorId }` (SW-420)
-* `vibrationRaw:sample` payload `{ sensorId, ax, ay, az }` (accelerometer)
-
-3) Button bus
-* `buttonRaw:level` payload `{ sensorId, down }`
-or
-* `buttonRaw:pressEdge`
-
-Then controllers translate → app bus events.
-
-## Tapping / debugging (your key requirement)
-
-`tap main` for app bus.
-`tap presence`, `tap vibration`, `tap button` for domain buses.
-
-Taps can be enabled independently:
-
-* debug only vibration by enabling `tap vibration`
-* keep others off in production
-* works identically in sim + hw
+> Note: hw mode currently uses Virtual signals for some drivers until RPi GPIO/serial drivers are implemented.
