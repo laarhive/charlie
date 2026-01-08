@@ -85,8 +85,8 @@ In sim mode:
 ## Bus taps
 `BusTap` can subscribe to any bus and log events.
 Taps are created per bus:
-- main, presence, vibration, button
-  You can toggle them at runtime via CLI commands.
+- main, presence, vibration, button <br>
+  Can be toggled at runtime via CLI commands.
 
 ## Modules/classes (current)
 - `src/app/*`: runner, config loader, args, context builder
