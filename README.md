@@ -33,13 +33,45 @@ Charlie is a distributed system with two main components:
 - [Simulation mode](docs/simulation.md)
 
 ## Quick start (development)
-1) Install dependencies
-2) Create `config/defaultConfig.json5`
-3) Run in sim mode:
-  - `node src/app/appRunner.js --mode sim --log-level info`
+Install dependencies
+
+Create config/defaultConfig.json5
+
+Run in virtual hardware mode with CLI enabled:
+```shell
+node src/app/appRunner.js --mode virt --cli --log-level info
+```
+This starts the full Charlie pipeline (drivers → domain controllers → core) using virtual hardware drivers, with the CLI attached for debugging and injection.
 
 ## Modes
-- `--mode sim`: CLI tool injects semantic events (presence/vibration/button) to the main bus
-- `--mode hw`: Drivers publish raw domain events to domain buses, domain controllers normalize to main bus
 
-> Note: hw mode currently uses Virtual signals for some drivers until RPi GPIO/serial drivers are implemented.
+`--mode virt`
+* Starts the full hardware pipeline using virtual drivers/signals
+* Domain buses and domain controllers are active
+* Raw domain events are produced by virtual drivers
+* CLI injection is enabled by default
+* Intended for:
+  - development on non-RPi machines (Win11/macOS)
+  - testing driver → domain → core wiring
+  - troubleshooting without physical hardware
+
+`--mode hw`
+* Starts the full hardware pipeline using real hardware drivers (GPIO / serial)
+* Domain buses and domain controllers are active
+* CLI is disabled by default (can be enabled with --cli)
+* CLI injection is disabled by default (can be enabled at runtime with inject on)
+* Intended for:
+  - deployment on Raspberry Pi
+  - real sensor operation
+
+`--cli` (optional)
+* Attaches the interactive CLI in either mode
+* Allows:
+  - enabling/disabling bus taps
+  - inspecting core state and config
+  - controlling the clock (freeze / advance)
+  - optionally injecting semantic events (guarded by inject on|off)
+
+> Note:<br>
+> In virt mode, drivers use virtual signals as stand-ins for real hardware.<br>
+> In hw mode, virtual drivers are not started; real GPIO/serial drivers are expected to be wired instead.

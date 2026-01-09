@@ -40,8 +40,14 @@ export const makeContext = function makeContext({ logger, config, mode }) {
   const hw = makeHwDrivers({ logger, buses, clock, config })
 
   if (mode === 'hw') {
-    logger.notice('hw_mode_virtual_signals', {
-      note: 'Using VirtualBinarySignal for ld2410 inputs. Replace with GPIO on RPi.',
+    logger.notice('hw_mode_no_virtual_signals', {
+      note: 'HW mode does not start virtual drivers. Real GPIO/serial drivers will be wired here.',
+    })
+  }
+
+  if (mode === 'virt') {
+    logger.notice('virt_mode_virtual_signals', {
+      note: 'Using VirtualBinarySignal for ld2410 inputs. Replace with GPIO on RPi when in hw mode.',
       ld2410Count: hw.drivers.length,
     })
 

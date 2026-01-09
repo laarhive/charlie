@@ -1,13 +1,13 @@
 // src/app/cliParser.js
 
 /**
- * CLI parser for sim commands.
+ * CLI parser.
  *
  * Converts user input lines into command objects consumed by CliSimController.
  *
  * @example
  * const parser = new CliParser()
- * parser.parse('presence front on')
+ * parser.parse('inject on')
  */
 export class CliParser {
   /**
@@ -17,7 +17,7 @@ export class CliParser {
    * @returns {object}
    *
    * @example
-   * const cmd = parser.parse('tap presence on')
+   * const cmd = parser.parse('presence front on')
    */
   parse(line) {
     const trimmed = String(line || '').trim()
@@ -34,6 +34,22 @@ export class CliParser {
 
     if (a === 'exit' || a === 'quit') {
       return { kind: 'exit' }
+    }
+
+    if (a === 'inject') {
+      if (b === 'on') {
+        return { kind: 'injectOn' }
+      }
+
+      if (b === 'off') {
+        return { kind: 'injectOff' }
+      }
+
+      if (b === 'status') {
+        return { kind: 'injectStatus' }
+      }
+
+      return { kind: 'error', message: 'usage: inject on|off|status' }
     }
 
     if (a === 'tap') {
@@ -90,13 +106,13 @@ export class CliParser {
     }
 
     if (a === 'button') {
-      const kind = b
+      const pressType = b
 
-      if (kind !== 'short' && kind !== 'long') {
+      if (pressType !== 'short' && pressType !== 'long') {
         return { kind: 'error', message: 'usage: button short|long' }
       }
 
-      return { kind: 'button', pressType: kind }
+      return { kind: 'button', pressType }
     }
 
     if (a === 'clock') {

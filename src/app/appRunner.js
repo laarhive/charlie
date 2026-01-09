@@ -43,7 +43,7 @@ export class AppRunner {
     try {
       const loaded = loadConfigFile(initialConfigFile)
       this.#context = makeContext({ logger: this.#logger, config: loaded.config, mode: args.mode })
-      this.#logger.info('app_started', { configFile: loaded.fullPath, mode: args.mode })
+      this.#logger.info('app_started', { configFile: loaded.fullPath, mode: args.mode, cli: args.cli })
     } catch (e) {
       this.#logger.error('config_load_failed', { configFile: initialConfigFile, error: String(e?.message || e) })
       process.exit(1)
@@ -62,7 +62,7 @@ export class AppRunner {
 
     const loadConfig = (filename) => loadConfigFile(filename)
 
-    if (args.mode === 'sim') {
+    if (args.cli) {
       const parser = new CliParser()
 
       const cli = new CliSimController({
@@ -71,6 +71,7 @@ export class AppRunner {
         loadConfig,
         getContext,
         setContext,
+        mode: args.mode,
       })
 
       cli.start()
@@ -78,10 +79,12 @@ export class AppRunner {
     }
 
     if (args.mode === 'hw') {
-      this.#logger.notice('hw_mode_started', {
-        note: 'No CLI in hw mode. Use taps/logging. Later: real GPIO/serial drivers.',
-      })
+      this.#logger.notice('hw_mode_started', { note: 'CLI disabled. Use --cli to enable.' })
+      return
+    }
 
+    if (args.mode === 'virt') {
+      this.#logger.notice('virt_mode_started', { note: 'CLI disabled. Use --cli to enable.' })
       return
     }
 

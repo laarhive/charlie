@@ -3,20 +3,11 @@ import readline from 'node:readline'
 import eventTypes from '../core/eventTypes.js'
 
 /**
- * Sim CLI controller.
- *
- * Publishes semantic events directly onto the main bus:
- * - presence front|back on|off
- * - vibration low|high
- * - button short|long
- *
- * Also provides debug tools:
- * - tap per bus
- * - clock control
- * - config reload/print
+ * CLI controller (optional). Can run in hw or virt mode.
+ * Semantic injections are gated by injectEnabled.
  *
  * @example
- * const cli = new CliSimController({ logger, parser, loadConfig, getContext, setContext })
+ * const cli = new CliSimController({ logger, parser, loadConfig, getContext, setContext, mode: 'virt' })
  * cli.start()
  */
 export class CliSimController {
@@ -27,21 +18,19 @@ export class CliSimController {
   #setContext
   #rl
 
-  constructor({ logger, parser, loadConfig, getContext, setContext }) {
+  #injectEnabled
+
+  constructor({ logger, parser, loadConfig, getContext, setContext, mode }) {
     this.#logger = logger
     this.#parser = parser
     this.#loadConfig = loadConfig
     this.#getContext = getContext
     this.#setContext = setContext
     this.#rl = null
+
+    this.#injectEnabled = mode === 'virt'
   }
 
-  /**
-   * Starts the CLI prompt for sim mode.
-   *
-   * @example
-   * cli.start()
-   */
   start() {
     if (this.#rl) {
       return
@@ -70,12 +59,6 @@ export class CliSimController {
     this.#rl.prompt()
   }
 
-  /**
-   * Stops the CLI prompt.
-   *
-   * @example
-   * cli.dispose()
-   */
   dispose() {
     if (!this.#rl) {
       return
@@ -104,6 +87,23 @@ export class CliSimController {
       process.exit(0)
     }
 
+    if (cmd.kind === 'injectOn') {
+      this.#injectEnabled = true
+      this.#logger.notice('inject_enabled', {})
+      return
+    }
+
+    if (cmd.kind === 'injectOff') {
+      this.#injectEnabled = false
+      this.#logger.notice('inject_disabled', {})
+      return
+    }
+
+    if (cmd.kind === 'injectStatus') {
+      this.#logger.info('inject_status', { enabled: this.#injectEnabled })
+      return
+    }
+
     if (cmd.kind === 'tapOn') {
       this.#setTap(cmd.bus, true)
       return
@@ -126,17 +126,17 @@ export class CliSimController {
     }
 
     if (cmd.kind === 'presence') {
-      this.#publishPresence(cmd.zone, cmd.present)
+      this.#guardInject(() => this.#publishPresence(cmd.zone, cmd.present))
       return
     }
 
     if (cmd.kind === 'vibration') {
-      this.#publishVibration(cmd.level)
+      this.#guardInject(() => this.#publishVibration(cmd.level))
       return
     }
 
     if (cmd.kind === 'button') {
-      this.#publishButton(cmd.pressType)
+      this.#guardInject(() => this.#publishButton(cmd.pressType))
       return
     }
 
@@ -216,6 +216,15 @@ export class CliSimController {
     console.log('unknown command, type: help')
   }
 
+  #guardInject(fn) {
+    if (!this.#injectEnabled) {
+      this.#logger.warning('inject_blocked', { reason: 'inject_disabled' })
+      return
+    }
+
+    fn()
+  }
+
   #setTap(bus, enabled) {
     const { taps } = this.#getContext()
 
@@ -264,7 +273,7 @@ export class CliSimController {
     const event = {
       type: present ? eventTypes.presence.enter : eventTypes.presence.exit,
       ts: clock.nowMs(),
-      source: 'cliSim',
+      source: 'cliInject',
       payload: { zone },
     }
 
@@ -278,7 +287,7 @@ export class CliSimController {
     const event = {
       type: eventTypes.vibration.hit,
       ts: clock.nowMs(),
-      source: 'cliSim',
+      source: 'cliInject',
       payload: { level },
     }
 
@@ -286,14 +295,14 @@ export class CliSimController {
     buses.main.publish(event)
   }
 
-  #publishButton(kind) {
+  #publishButton(pressType) {
     const { clock, buses } = this.#getContext()
 
     const event = {
       type: eventTypes.button.press,
       ts: clock.nowMs(),
-      source: 'cliSim',
-      payload: { kind },
+      source: 'cliInject',
+      payload: { kind: pressType },
     }
 
     this.#logger.debug('event_publish', { bus: 'main', event })
@@ -334,12 +343,15 @@ export class CliSimController {
   #updatePrompt() {
     const { clock } = this.#getContext()
     const glyph = clock.isFrozen() ? '❄' : '▶'
-    this.#rl.setPrompt(`charlie(sim${glyph})> `)
+    const inj = this.#injectEnabled ? '✓' : '×'
+    this.#rl.setPrompt(`charlie(${glyph} inject:${inj})> `)
   }
 
   #printHelp() {
     console.log('')
     console.log('Commands:')
+    console.log('')
+    console.log('  inject on|off|status')
     console.log('')
     console.log('  presence front|back on|off')
     console.log('  vibration low|high')

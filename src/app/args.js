@@ -9,8 +9,9 @@
 export const parseArgs = function parseArgs(argv) {
   const args = {
     config: null,
-    mode: 'sim',
+    mode: 'virt',
     level: 'info',
+    cli: false,
   }
 
   for (let i = 2; i < argv.length; i += 1) {
@@ -23,14 +24,24 @@ export const parseArgs = function parseArgs(argv) {
     }
 
     if (a === '--mode' || a === '-m') {
-      args.mode = argv[i + 1] || 'sim'
+      const v = argv[i + 1] || 'virt'
       i += 1
+
+      if (v === 'hw' || v === 'virt') {
+        args.mode = v
+      }
+
       continue
     }
 
     if (a === '--log-level') {
       args.level = argv[i + 1] || 'info'
       i += 1
+      continue
+    }
+
+    if (a === '--cli') {
+      args.cli = true
       continue
     }
   }
