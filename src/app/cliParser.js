@@ -56,9 +56,16 @@ export class CliParser {
       const bus = b
       const action = c
 
-      const validBus = bus === 'main' || bus === 'presence' || bus === 'vibration' || bus === 'button' || bus === 'all'
+      const validBus =
+        bus === 'main' ||
+        bus === 'presence' ||
+        bus === 'vibration' ||
+        bus === 'button' ||
+        bus === 'tasker' ||
+        bus === 'all'
+
       if (!validBus) {
-        return { kind: 'error', message: 'usage: tap main|presence|vibration|button|all on|off|status' }
+        return { kind: 'error', message: 'usage: tap main|presence|vibration|button|tasker|all on|off|status' }
       }
 
       if (action === 'on') {
@@ -73,7 +80,7 @@ export class CliParser {
         return { kind: 'tapStatus', bus }
       }
 
-      return { kind: 'error', message: 'usage: tap main|presence|vibration|button|all on|off|status' }
+      return { kind: 'error', message: 'usage: tap main|presence|vibration|button|tasker|all on|off|status' }
     }
 
     if (a === 'presence') {

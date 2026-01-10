@@ -13,6 +13,7 @@ export const makeTaps = function makeTaps({ logger, buses }) {
     presence: new BusTap({ bus: buses.presence, logger, name: 'presence', enabled: false }),
     vibration: new BusTap({ bus: buses.vibration, logger, name: 'vibration', enabled: false }),
     button: new BusTap({ bus: buses.button, logger, name: 'button', enabled: false }),
+    tasker: new BusTap({ bus: buses.tasker, logger, name: 'tasker', enabled: false }),
   }
 }
 

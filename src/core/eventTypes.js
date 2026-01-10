@@ -13,6 +13,11 @@ export const eventTypes = Object.freeze({
     press: 'button:press',
   }),
 
+  tasker: Object.freeze({
+    req: 'tasker:req',
+    res: 'tasker:res',
+    err: 'tasker:err',
+  }),
 
   time: Object.freeze({
     armingExpired: 'time:armingExpired',

@@ -357,7 +357,7 @@ export class CliSimController {
     console.log('  vibration low|high')
     console.log('  button short|long')
     console.log('')
-    console.log('  tap main|presence|vibration|button|all on|off|status')
+    console.log('  tap main|presence|vibration|button|tasker|all on|off|status')
     console.log('')
     console.log('  clock now|status|freeze|resume|+MS|set YYYY-MM-DD HH:MM')
     console.log('  core state')
