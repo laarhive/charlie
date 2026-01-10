@@ -2,7 +2,7 @@
 import Clock from '../clock/clock.js'
 import TimeScheduler from '../core/timeScheduler.js'
 import CharlieCore from '../core/charlieCore.js'
-import FakeConversationAdapter from '../testing/fakeConversationAdapter.js'
+import FakeConversationAdapter from '../conversation/fakeConversationAdapter.js'
 
 import makeBuses from './buses.js'
 import makeTaps from './taps.js'
