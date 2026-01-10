@@ -64,6 +64,15 @@
     },
   ],
 
+  tasker: {
+    baseUrl: "http://127.0.0.1:8787/tasker", // simulator in virt/dev
+    timeoutMs: 2000,
+    token: {
+      header: "X-Tasker-Token",
+      value: "optional-secret"
+    }
+  },
+
   promptText: {
     base: 'You are Charlie.',
     modes: {

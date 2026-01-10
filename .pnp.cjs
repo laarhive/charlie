@@ -32,6 +32,7 @@ const RAW_RUNTIME_STATE =
           ["charlie", "workspace:."],\
           ["json5", "npm:2.2.3"],\
           ["mocha", "npm:11.7.5"],\
+          ["uWebSockets.js", "https://github.com/uNetworking/uWebSockets.js.git#commit=d04e707a1292928d50163ff7545e45c3e84c5ec3"],\
           ["winston", "npm:3.19.0"]\
         ],\
         "linkType": "SOFT"\
@@ -227,6 +228,7 @@ const RAW_RUNTIME_STATE =
           ["charlie", "workspace:."],\
           ["json5", "npm:2.2.3"],\
           ["mocha", "npm:11.7.5"],\
+          ["uWebSockets.js", "https://github.com/uNetworking/uWebSockets.js.git#commit=d04e707a1292928d50163ff7545e45c3e84c5ec3"],\
           ["winston", "npm:3.19.0"]\
         ],\
         "linkType": "SOFT"\
@@ -983,6 +985,15 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/triple-beam-npm-1.4.1-d21ba5346a-4bf1db71e1.zip/node_modules/triple-beam/",\
         "packageDependencies": [\
           ["triple-beam", "npm:1.4.1"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["uWebSockets.js", [\
+      ["https://github.com/uNetworking/uWebSockets.js.git#commit=d04e707a1292928d50163ff7545e45c3e84c5ec3", {\
+        "packageLocation": "./.yarn/unplugged/uWebSockets.js-https-a7d6d1ce68/node_modules/uWebSockets.js/",\
+        "packageDependencies": [\
+          ["uWebSockets.js", "https://github.com/uNetworking/uWebSockets.js.git#commit=d04e707a1292928d50163ff7545e45c3e84c5ec3"]\
         ],\
         "linkType": "HARD"\
       }]\

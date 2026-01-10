@@ -159,6 +159,7 @@ __metadata:
     chai: "npm:^6.2.2"
     json5: "npm:^2.2.3"
     mocha: "npm:^11.7.5"
+    uWebSockets.js: "uNetworking/uWebSockets.js#v20.56.0"
     winston: "npm:^3.19.0"
   languageName: unknown
   linkType: soft
@@ -816,6 +817,13 @@ __metadata:
   version: 1.4.1
   resolution: "triple-beam@npm:1.4.1"
   checksum: 10c0/4bf1db71e14fe3ff1c3adbe3c302f1fdb553b74d7591a37323a7badb32dc8e9c290738996cbb64f8b10dc5a3833645b5d8c26221aaaaa12e50d1251c9aba2fea
+  languageName: node
+  linkType: hard
+
+"uWebSockets.js@uNetworking/uWebSockets.js#v20.56.0":
+  version: 20.56.0
+  resolution: "uWebSockets.js@https://github.com/uNetworking/uWebSockets.js.git#commit=d04e707a1292928d50163ff7545e45c3e84c5ec3"
+  checksum: 10c0/b6bc845c08c60f52bbc646928d8394c322cd9d64bdfe43c61ecadb1cbf4e0919d15f5c976f9812d5e3a4a10b888476144e559f5583cfdaec85afd729244ac895
   languageName: node
   linkType: hard
 

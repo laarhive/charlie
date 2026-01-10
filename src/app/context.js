@@ -9,11 +9,14 @@ import makeTaps from './taps.js'
 import makeDomainControllers, { startAll, disposeAll } from './domainControllers.js'
 import makeHwDrivers, { disposeSignals } from './hwDrivers.js'
 
+import WebServer from './webServer.js'
+import TaskerConversationAdapter from '../conversation/taskerConversationAdapter.js'
+
 /**
- * Builds the full runtime context (buses, taps, controllers, core, scheduler).
+ * Builds the full runtime context (buses, taps, controllers, core, scheduler, web server).
  *
  * @example
- * const ctx = makeContext({ logger, config, mode: 'sim' })
+ * const ctx = makeContext({ logger, config, mode: 'virt' })
  * ctx.dispose()
  */
 export const makeContext = function makeContext({ logger, config, mode }) {
@@ -24,7 +27,17 @@ export const makeContext = function makeContext({ logger, config, mode }) {
   const taps = makeTaps({ logger, buses })
 
   const scheduler = new TimeScheduler({ clock, bus: buses.main })
-  const conversation = new FakeConversationAdapter()
+
+  const conversation = (() => {
+    const baseUrl = String(config?.tasker?.baseUrl || '').trim()
+    if (baseUrl) {
+      logger.notice('conversation_adapter_tasker', { baseUrl })
+      return new TaskerConversationAdapter({ logger, taskerBus: buses.tasker, config })
+    }
+
+    logger.notice('conversation_adapter_fake', {})
+    return new FakeConversationAdapter()
+  })()
 
   const domainControllers = makeDomainControllers({ logger, buses, clock, config })
   startAll(domainControllers)
@@ -36,6 +49,18 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     conversation,
     config,
   })
+
+  const serverPort = Number(config?.server?.port ?? 8787)
+
+  const webServer = new WebServer({
+    logger,
+    buses,
+    getStatus: () => core.getSnapshot(),
+    getConfig: () => config,
+    port: serverPort,
+  })
+
+  webServer.start()
 
   const hw = makeHwDrivers({ logger, buses, clock, config })
 
@@ -54,7 +79,7 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     startAll(hw.drivers)
   }
 
-  logger.info('context_created', { nowMs: clock.nowMs(), mode })
+  logger.info('context_created', { nowMs: clock.nowMs(), mode, serverPort })
 
   const dispose = function dispose() {
     for (const t of Object.values(taps)) {
@@ -63,6 +88,10 @@ export const makeContext = function makeContext({ logger, config, mode }) {
 
     disposeAll(hw.drivers)
     disposeSignals(hw.signals)
+
+    if (webServer) {
+      webServer.dispose()
+    }
 
     core.dispose()
     scheduler.dispose()
@@ -80,6 +109,7 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     core,
     config,
     hw,
+    webServer,
     dispose,
   }
 }
