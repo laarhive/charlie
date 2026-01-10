@@ -5,11 +5,12 @@
 - Reproduce scenarios deterministically using clock controls
 
 ## Commands
+- `inject on|off|status`
 - `presence front|back on|off`
 - `vibration low|high`
 - `button short|long`
 - `clock now|status|freeze|resume|+MS|set YYYY-MM-DD HH:MM`
-- `tap main|presence|vibration|button|all on|off|status`
+- `tap main|presence|vibration|button|tasker|all on|off|status`
 - `core state`
 - `config load <filename>|print`
 
