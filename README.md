@@ -71,6 +71,8 @@ This starts the full Charlie pipeline (drivers → domain controllers → core) 
   - inspecting core state and config
   - controlling the clock (freeze / advance)
   - optionally injecting semantic events (guarded by inject on|off)
+* Features:
+  - context-aware tab completion (press Tab to explore available commands)
 
 > Note:<br>
 > In virt mode, drivers use virtual signals as stand-ins for real hardware.<br>

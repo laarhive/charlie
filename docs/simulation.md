@@ -14,6 +14,9 @@
 - `core state`
 - `config load <filename>|print`
 
+> CLI features context-aware tab completion (press Tab to explore available commands)
+
+
 ## Philosophy
 Simulation commands inject semantic events directly into the main bus.
 This allows validation of:
