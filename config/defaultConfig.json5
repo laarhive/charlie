@@ -66,11 +66,10 @@
 
   tasker: {
     baseUrl: "http://127.0.0.1:8787/tasker", // simulator in virt/dev
-    timeoutMs: 2000,
-    token: {
-      header: "X-Tasker-Token",
-      value: "optional-secret"
-    }
+    timeoutMs: 2500,
+    retries: 1,
+    retryDelayMs: 300,
+    token: { header: "X-Tasker-Token", value: "..." }
   },
 
   promptText: {
