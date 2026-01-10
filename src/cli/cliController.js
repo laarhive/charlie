@@ -1,6 +1,7 @@
 // src/sim/cliSimController.js
 import readline from 'node:readline'
 import eventTypes from '../core/eventTypes.js'
+import makeCliCompleter from './cliCompleter.js'
 
 /**
  * CLI controller (optional). Can run in hw or virt mode.
@@ -10,7 +11,7 @@ import eventTypes from '../core/eventTypes.js'
  * const cli = new CliSimController({ logger, parser, loadConfig, getContext, setContext, mode: 'virt' })
  * cli.start()
  */
-export class CliSimController {
+export class CliController {
   #logger
   #parser
   #loadConfig
@@ -40,6 +41,7 @@ export class CliSimController {
       input: process.stdin,
       output: process.stdout,
       terminal: true,
+      completer: makeCliCompleter({ getContext: this.#getContext }),
     })
 
     this.#rl.on('line', (line) => {
@@ -369,4 +371,4 @@ export class CliSimController {
   }
 }
 
-export default CliSimController
+export default CliController

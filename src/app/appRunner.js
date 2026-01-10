@@ -2,8 +2,8 @@
 import process from 'node:process'
 
 import Logger from '../logging/logger.js'
-import CliParser from './cliParser.js'
-import CliSimController from '../sim/cliSimController.js'
+import CliParser from '../cli/cliParser.js'
+import CliController from '../cli/cliController.js'
 
 import parseArgs from './args.js'
 import { loadConfigFile } from './configLoader.js'
@@ -65,7 +65,7 @@ export class AppRunner {
     if (args.cli) {
       const parser = new CliParser()
 
-      const cli = new CliSimController({
+      const cli = new CliController({
         logger: this.#logger,
         parser,
         loadConfig,
