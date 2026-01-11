@@ -187,6 +187,29 @@ export class CliParser {
       return { kind: 'error', message: 'usage: core state' }
     }
 
+    if (a === 'virt') {
+      if (b === 'list') {
+        return { kind: 'virtList' }
+      }
+
+      if (b === 'set') {
+        const sensorId = c
+        const action = rest[0]
+
+        if (!sensorId) {
+          return { kind: 'error', message: 'usage: virt set <sensorId> on|off' }
+        }
+
+        if (action !== 'on' && action !== 'off') {
+          return { kind: 'error', message: 'usage: virt set <sensorId> on|off' }
+        }
+
+        return { kind: 'virtSet', sensorId, value: action === 'on' }
+      }
+
+      return { kind: 'error', message: 'usage: virt list|set <sensorId> on|off' }
+    }
+
     return { kind: 'error', message: 'unknown command, type: help' }
   }
 }

@@ -262,15 +262,20 @@ const traverseForSuggestions = function traverseForSuggestions({ root, tokens, g
  * - help
  * - exit
  * - inject on|off|status
- * - tap <bus> on|off|status   (bus list comes from context.buses + "all")
- * - presence <zone> on|off    (zones come from config.zones keys or default front/back)
+ * - tap <bus> on|off|status
+ *   - <bus> is dynamic: context.buses keys + "all"
+ * - presence <zone> on|off
+ *   - <zone> is dynamic: config.zones keys or default front/back
  * - vibration low|high
  * - button short|long
  * - clock now|status|freeze|resume|set|+<ms>
  * - core state
- * - config load <file>|print  (load suggests files under /config)
+ * - config load <file>|print
+ *   - <file> is dynamic: files under /config (*.json, *.json5)
  * - virt list|set <sensorId> on|off
+ *   - <sensorId> is dynamic: config.sensors[].id
  * - driver list|enable|disable <sensorId>
+ *   - <sensorId> is dynamic: config.sensors[].id
  *
  * @param {object} args
  * @param {() => any} args.getContext Must return current app context

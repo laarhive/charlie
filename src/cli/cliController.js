@@ -215,7 +215,54 @@ export class CliController {
       return
     }
 
+    if (cmd.kind === 'virtList') {
+      this.#virtList()
+      return
+    }
+
+    if (cmd.kind === 'virtSet') {
+      this.#virtSet(cmd.sensorId, cmd.value)
+      return
+    }
+
     console.log('unknown command, type: help')
+  }
+
+  #virtList() {
+    const { hw } = this.#getContext()
+    const m = hw?.signals?.presence
+
+    if (!(m instanceof Map)) {
+      this.#logger.warning('virt_no_presence_signals', {})
+      return
+    }
+
+    const ids = Array.from(m.keys()).sort()
+    this.#logger.info('virt_signals', { presence: ids })
+  }
+
+  #virtSet(sensorId, value) {
+    const { hw } = this.#getContext()
+    const m = hw?.signals?.presence
+
+    if (!(m instanceof Map)) {
+      this.#logger.warning('virt_no_presence_signals', { sensorId })
+      return
+    }
+
+    const sig = m.get(sensorId)
+    if (!sig) {
+      this.#logger.warning('virt_unknown_signal', { sensorId })
+      return
+    }
+
+    if (typeof sig.set !== 'function') {
+      this.#logger.warning('virt_signal_not_settable', { sensorId })
+      return
+    }
+
+    sig.set(Boolean(value))
+    this.#logger.notice('virt_set', { sensorId, value: Boolean(value) })
   }
 
   #guardInject(fn) {
@@ -270,13 +317,25 @@ export class CliController {
   }
 
   #publishPresence(zone, present) {
-    const { clock, buses } = this.#getContext()
+    const { clock, buses, config } = this.#getContext()
+
+    const sensors = Array.isArray(config?.sensors) ? config.sensors : []
+    const match = sensors.find((s) =>
+      s?.enabled &&
+      s?.role === 'presence' &&
+      s?.zone === zone
+    )
+
+    if (!match) {
+      this.#logger.warning('inject_presence_no_sensor', { zone })
+      return
+    }
 
     const event = {
       type: present ? eventTypes.presence.enter : eventTypes.presence.exit,
       ts: clock.nowMs(),
       source: 'cliInject',
-      payload: { zone },
+      payload: { zone, sensorId: match.id },
     }
 
     this.#logger.debug('event_publish', { bus: 'main', event })
@@ -284,13 +343,27 @@ export class CliController {
   }
 
   #publishVibration(level) {
-    const { clock, buses } = this.#getContext()
+    const { clock, buses, config } = this.#getContext()
+
+    const mapped = level === 'high' ? 'heavy' : 'light'
+
+    const sensors = Array.isArray(config?.sensors) ? config.sensors : []
+    const match = sensors.find((s) =>
+      s?.enabled &&
+      s?.role === 'vibration' &&
+      (s?.level === mapped || s?.params?.level === mapped)
+    )
+
+    if (!match) {
+      this.#logger.warning('inject_vibration_no_sensor', { level, mapped })
+      return
+    }
 
     const event = {
       type: eventTypes.vibration.hit,
       ts: clock.nowMs(),
       source: 'cliInject',
-      payload: { level },
+      payload: { level, mapped, sensorId: match.id },
     }
 
     this.#logger.debug('event_publish', { bus: 'main', event })
@@ -298,13 +371,24 @@ export class CliController {
   }
 
   #publishButton(pressType) {
-    const { clock, buses } = this.#getContext()
+    const { clock, buses, config } = this.#getContext()
+
+    const sensors = Array.isArray(config?.sensors) ? config.sensors : []
+    const match = sensors.find((s) =>
+      s?.enabled &&
+      s?.role === 'button'
+    )
+
+    if (!match) {
+      this.#logger.warning('inject_button_no_sensor', { pressType })
+      return
+    }
 
     const event = {
       type: eventTypes.button.press,
       ts: clock.nowMs(),
       source: 'cliInject',
-      payload: { kind: pressType },
+      payload: { kind: pressType, sensorId: match.id },
     }
 
     this.#logger.debug('event_publish', { bus: 'main', event })
@@ -356,6 +440,8 @@ export class CliController {
     console.log('  presence front|back on|off')
     console.log('  vibration low|high')
     console.log('  button short|long')
+    console.log('  virt list|set <sensorId> on|off')
+    console.log('  driver list|enable|disable <sensorId>')
     console.log('  tap main|presence|vibration|button|tasker|all on|off|status')
     console.log('  clock now|status|freeze|resume|+MS|set YYYY-MM-DD HH:MM')
     console.log('  core state')
