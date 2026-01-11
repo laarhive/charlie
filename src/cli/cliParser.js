@@ -210,6 +210,32 @@ export class CliParser {
       return { kind: 'error', message: 'usage: virt list|set <sensorId> on|off' }
     }
 
+    if (a === 'driver') {
+      if (b === 'list') {
+        return { kind: 'driverList' }
+      }
+
+      if (b === 'enable') {
+        const sensorId = c
+        if (!sensorId) {
+          return { kind: 'error', message: 'usage: driver enable <sensorId>' }
+        }
+
+        return { kind: 'driverEnable', sensorId }
+      }
+
+      if (b === 'disable') {
+        const sensorId = c
+        if (!sensorId) {
+          return { kind: 'error', message: 'usage: driver disable <sensorId>' }
+        }
+
+        return { kind: 'driverDisable', sensorId }
+      }
+
+      return { kind: 'error', message: 'usage: driver list|enable|disable <sensorId>' }
+    }
+
     return { kind: 'error', message: 'unknown command, type: help' }
   }
 }

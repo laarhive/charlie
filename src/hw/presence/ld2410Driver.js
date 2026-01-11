@@ -4,15 +4,14 @@ import domainEventTypes from '../../domain/domainEventTypes.js'
 /**
  * LD2410 driver (binary output).
  *
- * Reads a binary signal and publishes raw presence events to the presence domain bus:
- * - type: domainEventTypes.presence.binary
- * - payload: { sensorId, zone, present }
+ * Publishes raw events to presenceBus:
+ * - domainEventTypes.presence.binary
  *
- * No debounce/hysteresis here. That belongs in BinaryPresenceController.
+ * Runtime enable/disable supported via setEnabled().
  *
  * @example
  * const driver = new Ld2410Driver({ logger, presenceBus, clock, sensor, signal })
- * driver.start()
+ * driver.setEnabled(false)
  */
 export class Ld2410Driver {
   #logger
@@ -24,6 +23,7 @@ export class Ld2410Driver {
   #unsubscribe
   #started
   #last
+  #enabled
 
   constructor({ logger, presenceBus, clock, sensor, signal }) {
     this.#logger = logger
@@ -35,6 +35,40 @@ export class Ld2410Driver {
     this.#unsubscribe = null
     this.#started = false
     this.#last = null
+    this.#enabled = true
+  }
+
+  /**
+   * @returns {string}
+   *
+   * @example
+   * const id = driver.getSensorId()
+   */
+  getSensorId() {
+    return this.#sensor.id
+  }
+
+  /**
+   * @returns {boolean}
+   *
+   * @example
+   * if (driver.isEnabled()) ...
+   */
+  isEnabled() {
+    return this.#enabled
+  }
+
+  /**
+   * Enables/disables publishing from this driver.
+   *
+   * @param {boolean} enabled
+   *
+   * @example
+   * driver.setEnabled(false)
+   */
+  setEnabled(enabled) {
+    this.#enabled = Boolean(enabled)
+    this.#logger.notice('driver_enabled_changed', { sensorId: this.#sensor.id, enabled: this.#enabled })
   }
 
   /**
@@ -88,6 +122,11 @@ export class Ld2410Driver {
   }
 
   #publish(present) {
+    if (!this.#enabled) {
+      this.#logger.debug('driver_publish_skipped', { sensorId: this.#sensor.id, present: Boolean(present) })
+      return
+    }
+
     const event = {
       type: domainEventTypes.presence.binary,
       ts: this.#clock.nowMs(),

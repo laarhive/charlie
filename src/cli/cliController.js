@@ -225,6 +225,21 @@ export class CliController {
       return
     }
 
+    if (cmd.kind === 'driverList') {
+      this.#driverList()
+      return
+    }
+
+    if (cmd.kind === 'driverEnable') {
+      this.#driverSetEnabled(cmd.sensorId, true)
+      return
+    }
+
+    if (cmd.kind === 'driverDisable') {
+      this.#driverSetEnabled(cmd.sensorId, false)
+      return
+    }
+
     console.log('unknown command, type: help')
   }
 
@@ -263,6 +278,47 @@ export class CliController {
 
     sig.set(Boolean(value))
     this.#logger.notice('virt_set', { sensorId, value: Boolean(value) })
+  }
+
+  #driverList() {
+    const { hw } = this.#getContext()
+    const m = hw?.driverBySensorId
+
+    if (!(m instanceof Map)) {
+      this.#logger.warning('driver_map_missing', {})
+      return
+    }
+
+    const items = Array.from(m.entries()).map(([sensorId, driver]) => ({
+      sensorId,
+      enabled: typeof driver?.isEnabled === 'function' ? driver.isEnabled() : null,
+    }))
+
+    this.#logger.info('driver_list', { drivers: items })
+  }
+
+  #driverSetEnabled(sensorId, enabled) {
+    const { hw } = this.#getContext()
+    const m = hw?.driverBySensorId
+
+    if (!(m instanceof Map)) {
+      this.#logger.warning('driver_map_missing', { sensorId })
+      return
+    }
+
+    const driver = m.get(sensorId)
+    if (!driver) {
+      this.#logger.warning('driver_not_found', { sensorId })
+      return
+    }
+
+    if (typeof driver.setEnabled !== 'function') {
+      this.#logger.warning('driver_not_toggleable', { sensorId })
+      return
+    }
+
+    driver.setEnabled(Boolean(enabled))
+    this.#logger.notice('driver_toggled', { sensorId, enabled: Boolean(enabled) })
   }
 
   #guardInject(fn) {

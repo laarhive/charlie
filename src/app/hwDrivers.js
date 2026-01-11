@@ -3,8 +3,12 @@ import Ld2410Driver from '../hw/presence/ld2410Driver.js'
 import VirtualBinarySignal from '../hw/signal/virtualBinarySignal.js'
 
 /**
- * Builds HW drivers. For now, LD2410 drivers are backed by VirtualBinarySignal
- * so hw mode can run on Win11. Swap VirtualBinarySignal with GPIO later on RPi.
+ * Builds HW drivers. In virt mode these are backed by VirtualBinarySignal.
+ *
+ * Returns:
+ * - drivers: array of driver instances
+ * - driverBySensorId: Map(sensorId -> driver)
+ * - signals: { presence: Map(sensorId -> VirtualBinarySignal) }
  *
  * @example
  * const hw = makeHwDrivers({ logger, buses, clock, config })
@@ -14,6 +18,7 @@ export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, conf
 
   const presenceSignals = new Map()
   const drivers = []
+  const driverBySensorId = new Map()
 
   for (const sensor of sensors) {
     if (!sensor?.enabled) {
@@ -33,23 +38,19 @@ export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, conf
       })
 
       drivers.push(driver)
+      driverBySensorId.set(sensor.id, driver)
     }
   }
 
   return {
     drivers,
+    driverBySensorId,
     signals: {
       presence: presenceSignals,
     },
   }
 }
 
-/**
- * Disposes all virtual signals held in maps.
- *
- * @example
- * disposeSignals(hw.signals)
- */
 export const disposeSignals = function disposeSignals(signals) {
   for (const m of Object.values(signals || {})) {
     if (!(m instanceof Map)) {
