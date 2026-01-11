@@ -31,6 +31,7 @@ Charlie is a distributed system with two main components:
 - [Node.js app architecture](docs/node-architecture.md)
 - [Configuration](docs/configuration.md)
 - [Simulation mode](docs/simulation.md)
+- [Raspberry Pi GPIO setup (pigpio)](docs/setup/raspberry-pi-gpio.md)
 
 ## Quick start (development)
 Install dependencies
