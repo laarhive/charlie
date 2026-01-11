@@ -1,4 +1,8 @@
 {
+  gpio: {
+    backend: 'pigpio', // or 'gpiod'
+  },
+
   sensors: [
     {
       id: 'presenceFront1',
@@ -6,7 +10,8 @@
       role: 'presence',
       zone: 'front',
       enabled: true,
-      params: { debounceOnMs: 150, debounceOffMs: 400 }
+      params: { debounceOnMs: 150, debounceOffMs: 400 },
+      hw: { chip: 'gpiochip0', line: 17, activeHigh: true }
     },
     {
       id: 'presenceBack1',
@@ -14,7 +19,8 @@
       role: 'presence',
       zone: 'back',
       enabled: true,
-      params: { debounceOnMs: 150, debounceOffMs: 400 }
+      params: { debounceOnMs: 150, debounceOffMs: 400 },
+      hw: { chip: 'gpiochip0', line: 27, activeHigh: true }
     },
 
     {
@@ -23,7 +29,8 @@
       role: 'vibration',
       enabled: true,
       level: 'light',
-      params: { cooldownMs: 600 }
+      params: { cooldownMs: 600 },
+      hw: { chip: 'gpiochip0', line: 22, activeHigh: true }
     },
     {
       id: 'vibHeavy1',
@@ -31,7 +38,8 @@
       role: 'vibration',
       enabled: true,
       level: 'heavy',
-      params: { cooldownMs: 600 }
+      params: { cooldownMs: 600 },
+      hw: { chip: 'gpiochip0', line: 23, activeHigh: true }
     },
 
     {
@@ -39,7 +47,8 @@
       type: 'gpioButton',
       role: 'button',
       enabled: true,
-      params: { cooldownMs: 250 }
+      params: { cooldownMs: 250 },
+      hw: { chip: 'gpiochip0', line: 24, activeHigh: true }
     }
   ],
 

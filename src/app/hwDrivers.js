@@ -1,24 +1,39 @@
-// src/app/hwDrivers.js
 import Ld2410Driver from '../hw/presence/ld2410Driver.js'
-import VirtualBinarySignal from '../hw/signal/virtualBinarySignal.js'
+import Sw420Driver from '../hw/vibration/sw420Driver.js'
+import GpioButtonDriver from '../hw/button/gpioButtonDriver.js'
 
-/**
- * Builds HW drivers. In virt mode these are backed by VirtualBinarySignal.
- *
- * Returns:
- * - drivers: array of driver instances
- * - driverBySensorId: Map(sensorId -> driver)
- * - signals: { presence: Map(sensorId -> VirtualBinarySignal) }
- *
- * @example
- * const hw = makeHwDrivers({ logger, buses, clock, config })
- */
-export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, config }) {
+import VirtualBinarySignal from '../hw/signal/virtualBinarySignal.js'
+import createGpioBinarySignal from '../hw/signal/createGpioBinarySignal.js'
+
+export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, config, mode }) {
   const sensors = Array.isArray(config?.sensors) ? config.sensors : []
 
-  const presenceSignals = new Map()
   const drivers = []
   const driverBySensorId = new Map()
+
+  const signals = {
+    presence: new Map(),
+    vibration: new Map(),
+    button: new Map(),
+  }
+
+  const makeSignal = (sensor) => {
+    if (mode === 'virt') {
+      return new VirtualBinarySignal(false)
+    }
+
+    // hw mode
+    const backend = config?.gpio?.backend || 'pigpio'
+    const hw = sensor?.hw || {}
+
+    return createGpioBinarySignal({
+      backend,
+      chip: hw.chip,
+      line: hw.line,
+      activeHigh: hw.activeHigh !== false,
+      glitchFilterUs: hw.glitchFilterUs,
+    })
+  }
 
   for (const sensor of sensors) {
     if (!sensor?.enabled) {
@@ -26,8 +41,8 @@ export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, conf
     }
 
     if (sensor.role === 'presence' && sensor.type === 'ld2410') {
-      const signal = new VirtualBinarySignal(false)
-      presenceSignals.set(sensor.id, signal)
+      const signal = makeSignal(sensor)
+      signals.presence.set(sensor.id, signal)
 
       const driver = new Ld2410Driver({
         logger,
@@ -39,15 +54,48 @@ export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, conf
 
       drivers.push(driver)
       driverBySensorId.set(sensor.id, driver)
+      continue
+    }
+
+    if (sensor.role === 'vibration' && sensor.type === 'sw420') {
+      const signal = makeSignal(sensor)
+      signals.vibration.set(sensor.id, signal)
+
+      const driver = new Sw420Driver({
+        logger,
+        vibrationBus: buses.vibration,
+        clock,
+        sensor,
+        signal,
+      })
+
+      drivers.push(driver)
+      driverBySensorId.set(sensor.id, driver)
+      continue
+    }
+
+    if (sensor.role === 'button' && sensor.type === 'gpioButton') {
+      const signal = makeSignal(sensor)
+      signals.button.set(sensor.id, signal)
+
+      const driver = new GpioButtonDriver({
+        logger,
+        buttonBus: buses.button,
+        clock,
+        sensor,
+        signal,
+      })
+
+      drivers.push(driver)
+      driverBySensorId.set(sensor.id, driver)
+      continue
     }
   }
 
   return {
     drivers,
     driverBySensorId,
-    signals: {
-      presence: presenceSignals,
-    },
+    signals,
   }
 }
 

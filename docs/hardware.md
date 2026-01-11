@@ -19,14 +19,14 @@
 
 ### Vibration
 - SW-420 x2 (light/heavy) initially
-- Future option: accelerometer for richer vibration magnitude
+- BMI160 (DFROBOT SEN0250) accelerometer for richer vibration magnitude
 
 ### Button
 - Physical pushbutton for override/service mode
+- Reed Sensor 10-15AT: MK13-1B90B-500W 
 
 ### LED
 - KY-016 RGB module (output only)
-or 
 - WS2812D (NeoPixel) for dynamic effects
 
 ## Notes on deployment

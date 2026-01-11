@@ -62,18 +62,17 @@ export const makeContext = function makeContext({ logger, config, mode }) {
 
   webServer.start()
 
-  const hw = makeHwDrivers({ logger, buses, clock, config })
+  const hw = makeHwDrivers({ logger, buses, clock, config, mode })
 
   if (mode === 'hw') {
-    logger.notice('hw_mode_no_virtual_signals', {
-      note: 'HW mode does not start virtual drivers. Real GPIO/serial drivers will be wired here.',
-    })
+    logger.notice('hw_mode_starting_drivers', { driverCount: hw.drivers.length })
+    startAll(hw.drivers)
   }
 
   if (mode === 'virt') {
     logger.notice('virt_mode_virtual_signals', {
-      note: 'Using VirtualBinarySignal for ld2410 inputs. Replace with GPIO on RPi when in hw mode.',
-      ld2410Count: hw.drivers.length,
+      note: 'Virtual drivers/signals enabled. Use virt set to drive inputs.',
+      driverCount: hw.drivers.length,
     })
 
     startAll(hw.drivers)

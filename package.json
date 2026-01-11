@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "json5": "^2.2.3",
+    "pigpio": "^3.3.1",
     "uWebSockets.js": "uNetworking/uWebSockets.js#v20.56.0",
     "winston": "^3.19.0"
   }
