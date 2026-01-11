@@ -58,8 +58,8 @@ This starts the full Charlie pipeline (drivers → domain controllers → core) 
 `--mode hw`
 * Starts the full hardware pipeline using real hardware drivers (GPIO / serial)
 * Domain buses and domain controllers are active
-* CLI is disabled by default (can be enabled with --cli)
-* CLI injection is disabled by default (can be enabled at runtime with inject on)
+* CLI is disabled by default (can be enabled with `--cli`)
+* CLI injection is disabled by default (can be enabled at runtime with `inject on`)
 * Intended for:
   - deployment on Raspberry Pi
   - real sensor operation
@@ -70,7 +70,7 @@ This starts the full Charlie pipeline (drivers → domain controllers → core) 
   - enabling/disabling bus taps
   - inspecting core state and config
   - controlling the clock (freeze / advance)
-  - optionally injecting semantic events (guarded by inject on|off)
+  - optionally injecting semantic events (guarded by `inject on|off`)
 * Features:
   - context-aware tab completion (press Tab to explore available commands)
 
