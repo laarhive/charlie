@@ -291,6 +291,9 @@ export class CliController {
 
     const items = Array.from(m.entries()).map(([sensorId, driver]) => ({
       sensorId,
+      type: typeof driver?.getType === 'function' ? driver.getType() : null,
+      role: typeof driver?.getRole === 'function' ? driver.getRole() : null,
+      bus: typeof driver?.getBus === 'function' ? driver.getBus() : null,
       enabled: typeof driver?.isEnabled === 'function' ? driver.isEnabled() : null,
     }))
 

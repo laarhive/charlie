@@ -121,6 +121,18 @@ export class Ld2410Driver {
     this.#logger.notice('driver_disposed', { sensorId: this.#sensor.id })
   }
 
+  getType() {
+    return this.#sensor.type
+  }
+
+  getRole() {
+    return this.#sensor.role
+  }
+
+  getBus() {
+    return 'presence'
+  }
+
   #publish(present) {
     if (!this.#enabled) {
       this.#logger.debug('driver_publish_skipped', { sensorId: this.#sensor.id, present: Boolean(present) })
