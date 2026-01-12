@@ -70,7 +70,7 @@ export class CliWsController {
       process.exit(0)
     })
 
-    printHelp({ mode: 'ws' })
+    printHelp({ mode: 'local' })
     this.#updatePrompt()
     this.#rl.prompt()
   }
@@ -90,7 +90,7 @@ export class CliWsController {
     }
 
     if (cmd.kind === 'help') {
-      this.#printHelp()
+      printHelp({ mode: 'local' })
       return
     }
 

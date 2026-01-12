@@ -77,7 +77,7 @@ export class CliController {
     }
 
     if (cmd.kind === 'help') {
-      this.#printHelp()
+      printHelp()
       return
     }
 
