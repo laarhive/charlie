@@ -82,7 +82,7 @@ export default function ControlService ({ buses, hw, logger }) {
 
     return {
       ok: true,
-      sensorId,
+      id: sensorId,
       enabled: typeof driver.isEnabled === 'function' ? driver.isEnabled() : enabled === true
     }
   }
@@ -110,7 +110,13 @@ export default function ControlService ({ buses, hw, logger }) {
     return null
   }
 
+  const getSnapshot = () => ({
+    injectEnabled
+  })
+
   return {
+    getSnapshot,
+
     injectEnable: async () => setInjectEnabled({ enabled: true }),
     injectDisable: async () => setInjectEnabled({ enabled: false }),
     injectEvent: async (payload) => injectEvent(payload),

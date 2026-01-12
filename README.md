@@ -31,50 +31,114 @@ Charlie is a distributed system with two main components:
 - [Node.js app architecture](docs/node-architecture.md)
 - [Configuration](docs/configuration.md)
 - [Simulation mode](docs/simulation.md)
+
+## Raspberry Pi setup
+- [Raspberry Pi Deployment checklist](docs/setup/raspberry-pi-deployment-checklist.md)
 - [Raspberry Pi GPIO setup (pigpio)](docs/setup/raspberry-pi-gpio.md)
+- [Raspberry Pi systemd service (Charlie)](docs/setup/raspberry-pi-systemd.md)
 
 ## Quick start (development)
+
 Install dependencies
 
-Create config/defaultConfig.json5
+Create `config/defaultConfig.json5`
 
-Run in virtual hardware mode with CLI enabled:
+### Start Charlie (daemon) in virtual hardware mode
 ```shell
-node src/app/appRunner.js --mode virt --cli --log-level info
+node src/app/appRunner.js --cmd daemon --mode virt --log-level info
 ```
-This starts the full Charlie pipeline (drivers → domain controllers → core) using virtual hardware drivers, with the CLI attached for debugging and injection.
+
+This starts the full Charlie pipeline (drivers → domain controllers → core) using **virtual hardware drivers** and exposes:
+- WebSocket control API (`/ws`)
+- REST API (`/api/*`)
+- Tasker simulation endpoints (`/tasker/*`)
+
+No interactive CLI is attached in this mode.
+
+### Attach the CLI (local or remote)
+In another terminal (same machine, SSH session, or another computer):
+
+```shell
+node src/app/appRunner.js --cmd cli --host 127.0.0.1 --port 8787
+```
+
+This connects to the running Charlie daemon over WebSocket and provides an interactive CLI for debugging, inspection, and controlled injection.
+
+---
 
 ## Modes
 
-`--mode virt`
-* Starts the full hardware pipeline using virtual drivers/signals
-* Domain buses and domain controllers are active
-* Raw domain events are produced by virtual drivers
-* CLI injection is enabled by default
-* Intended for:
-  - development on non-RPi machines (Win11/macOS)
+### `--mode virt`
+- Starts the full hardware pipeline using **virtual drivers / signals**
+- Domain buses and domain controllers are active
+- Raw domain events are produced by virtual drivers
+- Injection can be enabled at runtime via the CLI (`inject on`)
+- Intended for:
+  - development on non-RPi machines (Win11 / macOS / Linux)
   - testing driver → domain → core wiring
-  - troubleshooting without physical hardware
+  - troubleshooting logic without physical hardware
 
-`--mode hw`
-* Starts the full hardware pipeline using real hardware drivers (GPIO / serial)
-* Domain buses and domain controllers are active
-* CLI is disabled by default (can be enabled with `--cli`)
-* CLI injection is disabled by default (can be enabled at runtime with `inject on`)
-* Intended for:
+### `--mode hw`
+- Starts the full hardware pipeline using **real hardware drivers** (GPIO / serial)
+- Domain buses and domain controllers are active
+- Injection is **disabled by default** (can be enabled explicitly via CLI)
+- Intended for:
   - deployment on Raspberry Pi
   - real sensor operation
 
-`--cli` (optional)
-* Attaches the interactive CLI in either mode
-* Allows:
-  - enabling/disabling bus taps
-  - inspecting core state and config
-  - controlling the clock (freeze / advance)
-  - optionally injecting semantic events (guarded by `inject on|off`)
-* Features:
-  - context-aware tab completion (press Tab to explore available commands)
+---
 
-> Note:<br>
-> In virt mode, drivers use virtual signals as stand-ins for real hardware.<br>
-> In hw mode, virtual drivers are not started; real GPIO/serial drivers are expected to be wired instead.
+## Command modes
+
+### `--cmd daemon` (default)
+- Runs Charlie as a **long-running service**
+- Starts:
+  - hardware drivers (virtual or real)
+  - domain controllers
+  - core state machine
+  - Web server (WS + REST)
+- No interactive CLI is attached
+- Intended for:
+  - systemd service execution
+  - headless operation
+
+### `--cmd cli`
+- Starts a **standalone CLI client**
+- Connects to a running Charlie daemon via WebSocket
+- Can be run:
+  - on the same machine
+  - over SSH
+  - on another computer on the network
+- Allows:
+  - inspecting core state and config
+  - enabling/disabling bus taps (live event streaming)
+  - enabling/disabling injection
+  - injecting semantic events (presence / vibration / button)
+  - enabling/disabling hardware drivers
+
+---
+
+## Legacy local CLI (`--cli`, optional)
+
+```shell
+node src/app/appRunner.js --mode virt --cli
+```
+
+- Attaches the interactive CLI **inside the daemon process**
+- Mainly intended for:
+  - early development
+  - quick local debugging
+- Not suitable for:
+  - systemd services
+  - remote access
+  - multiple concurrent CLI sessions
+
+> For normal operation and deployment, prefer `--cmd daemon` + `--cmd cli`.
+
+---
+
+> **Notes**  
+> • In `virt` mode, drivers use virtual signals as stand-ins for real hardware.  
+> • In `hw` mode, real GPIO / serial drivers are expected to be wired.  
+> • Multiple CLI clients can attach to the same running daemon simultaneously.  
+> • In production, the WebSocket server can be bound to `localhost` and accessed via SSH tunneling or a reverse proxy.

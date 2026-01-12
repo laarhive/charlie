@@ -5,8 +5,9 @@
   "packageManager": "yarn@4.12.0",
   "private": true,
   "scripts": {
-    "run:sim": "node src/app/appRunner.js --mode sim",
-    "run:hw": "node src/app/appRunner.js --mode hw",
+    "start:daemon": "node src/app/appRunner.js --mode hw",
+    "start:virt": "node src/app/appRunner.js --mode virt",
+    "cli": "node src/app/cliRunner.js --host 127.0.0.1 --port 8787",
     "test": "mocha \"test/**/*.spec.js\""
   },
   "devDependencies": {
@@ -17,6 +18,7 @@
     "json5": "^2.2.3",
     "pigpio": "^3.3.1",
     "uWebSockets.js": "uNetworking/uWebSockets.js#v20.56.0",
-    "winston": "^3.19.0"
+    "winston": "^3.19.0",
+    "ws": "^8.19.0"
   }
 }

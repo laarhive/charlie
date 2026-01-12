@@ -34,7 +34,8 @@ const RAW_RUNTIME_STATE =
           ["mocha", "npm:11.7.5"],\
           ["pigpio", "npm:3.3.1"],\
           ["uWebSockets.js", "https://github.com/uNetworking/uWebSockets.js.git#commit=d04e707a1292928d50163ff7545e45c3e84c5ec3"],\
-          ["winston", "npm:3.19.0"]\
+          ["winston", "npm:3.19.0"],\
+          ["ws", "virtual:b8efeeedcd5816f9c19c2cc9660717af6d7f021356a59d58df31f26be7531b2dbbeab4c5a6584cd098d370903f196d9205f3403751783dbf3b5c6a74a45ec036#npm:8.19.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -332,7 +333,8 @@ const RAW_RUNTIME_STATE =
           ["mocha", "npm:11.7.5"],\
           ["pigpio", "npm:3.3.1"],\
           ["uWebSockets.js", "https://github.com/uNetworking/uWebSockets.js.git#commit=d04e707a1292928d50163ff7545e45c3e84c5ec3"],\
-          ["winston", "npm:3.19.0"]\
+          ["winston", "npm:3.19.0"],\
+          ["ws", "virtual:b8efeeedcd5816f9c19c2cc9660717af6d7f021356a59d58df31f26be7531b2dbbeab4c5a6584cd098d370903f196d9205f3403751783dbf3b5c6a74a45ec036#npm:8.19.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -1700,6 +1702,32 @@ const RAW_RUNTIME_STATE =
           ["string-width", "npm:5.1.2"],\
           ["strip-ansi", "npm:7.1.2"],\
           ["wrap-ansi", "npm:8.1.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["ws", [\
+      ["npm:8.19.0", {\
+        "packageLocation": "./.yarn/cache/ws-npm-8.19.0-c967c046a5-4741d9b9bc.zip/node_modules/ws/",\
+        "packageDependencies": [\
+          ["ws", "npm:8.19.0"]\
+        ],\
+        "linkType": "SOFT"\
+      }],\
+      ["virtual:b8efeeedcd5816f9c19c2cc9660717af6d7f021356a59d58df31f26be7531b2dbbeab4c5a6584cd098d370903f196d9205f3403751783dbf3b5c6a74a45ec036#npm:8.19.0", {\
+        "packageLocation": "./.yarn/__virtual__/ws-virtual-65a7a77f71/0/cache/ws-npm-8.19.0-c967c046a5-4741d9b9bc.zip/node_modules/ws/",\
+        "packageDependencies": [\
+          ["@types/bufferutil", null],\
+          ["@types/utf-8-validate", null],\
+          ["bufferutil", null],\
+          ["utf-8-validate", null],\
+          ["ws", "virtual:b8efeeedcd5816f9c19c2cc9660717af6d7f021356a59d58df31f26be7531b2dbbeab4c5a6584cd098d370903f196d9205f3403751783dbf3b5c6a74a45ec036#npm:8.19.0"]\
+        ],\
+        "packagePeers": [\
+          "@types/bufferutil",\
+          "@types/utf-8-validate",\
+          "bufferutil",\
+          "utf-8-validate"\
         ],\
         "linkType": "HARD"\
       }]\

@@ -4,18 +4,12 @@ import process from 'node:process'
 import Logger from '../logging/logger.js'
 import CliParser from '../cli/cliParser.js'
 import CliController from '../cli/cliController.js'
+import CliWsController from '../cli/cliWsController.js'
 
 import parseArgs from './args.js'
 import { loadConfigFile } from './configLoader.js'
 import makeContext from './context.js'
 
-/**
- * App runner for Charlie.
- *
- * @example
- * const runner = new AppRunner()
- * runner.run(process.argv)
- */
 export class AppRunner {
   #context
   #logger
@@ -25,18 +19,32 @@ export class AppRunner {
     this.#logger = null
   }
 
-  /**
-   * Runs the app with argv.
-   *
-   * @param {string[]} argv
-   *
-   * @example
-   * runner.run(process.argv)
-   */
   run(argv) {
     const args = parseArgs(argv)
     this.#logger = new Logger({ level: args.level })
 
+    if (args.cmd === 'cli') {
+      this.#runWsCli(args)
+      return
+    }
+
+    this.#runDaemon(args)
+  }
+
+  #runWsCli(args) {
+    const parser = new CliParser()
+    const wsUrl = `ws://${args.host}:${args.port}/ws`
+
+    const cli = new CliWsController({
+      logger: this.#logger,
+      parser,
+      wsUrl,
+    })
+
+    cli.start()
+  }
+
+  #runDaemon(args) {
     const defaultConfigFile = 'defaultConfig.json5'
     const initialConfigFile = args.config || defaultConfigFile
 
@@ -79,12 +87,12 @@ export class AppRunner {
     }
 
     if (args.mode === 'hw') {
-      this.#logger.notice('hw_mode_started', { note: 'CLI disabled. Use --cli to enable.' })
+      this.#logger.notice('hw_mode_started', { note: 'CLI disabled. Use --cmd cli to attach remotely.' })
       return
     }
 
     if (args.mode === 'virt') {
-      this.#logger.notice('virt_mode_started', { note: 'CLI disabled. Use --cli to enable.' })
+      this.#logger.notice('virt_mode_started', { note: 'CLI disabled. Use --cmd cli to attach remotely.' })
       return
     }
 

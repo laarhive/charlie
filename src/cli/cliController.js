@@ -1,7 +1,8 @@
-// src/sim/cliSimController.js
+// src/cli/cliController.js
 import readline from 'node:readline'
 import eventTypes from '../core/eventTypes.js'
 import makeCliCompleter from './cliCompleter.js'
+import { printHelp } from './cliHelp.js'
 
 /**
  * CLI controller (optional). Can run in hw or virt mode.
@@ -56,7 +57,7 @@ export class CliController {
       process.exit(0)
     })
 
-    this.#printHelp()
+    printHelp({ mode: 'local' })
     this.#updatePrompt()
     this.#rl.prompt()
   }
@@ -490,24 +491,6 @@ export class CliController {
     const glyph = clock.isFrozen() ? '❄' : '▶'
     const inj = this.#injectEnabled ? '✓' : '×'
     this.#rl.setPrompt(`charlie(${glyph} inject:${inj})> `)
-  }
-
-  #printHelp() {
-    console.log('')
-    console.log('Commands (press Tab for context-aware completion):')
-    console.log('  inject on|off|status')
-    console.log('  presence front|back on|off')
-    console.log('  vibration low|high')
-    console.log('  button short|long')
-    console.log('  virt list|set <sensorId> on|off')
-    console.log('  driver list|enable|disable <sensorId>')
-    console.log('  tap main|presence|vibration|button|tasker|all on|off|status')
-    console.log('  clock now|status|freeze|resume|+MS|set YYYY-MM-DD HH:MM')
-    console.log('  core state')
-    console.log('  config load <filename>|print')
-    console.log('  help')
-    console.log('  exit')
-    console.log('')
   }
 }
 

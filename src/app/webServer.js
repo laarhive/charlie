@@ -160,7 +160,8 @@ export class WebServer {
     try {
       if (type === 'state.get') {
         const status = this.#getStatus?.() ?? {}
-        return this.#rpcOk({ id, type, payload: status })
+        const ctrl = this.#control?.getSnapshot ? this.#control.getSnapshot() : {}
+        return this.#rpcOk({ id, type, payload: { ...status, ...ctrl } })
       }
 
       if (type === 'config.get') {
