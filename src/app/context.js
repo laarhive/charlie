@@ -11,6 +11,7 @@ import makeHwDrivers, { disposeSignals } from './hwDrivers.js'
 
 import WebServer from './webServer.js'
 import TaskerConversationAdapter from '../conversation/taskerConversationAdapter.js'
+import ControlService from './controlService.js'
 
 /**
  * Builds the full runtime context (buses, taps, controllers, core, scheduler, web server).
@@ -52,17 +53,25 @@ export const makeContext = function makeContext({ logger, config, mode }) {
 
   const serverPort = Number(config?.server?.port ?? 8787)
 
+  // Create HW drivers BEFORE WebServer so control can expose driver.* commands
+  const hw = makeHwDrivers({ logger, buses, clock, config, mode })
+
+  const control = ControlService({
+    buses,
+    hw,
+    logger,
+  })
+
   const webServer = new WebServer({
     logger,
     buses,
     getStatus: () => core.getSnapshot(),
     getConfig: () => config,
+    control,
     port: serverPort,
   })
 
   webServer.start()
-
-  const hw = makeHwDrivers({ logger, buses, clock, config, mode })
 
   if (mode === 'hw') {
     logger.notice('hw_mode_starting_drivers', { driverCount: hw.drivers.length })
@@ -109,6 +118,7 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     config,
     hw,
     webServer,
+    control,
     dispose,
   }
 }

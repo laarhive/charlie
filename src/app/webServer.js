@@ -1,18 +1,22 @@
 // src/app/webServer.js
-import { createRequire } from 'node:module'
 import eventTypes from '../core/eventTypes.js'
 import uWS from 'uWebSockets.js'
-
-const require = createRequire(import.meta.url)
 
 /**
  * Web server hosting:
  * - simulated Tasker endpoints (/tasker/start, /tasker/stop)
- * - future REST API endpoints (/api/*)
- * - websocket endpoint (/ws) for future live taps + remote debugging
+ * - REST API endpoints (/api/*)
+ * - websocket endpoint (/ws) for live taps + remote CLI/WebUI control
  *
  * @example
- * const server = new WebServer({ logger, buses, getStatus, getConfig, port: 8787 })
+ * const server = new WebServer({
+ *   logger,
+ *   buses,
+ *   getStatus,
+ *   getConfig,
+ *   control, // optional
+ *   port: 8787
+ * })
  * server.start()
  */
 export class WebServer {
@@ -20,16 +24,18 @@ export class WebServer {
   #buses
   #getStatus
   #getConfig
+  #control
   #port
   #app
   #listeningToken
   #wsClients
 
-  constructor({ logger, buses, getStatus, getConfig, port }) {
+  constructor({ logger, buses, getStatus, getConfig, control, port }) {
     this.#logger = logger
     this.#buses = buses
     this.#getStatus = getStatus
     this.#getConfig = getConfig
+    this.#control = control ?? null
     this.#port = port
 
     this.#app = uWS.App()
@@ -39,12 +45,6 @@ export class WebServer {
     this.#registerRoutes()
   }
 
-  /**
-   * Starts listening.
-   *
-   * @example
-   * server.start()
-   */
   start() {
     if (this.#listeningToken) {
       return
@@ -60,26 +60,14 @@ export class WebServer {
     })
   }
 
-  /**
-   * Stops server (best-effort; uWS doesn't provide a full close API for all cases).
-   *
-   * @example
-   * server.dispose()
-   */
   dispose() {
-    // uWebSockets.js listen token can be closed by calling us_listen_socket_close
-    // but the binding differs per build; keeping best-effort minimal.
+    for (const ws of this.#wsClients) {
+      this.#disposeClient(ws)
+    }
+
     this.#wsClients.clear()
   }
 
-  /**
-   * Broadcasts a JSON message to all websocket clients.
-   *
-   * @param {object} msg
-   *
-   * @example
-   * server.broadcast({ type: 'hello', payload: {} })
-   */
   broadcast(msg) {
     const data = JSON.stringify(msg)
 
@@ -102,30 +90,267 @@ export class WebServer {
     this.#app.ws('/ws', {
       open: (ws) => {
         this.#wsClients.add(ws)
-        ws.send(JSON.stringify({ type: 'ws:welcome', payload: { ok: true } }))
+
+        /* per-client subscription registry */
+        ws.__subs = new Map()
+
+        ws.send(JSON.stringify({
+          type: 'ws:welcome',
+          payload: {
+            ok: true,
+            features: {
+              rpc: true,
+              taps: true
+            }
+          }
+        }))
+
         this.#logger.notice('ws_open', { clients: this.#wsClients.size })
       },
 
       close: (ws) => {
+        this.#disposeClient(ws)
         this.#wsClients.delete(ws)
         this.#logger.notice('ws_close', { clients: this.#wsClients.size })
       },
 
-      message: (ws, message, isBinary) => {
+      message: async (ws, message, isBinary) => {
         if (isBinary) {
           return
         }
 
         const text = Buffer.from(message).toString('utf8')
-        this.#logger.debug('ws_message', { text })
 
-        // Future:
-        // - parse JSON
-        // - accept remote debug commands
-        // - enable tap streaming
-        ws.send(JSON.stringify({ type: 'ws:echo', payload: { text } }))
-      },
+        let req = null
+        try {
+          req = JSON.parse(text)
+        } catch (e) {
+          this.#wsSend(ws, this.#rpcErr({
+            id: null,
+            type: 'error',
+            message: 'invalid_json',
+            code: 'BAD_JSON'
+          }))
+
+          return
+        }
+
+        const res = await this.#handleWsRpc(ws, req)
+        if (res) {
+          this.#wsSend(ws, res)
+        }
+      }
     })
+  }
+
+  async #handleWsRpc(ws, req) {
+    const id = req?.id ?? null
+    const type = req?.type
+    const payload = req?.payload ?? {}
+
+    if (!type) {
+      return this.#rpcErr({
+        id,
+        type: 'error',
+        message: 'missing_type',
+        code: 'BAD_REQUEST'
+      })
+    }
+
+    try {
+      if (type === 'state.get') {
+        const status = this.#getStatus?.() ?? {}
+        return this.#rpcOk({ id, type, payload: status })
+      }
+
+      if (type === 'config.get') {
+        const cfg = this.#getConfig?.() ?? {}
+        return this.#rpcOk({ id, type, payload: cfg })
+      }
+
+      if (type === 'bus.tap.start') {
+        const out = this.#tapStart(ws, payload)
+        return this.#rpcOk({ id, type, payload: out })
+      }
+
+      if (type === 'bus.tap.stop') {
+        const out = this.#tapStop(ws, payload)
+        return this.#rpcOk({ id, type, payload: out })
+      }
+
+      if (type === 'inject.enable') {
+        if (!this.#control?.injectEnable) {
+          return this.#rpcErr({
+            id,
+            type,
+            message: 'inject_not_supported',
+            code: 'NOT_SUPPORTED'
+          })
+        }
+
+        const out = await this.#control.injectEnable()
+        return this.#rpcOk({ id, type, payload: out })
+      }
+
+      if (type === 'inject.disable') {
+        if (!this.#control?.injectDisable) {
+          return this.#rpcErr({
+            id,
+            type,
+            message: 'inject_not_supported',
+            code: 'NOT_SUPPORTED'
+          })
+        }
+
+        const out = await this.#control.injectDisable()
+        return this.#rpcOk({ id, type, payload: out })
+      }
+
+      if (type === 'inject.event') {
+        if (!this.#control?.injectEvent) {
+          return this.#rpcErr({
+            id,
+            type,
+            message: 'inject_not_supported',
+            code: 'NOT_SUPPORTED'
+          })
+        }
+
+        const out = await this.#control.injectEvent(payload)
+        return this.#rpcOk({ id, type, payload: out })
+      }
+
+      /*
+        Optional pass-through for anything else.
+        This lets you add driver.list/enable/disable without touching WebServer again.
+      */
+      if (this.#control?.handleWsRequest) {
+        const out = await this.#control.handleWsRequest({ id, type, payload })
+        if (out) {
+          return out
+        }
+      }
+
+      return this.#rpcErr({
+        id,
+        type,
+        message: `unknown_type:${type}`,
+        code: 'UNKNOWN_TYPE'
+      })
+    } catch (e) {
+      return this.#rpcErr({
+        id,
+        type,
+        message: e?.message ?? 'internal_error',
+        code: e?.code ?? 'INTERNAL_ERROR'
+      })
+    }
+  }
+
+  #tapStart(ws, payload) {
+    const busName = payload?.bus
+    const filter = payload?.filter ?? {}
+
+    if (!busName) {
+      const err = new Error('missing_bus')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    const bus = this.#buses?.[busName]
+    if (!bus?.subscribe) {
+      const err = new Error(`unknown_bus:${busName}`)
+      err.code = 'BUS_NOT_FOUND'
+      throw err
+    }
+
+    const subId = `${busName}:${Date.now()}:${Math.random().toString(16).slice(2)}`
+    const unsub = bus.subscribe((evt) => {
+      if (filter?.typePrefix && typeof evt?.type === 'string') {
+        if (!evt.type.startsWith(filter.typePrefix)) {
+          return
+        }
+      }
+
+      this.#wsSend(ws, {
+        type: 'bus.event',
+        payload: {
+          subId,
+          bus: busName,
+          event: evt
+        }
+      })
+    })
+
+    ws.__subs.set(subId, unsub)
+
+    return { subId }
+  }
+
+  #tapStop(ws, payload) {
+    const subId = payload?.subId
+    if (!subId) {
+      const err = new Error('missing_subId')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    const unsub = ws.__subs?.get(subId)
+    if (!unsub) {
+      const err = new Error(`unknown_sub:${subId}`)
+      err.code = 'SUB_NOT_FOUND'
+      throw err
+    }
+
+    unsub()
+    ws.__subs.delete(subId)
+
+    return { ok: true }
+  }
+
+  #disposeClient(ws) {
+    if (!ws?.__subs) {
+      return
+    }
+
+    for (const unsub of ws.__subs.values()) {
+      try {
+        unsub()
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    ws.__subs.clear()
+  }
+
+  #rpcOk({ id, type, payload }) {
+    return {
+      id,
+      ok: true,
+      type,
+      payload
+    }
+  }
+
+  #rpcErr({ id, type, message, code }) {
+    return {
+      id,
+      ok: false,
+      type,
+      error: {
+        message,
+        code
+      }
+    }
+  }
+
+  #wsSend(ws, msg) {
+    try {
+      ws.send(JSON.stringify(msg))
+    } catch (e) {
+      // ignore
+    }
   }
 
   #registerTaskerSim() {
@@ -138,8 +363,8 @@ export class WebServer {
           payload: {
             direction: 'inbound',
             action: 'start',
-            body,
-          },
+            body
+          }
         })
 
         this.#json(res, 200, { ok: true })
@@ -155,8 +380,8 @@ export class WebServer {
           payload: {
             direction: 'inbound',
             action: 'stop',
-            body,
-          },
+            body
+          }
         })
 
         this.#json(res, 200, { ok: true })
