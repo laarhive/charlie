@@ -1,3 +1,45 @@
+/**
+ * Charlie integration test harness.
+ *
+ * This module provides reusable helpers for process-level integration tests
+ * that exercise the full Charlie application exactly as it runs in production.
+ *
+ * Core idea:
+ * - Spawn the real `appRunner` in a separate Node.js process
+ * - Communicate only via public interfaces (WebSocket / HTTP)
+ * - Treat Charlie as a black box
+ *
+ * What this harness abstracts:
+ * - Selecting a free TCP port
+ * - Spawning and stopping the Charlie daemon
+ * - Waiting for WebSocket readiness
+ * - Sending WS RPC requests and awaiting responses
+ * - Capturing stdout/stderr for crash diagnostics
+ *
+ * Why this exists:
+ * - Native components (uWebSockets.js) are unsafe to run in-process on Windows
+ * - Process isolation ensures:
+ *   - Native crashes do not kill the test runner
+ *   - Startup/shutdown behavior matches real deployments
+ *
+ * Design rules:
+ * - Never import internal Charlie modules here
+ * - Never mock buses, drivers, or controllers
+ * - All assertions belong in spec files, not in this harness
+ *
+ * Intended usage:
+ * - WS API contract tests
+ * - Future Web UI integration tests
+ * - End-to-end CLI / daemon interaction tests
+ *
+ * Non-goals:
+ * - Unit testing
+ * - Performance benchmarking
+ * - Hardware-level validation
+ *
+ * If a test using this harness fails, it indicates a real runtime regression.
+ */
+
 import { spawn } from 'node:child_process'
 import net from 'node:net'
 import path from 'node:path'
