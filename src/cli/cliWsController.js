@@ -1,3 +1,4 @@
+// src/cli/cliWsController.js
 import readline from 'node:readline'
 import eventTypes from '../core/eventTypes.js'
 import makeCliCompleter from './cliCompleter.js'
