@@ -1,12 +1,6 @@
 # Project CHARLIE
 
-**Charlie** is an interactive, autonomous mascot designed for real-world deployment.  
-It runs on a Raspberry Pi, reacts to physical presence and interaction, and orchestrates
-voice conversations via an external AI client (Android + Tasker).
-
-Charlie is designed to be **event-driven**, **hardware-agnostic**, and **observable**, with
-a clear separation between sensing, decision logic, and external integrations.
-
+Charlie is an outdoor restaurant mascot that detects people near the entrance, initiates voice conversations, and guides interactions in a friendly, human way. The Raspberry Pi handles sensing + decision logic. A phone handles voice (ChatGPT Voice) via Tasker automation.
 ---
 
 ## 1. Project overview
@@ -57,6 +51,10 @@ All components are developed as part of the same Charlie project, but are
 decoupled by clear interfaces.
 
 ### Design principles
+
+Charlie is designed to be **event-driven**, **hardware-agnostic**, and **observable**, with
+a clear separation between sensing, decision logic, and external integrations.
+
 - Fully event-driven (no polling)
 - Clear separation of concerns
 - Hardware ↔ logic parity (virtual vs real hardware)
