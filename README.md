@@ -1,6 +1,5 @@
 # Project CHARLIE
 
----
 
 ## What Charlie does
 
@@ -43,7 +42,6 @@ This separation allows Charlie to:
 - run reliably on constrained hardware
 - be tested and developed without requiring the full AI stack
 
----
 
 ## 2. High-level architecture
 
@@ -102,7 +100,6 @@ Each domain uses its own `EventBus`:
 
 Buses can be tapped live for debugging and observability.
 
----
 
 ## 3. Operating modes
 
@@ -120,7 +117,6 @@ Buses can be tapped live for debugging and observability.
 - Intended for Raspberry Pi deployment
 - CLI injection disabled by default
 
----
 
 ## 4. Control plane (WebSocket API)
 
@@ -143,7 +139,6 @@ This API is treated as a **stable contract**.
 > Internals may evolve freely.  
 > The WebSocket API must remain predictable.
 
----
 
 ## 5. Quick start (development)
 
@@ -186,7 +181,6 @@ This starts:
 - the WebSocket server
 - an interactive CLI attached to the daemon
 
----
 
 ## 6. CLI usage
 
@@ -204,7 +198,6 @@ Capabilities include:
 
 Tab completion is context-aware.
 
----
 
 ## 7. Raspberry Pi setup
 
@@ -214,7 +207,6 @@ See:
 - [Raspberry Pi GPIO setup (pigpio)](docs/setup/raspberry-pi-gpio.md)
 - [Raspberry Pi systemd service (Charlie)](docs/setup/raspberry-pi-systemd)
 
----
 
 ## 8. Testing strategy
 
@@ -237,7 +229,6 @@ Charlie uses three complementary test layers.
 - Real sensors
 - Real phone + Tasker
 
----
 
 ## 9. Documentation
 
@@ -287,7 +278,6 @@ Planned (not yet implemented):
 - Coordinate-based presence sensing (LD2450)
 - Persistent configuration storage (SQLite)
 
----
 
 ## 11. Project philosophy
 
