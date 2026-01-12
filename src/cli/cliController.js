@@ -45,6 +45,20 @@ export class CliController {
       completer: makeCliCompleter({ getContext: this.#getContext }),
     })
 
+    const { taps } = this.#getContext()
+    const tapLogger = this.#logger.child({ label: 'tap' })
+
+    for (const tap of Object.values(taps || {})) {
+      if (tap && typeof tap.setSink === 'function') {
+        tap.setSink((evt) => {
+          tapLogger.info(evt.type, {
+            bus: evt.bus,
+            payload: evt.payload,
+          })
+        })
+      }
+    }
+
     this.#rl.on('line', (line) => {
       const cmd = this.#parser.parse(line)
       this.#handleCommand(cmd)

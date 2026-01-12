@@ -1,3 +1,4 @@
+// logging/logger.js
 import winston from 'winston'
 
 const makeLocalTimestamp = function makeLocalTimestamp(date = new Date()) {
@@ -25,21 +26,22 @@ const makeLocalTimestamp = function makeLocalTimestamp(date = new Date()) {
 export class Logger {
   #logger
 
-  constructor({ level = 'info' } = {}) {
+  constructor({ level = 'info', label = null } = {}) {
     const syslogLevels = winston.config.syslog.levels
 
     const formatLine = winston.format.printf((info) => {
       const ts = makeLocalTimestamp()
-
       const lvl = info.level
       const name = info.message
-
       const meta = info.meta && Object.keys(info.meta).length ? info.meta : null
+
+      const prefix = label ? `[${label}] ` : ''
+
       if (!meta) {
-        return `${ts} [${lvl}] ${name}`
+        return `${ts} [${lvl}] ${prefix}${name}`
       }
 
-      return `${ts} [${lvl}] ${name}\n${JSON.stringify(meta, null, 2)}`
+      return `${ts} [${lvl}] ${prefix}${name}\n${JSON.stringify(meta, null, 2)}`
     })
 
     this.#logger = winston.createLogger({
@@ -54,6 +56,10 @@ export class Logger {
         }),
       ],
     })
+  }
+
+  child({ label }) {
+    return new Logger({ level: this.#logger.level, label })
   }
 
   debug(eventName, data = {}) {
