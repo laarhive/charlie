@@ -66,6 +66,16 @@ export class WebServer {
     }
 
     this.#wsClients.clear()
+
+    if (this.#listeningToken && typeof uWS.us_listen_socket_close === 'function') {
+      try {
+        uWS.us_listen_socket_close(this.#listeningToken)
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    this.#listeningToken = null
   }
 
   broadcast(msg) {
