@@ -1,3 +1,4 @@
+// src/app/hwDrivers.js
 import Ld2410Driver from '../hw/presence/ld2410Driver.js'
 import Sw420Driver from '../hw/vibration/sw420Driver.js'
 import GpioButtonDriver from '../hw/button/gpioButtonDriver.js'
