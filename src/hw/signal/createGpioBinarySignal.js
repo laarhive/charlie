@@ -5,8 +5,6 @@ import VirtualBinarySignal from './virtualBinarySignal.js'
 
 const require = createRequire(import.meta.url)
 
-export default createGpioBinarySignal
-
 /**
  * Platform-safe factory for GPIO-backed binary signals.
  *
@@ -56,3 +54,5 @@ export const createGpioBinarySignal = function createGpioBinarySignal({ backend,
   const createLinux = require('./createGpioBinarySignal.linux.js').default
   return createLinux({ backend, chip, line, activeHigh, glitchFilterUs })
 }
+
+export default createGpioBinarySignal
