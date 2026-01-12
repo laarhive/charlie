@@ -33,6 +33,10 @@ export class CliWsController {
     }
   }
 
+  async handleCommand(cmd) {
+    await this.#handleCommand(cmd)
+  }
+
   async start() {
     if (this.#rl) {
       return
@@ -56,7 +60,7 @@ export class CliWsController {
       const cmd = this.#parser.parse(line)
 
       try {
-        await this.#handleCommand(cmd)
+        await this.handleCommand(cmd)
       } catch (e) {
         console.log(String(e?.message || e))
       }
