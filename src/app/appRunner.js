@@ -50,7 +50,14 @@ export class AppRunner {
 
     try {
       const loaded = loadConfigFile(initialConfigFile)
-      this.#context = makeContext({ logger: this.#logger, config: loaded.config, mode: args.mode })
+      const config = loaded.config
+
+      if (args.portProvided) {
+        config.server ??= {}
+        config.server.port = args.port
+      }
+
+      this.#context = makeContext({ logger: this.#logger, config, mode: args.mode })
       this.#logger.info('app_started', { configFile: loaded.fullPath, mode: args.mode, cli: args.cli })
     } catch (e) {
       this.#logger.error('config_load_failed', { configFile: initialConfigFile, error: String(e?.message || e) })

@@ -1,11 +1,4 @@
 // src/app/args.js
-
-/**
- * Parses CLI arguments for the app runner.
- *
- * @example
- * const args = parseArgs(process.argv)
- */
 export const parseArgs = function parseArgs(argv) {
   const args = {
     cmd: 'daemon',
@@ -16,6 +9,7 @@ export const parseArgs = function parseArgs(argv) {
 
     host: '127.0.0.1',
     port: 8787,
+    portProvided: false,
   }
 
   for (let i = 2; i < argv.length; i += 1) {
@@ -44,6 +38,7 @@ export const parseArgs = function parseArgs(argv) {
 
       if (!Number.isNaN(n) && n > 0) {
         args.port = n
+        args.portProvided = true
       }
 
       continue
