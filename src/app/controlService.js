@@ -16,10 +16,11 @@ export default function ControlService ({ buses, hw, logger }) {
 
     return drivers.map((d) => ({
       id: getDriverId(d),
-      role: typeof d.getRole === 'function' ? d.getRole() : (d?.sensor?.role ?? null),
-      type: typeof d.getType === 'function' ? d.getType() : (d?.sensor?.type ?? null),
+      role: typeof d.getRole === 'function' ? d.getRole() : null,
+      type: typeof d.getType === 'function' ? d.getType() : null,
       bus: typeof d.getBus === 'function' ? d.getBus() : null,
       enabled: typeof d.isEnabled === 'function' ? d.isEnabled() : null,
+      started: typeof d.isStarted === 'function' ? d.isStarted() : null,
     }))
   }
 

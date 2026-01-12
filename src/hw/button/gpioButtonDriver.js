@@ -100,6 +100,10 @@ export class GpioButtonDriver {
     this.#logger.notice('driver_disposed', { sensorId: this.#sensor.id })
   }
 
+  isStarted() {
+    return this.#started
+  }
+
   #publishPress() {
     if (!this.#enabled) {
       this.#logger.debug('driver_publish_skipped', { sensorId: this.#sensor.id, kind: 'press' })

@@ -101,6 +101,10 @@ export class Sw420Driver {
     this.#logger.notice('driver_disposed', { sensorId: this.#sensor.id })
   }
 
+  isStarted() {
+    return this.#started
+  }
+
   #publishHit() {
     if (!this.#enabled) {
       this.#logger.debug('driver_publish_skipped', { sensorId: this.#sensor.id, kind: 'hit' })

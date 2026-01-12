@@ -133,6 +133,16 @@ export class Ld2410Driver {
     return 'presence'
   }
 
+  /**
+   * @returns {boolean}
+   *
+   * @example
+   * if (driver.isStarted()) ...
+   */
+  isStarted() {
+    return this.#started
+  }
+
   #publish(present) {
     if (!this.#enabled) {
       this.#logger.debug('driver_publish_skipped', { sensorId: this.#sensor.id, present: Boolean(present) })
