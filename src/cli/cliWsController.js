@@ -37,13 +37,21 @@ export class CliWsController {
     await this.#handleCommand(cmd)
   }
 
+  async init() {
+    await this.#client.connect()
+    await this.#refreshCache()
+
+    if (!this.#cache?.config) {
+      this.#cache.config = {}
+    }
+  }
+
   async start() {
     if (this.#rl) {
       return
     }
 
-    await this.#client.connect()
-    await this.#refreshCache()
+    await this.init()
 
     this.#client.onBusEvent((payload) => {
       this.#printBusEvent(payload)
