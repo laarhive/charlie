@@ -1,133 +1,101 @@
-## System diagram (one-page)
-
 ```mermaid
 flowchart TB
-  %% =========================
-  %% Project CHARLIE - System
-  %% =========================
 
-  subgraph ENV[Environment]
-    Street[Real-world environment\n(passers-by, noise, weather)]
+subgraph ENV[Environment]
+  Street["Real-world environment<br/>passers-by, noise, weather"]
+end
+
+subgraph RPI["Raspberry Pi (Debian)<br/>Charlie Runtime"]
+  App["Node.js daemon<br/>state machine, rules, orchestration"]
+  WS["WebSocket RPC<br/>/ws"]
+  REST["REST API<br/>/api/*"]
+  TaskerSim["Tasker sim endpoints<br/>/tasker/* (dev)"]
+
+  subgraph BUSES[Event buses]
+    PresenceBus[presence]
+    VibrationBus[vibration]
+    ButtonBus[button]
+    TaskerBus[tasker]
+    MainBus[main]
   end
 
-  subgraph RPI[Raspberry Pi (Debian) - Charlie Runtime]
-    App[Node.js app (Charlie daemon)\nstate machine + rules + orchestration]
-    WS[WebSocket RPC (/ws)\ncontrol + observability]
-    REST[REST API (/api/*)\nstatus + config]
-    TaskerSim[Tasker sim endpoints (/tasker/*)\noptional for development]
-
-    subgraph BUSES[Event buses]
-      PresenceBus[presence bus]
-      VibrationBus[vibration bus]
-      ButtonBus[button bus]
-      TaskerBus[tasker bus]
-      MainBus[main bus]
-    end
-
-    subgraph DOMAIN[Domain layer]
-      PresenceCtrl[Presence controller\n(debounce + normalization)]
-      VibrationCtrl[Vibration controller\n(cooldown + normalization)]
-      ButtonCtrl[Button controller\n(edge → press semantics)]
-    end
-
-    subgraph DRIVERS[Drivers]
-      Ld2410[Ld2410 driver]
-      Sw420[Sw420 driver]
-      GpioBtn[Gpio button driver]
-    end
-
-    subgraph SIGNALS[Signals]
-      VirtSig[VirtualBinarySignal\n(virt mode)]
-      GpioSig[GPIO Binary Signal\n(pigpio / gpiod)]
-    end
+  subgraph DOMAIN[Domain controllers]
+    PresenceCtrl["Presence controller<br/>debounce, normalization"]
+    VibrationCtrl["Vibration controller<br/>cooldown, normalization"]
+    ButtonCtrl["Button controller<br/>edge to press semantics"]
   end
 
-  subgraph AI[AI Client (Android + Tasker)]
-    Phone[Android phone\nChatGPT Voice / voice UI]
-    Tasker[Tasker automation\nHTTP bridge + callbacks]
-    Audio[Mic + Speaker]
+  subgraph DRIVERS[Drivers]
+    Ld2410["LD2410 driver"]
+    Sw420["SW-420 driver"]
+    GpioBtn["GPIO button driver"]
   end
 
-  subgraph NET[Connectivity]
-    LAN[Local network]
-    WG[WireGuard tunnel\n(optional/secure remote)]
+  subgraph SIGNALS[Signals]
+    VirtSig["VirtualBinarySignal<br/>virt mode"]
+    GpioSig["GPIO Binary Signal<br/>pigpio or gpiod"]
   end
+end
 
-  subgraph OPS[Ops / Control]
-    CLI[Remote CLI\n(--cmd cli)]
-    WebUI[Future Web UI\n(config + live view)]
-  end
+subgraph AI["AI client<br/>Android + Tasker"]
+  Tasker["Tasker automation<br/>HTTP bridge"]
+  Phone["Android phone<br/>Voice UI"]
+  Audio["Mic and Speaker"]
+end
 
-  %% =========================
-  %% Sensors and environment
-  %% =========================
-  Street -->|presence / motion| Ld2410
-  Street -->|vibration / touch| Sw420
-  Street -->|button press| GpioBtn
+subgraph NET[Connectivity]
+  LAN[LAN]
+  WG["WireGuard tunnel<br/>optional"]
+end
 
-  %% =========================
-  %% Signal sources
-  %% =========================
-  VirtSig --> Ld2410
-  VirtSig --> Sw420
-  VirtSig --> GpioBtn
+subgraph OPS[Ops and control]
+  CLI["Remote CLI<br/>--cmd cli"]
+  WebUI["Future Web UI<br/>config and live view"]
+end
 
-  GpioSig --> Ld2410
-  GpioSig --> Sw420
-  GpioSig --> GpioBtn
+Street -->|presence| Ld2410
+Street -->|vibration| Sw420
+Street -->|button| GpioBtn
 
-  %% =========================
-  %% Driver → domain buses
-  %% =========================
-  Ld2410 -->|raw domain events| PresenceBus
-  Sw420 -->|raw domain events| VibrationBus
-  GpioBtn -->|raw domain events| ButtonBus
+VirtSig --> Ld2410
+VirtSig --> Sw420
+VirtSig --> GpioBtn
 
-  %% =========================
-  %% Domain controllers → main bus
-  %% =========================
-  PresenceBus --> PresenceCtrl -->|semantic events| MainBus
-  VibrationBus --> VibrationCtrl -->|semantic events| MainBus
-  ButtonBus --> ButtonCtrl -->|semantic events| MainBus
+GpioSig --> Ld2410
+GpioSig --> Sw420
+GpioSig --> GpioBtn
 
-  %% =========================
-  %% Core consumes main bus
-  %% =========================
-  MainBus --> App
+Ld2410 -->|raw domain events| PresenceBus
+Sw420 -->|raw domain events| VibrationBus
+GpioBtn -->|raw domain events| ButtonBus
 
-  %% =========================
-  %% Tasker integration path
-  %% =========================
-  App -->|conversation actions| TaskerBus
-  TaskerBus -->|HTTP requests| Tasker
-  Tasker -->|callbacks / status| TaskerBus
+PresenceBus --> PresenceCtrl -->|semantic events| MainBus
+VibrationBus --> VibrationCtrl -->|semantic events| MainBus
+ButtonBus --> ButtonCtrl -->|semantic events| MainBus
 
-  Tasker --> Phone --> Audio
+MainBus --> App
 
-  %% =========================
-  %% APIs
-  %% =========================
-  App --> WS
-  App --> REST
-  TaskerSim --> TaskerBus
+App --> WS
+App --> REST
+TaskerSim --> TaskerBus
 
-  %% =========================
-  %% Control / clients
-  %% =========================
-  CLI -->|WS RPC| WS
-  WebUI -->|WS RPC + taps| WS
+App -->|conversation actions| TaskerBus
+TaskerBus -->|HTTP requests| Tasker
+Tasker -->|callbacks and status| TaskerBus
 
-  %% =========================
-  %% Networking
-  %% =========================
-  CLI --- LAN
-  WebUI --- LAN
-  Tasker --- LAN
+Tasker --> Phone --> Audio
 
-  LAN --- RPI
-  LAN --- AI
+CLI -->|WS RPC| WS
+WebUI -->|WS RPC and taps| WS
 
-  WG --- RPI
-  WG --- AI
-  WG --- OPS
+CLI --- LAN
+WebUI --- LAN
+Tasker --- LAN
+
+LAN --- RPI
+LAN --- AI
+
+WG --- RPI
+WG --- AI
+WG --- OPS
 ```
