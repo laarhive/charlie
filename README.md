@@ -1,6 +1,7 @@
 # Project CHARLIE
 
-Charlie is an outdoor restaurant mascot that detects people near the entrance, initiates voice conversations, and guides interactions in a friendly, human way. The Raspberry Pi handles sensing + decision logic. A phone handles voice (ChatGPT Voice) via Tasker automation.
+**Charlie** is an outdoor restaurant mascot that detects people near the entrance, initiates voice conversations, and guides interactions in a friendly, human way. The Raspberry Pi handles sensing + decision logic. A phone handles voice (ChatGPT Voice) via Tasker automation.
+
 ---
 
 ## 1. Project overview
@@ -52,8 +53,7 @@ decoupled by clear interfaces.
 
 ### Design principles
 
-Charlie is designed to be **event-driven**, **hardware-agnostic**, and **observable**, with
-a clear separation between sensing, decision logic, and external integrations.
+Charlie is designed to be event-driven, hardware-agnostic, and observable, with a clear separation between sensing, decision logic, and external integrations.
 
 - Fully event-driven (no polling)
 - Clear separation of concerns
