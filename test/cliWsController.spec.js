@@ -94,6 +94,8 @@ describe('CliWsController WS request mapping', function () {
       client,
     })
 
+    await cli.init()
+
     await cli.handleCommand({ kind: 'injectOn' })
     await cli.handleCommand({ kind: 'presence', zone: 'front', present: true })
 
