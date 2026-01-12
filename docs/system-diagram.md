@@ -1,4 +1,4 @@
-## System diagram
+## System diagram (one-page)
 
 ```mermaid
 flowchart TB
