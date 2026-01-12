@@ -5,6 +5,7 @@ export class BusTap {
   #name
   #enabled
   #unsubscribe
+  #sink
 
   /**
    * Bus tap logger for debugging. Can be enabled/disabled at runtime.
@@ -25,10 +26,24 @@ export class BusTap {
     this.#name = name || 'bus'
     this.#enabled = false
     this.#unsubscribe = null
+    this.#sink = null
 
     if (enabled) {
       this.setEnabled(true)
     }
+  }
+
+  /**
+   * Attach an optional sink for human-readable output (e.g., console printing).
+   * Sink is only invoked when the tap is enabled (because subscription exists only then).
+   *
+   * @param {function|null} sinkFn
+   *
+   * @example
+   * tap.setSink((line) => console.log(line))
+   */
+  setSink(sinkFn) {
+    this.#sink = typeof sinkFn === 'function' ? sinkFn : null
   }
 
   /**
@@ -75,6 +90,7 @@ export class BusTap {
    */
   dispose() {
     this.#unsubscribeNow()
+    this.#sink = null
   }
 
   /* concise private bits */
@@ -86,6 +102,11 @@ export class BusTap {
 
     this.#unsubscribe = this.#bus.subscribe((event) => {
       this.#logger.debug('bus_event', { bus: this.#name, event })
+
+      if (this.#sink && event?.type) {
+        const line = `[tap ${this.#name}] ${event.type}`
+        this.#sink(line, { bus: this.#name, event })
+      }
     })
   }
 
