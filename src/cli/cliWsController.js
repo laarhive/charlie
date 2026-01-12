@@ -16,13 +16,13 @@ export class CliWsController {
 
   #cache
 
-  constructor({ logger, parser, wsUrl }) {
+  constructor({ logger, parser, wsUrl, client }) {
     this.#logger = logger
     this.#parser = parser
     this.#wsUrl = wsUrl
 
     this.#rl = null
-    this.#client = new CharlieWsClient({ logger, url: wsUrl })
+    this.#client = client ?? new CharlieWsClient({ logger, url: wsUrl })
 
     this.#injectEnabled = false
     this.#tapSubs = new Map()
