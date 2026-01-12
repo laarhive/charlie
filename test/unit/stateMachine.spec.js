@@ -1,5 +1,5 @@
 import { expect } from 'chai'
-import StateMachine from '../src/core/stateMachine.js'
+import StateMachine from '../../src/core/stateMachine.js'
 
 describe('StateMachine', function () {
   it('starts in IDLE/none', function () {

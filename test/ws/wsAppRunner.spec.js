@@ -8,7 +8,7 @@ import {
   waitFor,
   waitForWsReady,
   wsRequest
-} from './helpers/charlieHarness.js'
+} from '../helpers/charlieHarness.js'
 
 describe('Integration: appRunner (virt daemon) WS API', function () {
   this.timeout(20000)

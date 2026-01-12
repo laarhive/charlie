@@ -58,7 +58,7 @@ import {
   waitFor,
   waitForWsReady,
   wsRequest
-} from './helpers/charlieHarness.js'
+} from '../helpers/charlieHarness.js'
 
 const sendRaw = async (ws, text) => {
   ws.send(text)

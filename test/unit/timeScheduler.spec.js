@@ -1,9 +1,9 @@
 // test/timeScheduler.spec.js
 import { expect } from 'chai'
-import Clock from '../src/clock/clock.js'
-import EventBus from '../src/core/eventBus.js'
-import TimeScheduler from '../src/core/timeScheduler.js'
-import flush from './helpers/flush.js'
+import Clock from '../../src/clock/clock.js'
+import EventBus from '../../src/core/eventBus.js'
+import TimeScheduler from '../../src/core/timeScheduler.js'
+import flush from '../helpers/flush.js'
 
 const collectEvents = function collectEvents(bus) {
   const events = []

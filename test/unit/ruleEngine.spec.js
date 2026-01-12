@@ -1,5 +1,5 @@
 import { expect } from 'chai'
-import RuleEngine from '../src/core/ruleEngine.js'
+import RuleEngine from '../../src/core/ruleEngine.js'
 
 describe('RuleEngine', function () {
   it('selects morning rule for weekday 09:00', function () {

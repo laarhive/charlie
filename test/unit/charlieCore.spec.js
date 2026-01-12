@@ -1,11 +1,11 @@
 // test/charlieCore.spec.js
 import { expect } from 'chai'
-import Clock from '../src/clock/clock.js'
-import EventBus from '../src/core/eventBus.js'
-import TimeScheduler from '../src/core/timeScheduler.js'
-import CharlieCore from '../src/core/charlieCore.js'
-import FakeConversationAdapter from '../src/conversation/fakeConversationAdapter.js'
-import flush from './helpers/flush.js'
+import Clock from '../../src/clock/clock.js'
+import EventBus from '../../src/core/eventBus.js'
+import TimeScheduler from '../../src/core/timeScheduler.js'
+import CharlieCore from '../../src/core/charlieCore.js'
+import FakeConversationAdapter from '../../src/conversation/fakeConversationAdapter.js'
+import flush from '../helpers/flush.js'
 
 const makeConfig = function makeConfig({ armingDelayMs = 1000, exitConfirmMs = 800, cooldownMs = 2000 } = {}) {
   return {

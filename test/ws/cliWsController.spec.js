@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import CliWsController from '../src/cli/cliWsController.js'
+import CliWsController from '../../src/cli/cliWsController.js'
 
 const makeLogger = function makeLogger() {
   const noop = () => {}
