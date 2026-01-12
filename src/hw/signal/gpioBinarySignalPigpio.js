@@ -1,17 +1,36 @@
+// src/hw/signal/gpioBinarySignalPigpio.js
 import { Gpio } from 'pigpio'
 
 /**
- * GPIO-backed binary signal using pigpio.
+ * GPIO-backed binary signal implementation using pigpio.
  *
- * Contract:
+ * PLATFORM:
+ * - Linux only
+ * - Requires pigpio daemon or direct hardware access
+ *
+ * CONTRACT:
  * - read() -> boolean
  * - subscribe(handler) -> unsubscribe
  *
- * Supports optional glitch filter (microseconds).
+ * FEATURES:
+ * - Edge-triggered callbacks (no polling)
+ * - Optional glitch filtering (microseconds)
+ * - Logical inversion via activeHigh flag
+ *
+ * IMPORTANT:
+ * This module imports native bindings and MUST only be loaded on Linux.
+ * It is intentionally isolated behind createGpioBinarySignal.linux.js.
  *
  * @example
- * const sig = new GpioBinarySignalPigpio({ line: 17, activeHigh: true, glitchFilterUs: 8000 })
- * const unsub = sig.subscribe((v) => console.log(v))
+ * const sig = new GpioBinarySignalPigpio({
+ *   line: 17,
+ *   activeHigh: true,
+ *   glitchFilterUs: 8000,
+ * })
+ *
+ * const unsub = sig.subscribe((value) => {
+ *   console.log('GPIO changed:', value)
+ * })
  */
 export class GpioBinarySignalPigpio {
   #gpio
@@ -69,11 +88,10 @@ export class GpioBinarySignalPigpio {
 
   dispose() {
     this.#handlers.clear()
-
-    // pigpio doesn't offer a full "destroy"; unexport is not applicable.
-    // Removing listeners is sufficient.
     this.#gpio.removeAllListeners('alert')
   }
+
+  /* concise private helper */
 
   #toLogical(raw) {
     return this.#activeHigh ? Boolean(raw) : !Boolean(raw)
