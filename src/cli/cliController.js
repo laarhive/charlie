@@ -50,10 +50,16 @@ export class CliController {
 
     for (const tap of Object.values(taps || {})) {
       if (tap && typeof tap.setSink === 'function') {
-        tap.setSink((evt) => {
-          tapLogger.info(evt.type, {
-            bus: evt.bus,
-            payload: evt.payload,
+        tap.setSink(({ bus, event }) => {
+          if (!event?.type) {
+            return
+          }
+
+          tapLogger.info(event.type, {
+            bus,
+            payload: event.payload,
+            source: event.source,
+            ts: event.ts,
           })
         })
       }

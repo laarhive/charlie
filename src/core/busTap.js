@@ -104,8 +104,7 @@ export class BusTap {
       this.#logger.debug('bus_event', { bus: this.#name, event })
 
       if (this.#sink && event?.type) {
-        const line = `[tap ${this.#name}] ${event.type}`
-        this.#sink(line, { bus: this.#name, event })
+        this.#sink({ bus: this.#name, event })
       }
     })
   }
