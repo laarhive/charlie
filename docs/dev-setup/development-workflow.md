@@ -57,7 +57,7 @@ This keeps the debug port private and safe.
 Run this in a terminal on your development machine and keep it open:
 
 ```shell
-ssh -L 9229:127.0.0.1:9229 charlie@<PI_IP>
+ssh -L 9229:127.0.0.1:9229 charlie@192.168.1.145
 ```
 
 
@@ -75,19 +75,19 @@ Examples (what WebStorm should execute over SSH):
 HW mode (debug enabled):
 
 ```shell
-/opt/charlie/charlie/scripts/dev-restart.sh --mode hw
+/opt/charlie/charlie/scripts/dev/restart.sh --mode hw
 ```
 
 Virt mode (debug enabled):
 
 ```shell
-/opt/charlie/charlie/scripts/dev-restart.sh --mode virt
+/opt/charlie/charlie/scripts/dev/restart.sh --mode virt
 ```
 
 HW mode (no inspector):
 
 ```shell
-/opt/charlie/charlie/scripts/dev-restart.sh --mode hw --no-inspect
+/opt/charlie/charlie/scripts/dev/restart.sh --mode hw --no-inspect
 ```
 
 

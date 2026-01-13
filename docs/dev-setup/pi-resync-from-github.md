@@ -43,7 +43,7 @@ git lfs pull
 git pull --ff-only
 ```
 
----
+
 
 ### Prepare the new Yarn version (only if Yarn was updated)
 
@@ -57,7 +57,7 @@ yarn -v   # must show 4.xx.0
 
 If Yarn was not updated, this step can be skipped.
 
----
+
 
 ### Reinstall dependencies deterministically
 
@@ -71,7 +71,7 @@ This will:
 - Rebuild native ARM modules if required
 - Fail early if anything is inconsistent
 
----
+
 
 ### Ensure all development scripts are executable
 
@@ -85,7 +85,7 @@ cd /opt/charlie/charlie
 find scripts -type f -name "*.sh" -exec chmod +x {} \;
 ```
 
----
+
 
 ### Result
 
