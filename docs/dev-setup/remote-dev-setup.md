@@ -200,78 +200,13 @@ Create a single script that can run:
 - optionally `--inspect` (debug)
 - and pass through any extra CLI flags
 
-### Create the script on the Pi
+### Enable development scripts on the Pi
+
+Ensure all scripts are executable:
 
 ```shell
 cd /opt/charlie/charlie
-mkdir -p scripts
-nano scripts/dev-restart.sh
-```
-
-Paste:
-
-```shell
-#!/usr/bin/env bash
-
-set -euo pipefail
-
-cd /opt/charlie/charlie
-
-MODE="hw"
-INSPECT="1"
-
-# Parse our script flags, pass everything else through to node
-PASS_ARGS=()
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --mode)
-      MODE="${2:-}"
-      shift 2
-      ;;
-    --no-inspect)
-      INSPECT="0"
-      shift
-      ;;
-    --inspect-port)
-      INSPECT_PORT="${2:-9229}"
-      shift 2
-      ;;
-    --)
-      shift
-      PASS_ARGS+=("$@")
-      break
-      ;;
-    *)
-      PASS_ARGS+=("$1")
-      shift
-      ;;
-  esac
-done
-
-if [[ "$MODE" != "hw" && "$MODE" != "virt" ]]; then
-  echo "ERROR: --mode must be 'hw' or 'virt' (got '$MODE')" >&2
-  exit 2
-fi
-
-# Kill any running Charlie instance (dev only)
-pkill -f 'src/app/appRunner\.js' || true
-
-NODE_ARGS=()
-if [[ "${INSPECT}" == "1" ]]; then
-  INSPECT_PORT="${INSPECT_PORT:-9229}"
-  NODE_ARGS+=( "--inspect=127.0.0.1:${INSPECT_PORT}" )
-fi
-
-echo "Starting Charlie: mode=${MODE}, inspect=${INSPECT}, extra_args='${PASS_ARGS[*]-}'"
-
-exec yarn node "${NODE_ARGS[@]}" src/app/appRunner.js --mode "${MODE}" "${PASS_ARGS[@]}"
-```
-
-Make it executable:
-
-```shell
-chmod +x scripts/dev-restart.sh
+chmod +x scripts/**/*.sh
 ```
 
 ### Examples (run on the Pi)
@@ -279,27 +214,35 @@ chmod +x scripts/dev-restart.sh
 HW mode with debugger (default):
 
 ```shell
-/opt/charlie/charlie/scripts/dev-restart.sh --mode hw
+/opt/charlie/charlie/scripts/dev/restart.sh --mode hw
 ```
 
 Virt mode with debugger:
 
 ```shell
-/opt/charlie/charlie/scripts/dev-restart.sh --mode virt
+/opt/charlie/charlie/scripts/dev/restart.sh --mode virt
 ```
 
 HW mode without debugger:
 
 ```shell
-/opt/charlie/charlie/scripts/dev-restart.sh --mode hw --no-inspect
+/opt/charlie/charlie/scripts/dev/restart.sh --mode hw --no-inspect
 ```
 
 Passing extra args through to the Node app:
 
 ```shell
-/opt/charlie/charlie/scripts/dev-restart.sh --mode hw -- --some-flag value --another-flag
+/opt/charlie/charlie/scripts/dev/restart.sh --mode hw -- --some-flag value --another-flag
 ```
 
+Start the CLI against a running Charlie daemon:
+
+```shell
+/opt/charlie/charlie/scripts/dev/cli.sh
+/opt/charlie/charlie/scripts/dev/cli.sh --host 127.0.0.1 --port 8787
+/opt/charlie/charlie/scripts/dev/cli.sh --no-inspect
+/opt/charlie/charlie/scripts/dev/cli.sh -- --log-level debug
+```
 
 
 ## Result
