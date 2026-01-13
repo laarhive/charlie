@@ -100,14 +100,26 @@ or start a new shell session.
 
 ### Enable Corepack (required for Yarn Berry)
 
-Yarn is managed via Corepack and must be enabled once:
+Yarn is managed via Corepack. Enable Corepack once system-wide:
 
 ```shell
 sudo corepack enable
 ```
 
-This allows the project to use the exact Yarn version declared in
-`package.json` (`packageManager` field).
+
+### Prepare the exact Yarn version declared by the project (once per user)
+
+Corepack stores prepared package manager versions **per user**.  
+Run this as the project user (`charlie`) to avoid interactive download prompts later:
+
+```shell
+corepack prepare yarn@4.12.0 --activate
+```
+
+This allows the project to use the exact Yarn version declared in `package.json`
+(the `packageManager` field).
+
+Note: Running the same command with `sudo` prepares Yarn for `root`, not for `charlie`.
 
 
 
@@ -193,14 +205,7 @@ If this fails, the cache or lockfile is inconsistent and must be fixed on the de
 
 
 
-## Add a reusable restart script (supports hw/virt and debug)
-
-Create a single script that can run:
-- `--mode hw` or `--mode virt`
-- optionally `--inspect` (debug)
-- and pass through any extra CLI flags
-
-### Enable development scripts on the Pi
+## Enable development scripts on the Pi
 
 Ensure all scripts are executable:
 
