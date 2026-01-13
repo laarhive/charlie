@@ -1,5 +1,5 @@
 import RuleEngine from './ruleEngine.js'
-import PromptAssembler from './PromptAssembler.js'
+import PromptAssembler from './promptAssembler.js'
 
 const CharlieCore = class CharlieCore {
   #clock
@@ -11,7 +11,7 @@ const CharlieCore = class CharlieCore {
   #promptAssembler
 
   #unsubscribe
-
+  
   #state
   #stateVersion
 
