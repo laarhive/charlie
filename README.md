@@ -268,6 +268,10 @@ from high-level concepts to concrete implementation details.
 - [WebSocket API](docs/api/ws.md)  
   Stable control and observability API used by the CLI and future Web UI
 
+### Development
+
+- [Development Setup (RPi Runtime)](docs/dev-setup/README.md) 
+  Development and remote runtime setup instructions
 
 ## 10. Future development
 
