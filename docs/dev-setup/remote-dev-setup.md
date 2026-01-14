@@ -179,7 +179,7 @@ Cache files should be **KB–MB**, not ~130 bytes.
 
 
 
-### Install build prerequisites (for pigpio / uWebSockets)
+### Install build tools
 
 ```shell
 # Do this once

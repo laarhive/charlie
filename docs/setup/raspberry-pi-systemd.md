@@ -55,8 +55,6 @@ Paste:
 ```ini
 [Unit]
 Description=Charlie Interactive Mascot
-After=network.target pigpiod.service
-Wants=network.target pigpiod.service
 
 [Service]
 Type=simple
@@ -91,7 +89,6 @@ WantedBy=multi-user.target
 ```
 
 Notes:
-- `pigpiod.service` is listed as a dependency if using GPIO
 - Charlie runs **without an attached CLI**
 - All interaction is done via WebSocket / REST
 
@@ -216,12 +213,6 @@ Common causes:
 - wrong `WorkingDirectory`
 - missing `npm install`
 - invalid config file path
-
-### GPIO not working
-Ensure:
-- `pigpiod` is running
-- `charlie.service` depends on `pigpiod.service`
-- GPIO backend is set to `pigpio` in config
 
 ### Port already in use
 If port `8787` is already bound:

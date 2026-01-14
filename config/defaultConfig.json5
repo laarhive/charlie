@@ -1,6 +1,6 @@
 {
   gpio: {
-    backend: 'pigpio', // or 'gpiod'
+    chip: 'gpiochip0'
   },
 
   sensors: [

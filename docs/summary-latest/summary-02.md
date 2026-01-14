@@ -56,11 +56,7 @@ Audio:
 
 external mic + speaker
 
-GPIO backend:
-
-pigpio (default; supports glitch filtering + reliable callbacks)
-
-libgpiod fallback also implemented
+GPIO backend: `libgpiod`
 
 3️⃣ Core software architecture (Node.js)
 Design principles:

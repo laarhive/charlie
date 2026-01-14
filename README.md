@@ -204,7 +204,6 @@ Tab completion is context-aware.
 Production deployment on Raspberry Pi requires additional setup.
 
 See:
-- [Raspberry Pi GPIO setup (pigpio)](docs/setup/raspberry-pi-gpio.md)
 - [Raspberry Pi systemd service (Charlie)](docs/setup/raspberry-pi-systemd)
 
 
@@ -246,9 +245,6 @@ from high-level concepts to concrete implementation details.
 ### Hardware & Deployment
 - [Hardware](docs/hardware.md)  
   Sensors, wiring concepts, and physical deployment considerations
-
-- [Raspberry Pi GPIO setup (pigpio)](docs/setup/raspberry-pi-gpio.md)  
-  GPIO backend setup and system integration on Raspberry Pi
 
 - [Deployment & systemd](docs/setup/raspberry-pi-systemd.md)
   Running Charlie as a system service on the Pi

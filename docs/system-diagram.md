@@ -33,7 +33,7 @@ subgraph RPI["Raspberry Pi (Debian)<br/>Charlie Runtime"]
 
   subgraph SIGNALS[Signals]
     VirtSig["VirtualBinarySignal<br/>virt mode"]
-    GpioSig["GPIO Binary Signal<br/>pigpio or gpiod"]
+    GpioSig["GPIO Binary Signal<br/>gpiod"]
   end
 end
 

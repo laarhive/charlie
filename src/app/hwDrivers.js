@@ -4,7 +4,7 @@ import Sw420Driver from '../hw/vibration/sw420Driver.js'
 import GpioButtonDriver from '../hw/button/gpioButtonDriver.js'
 
 import VirtualBinarySignal from '../hw/signal/virtualBinarySignal.js'
-import createGpioBinarySignal from '../hw/signal/createGpioBinarySignal.js'
+import GpioBinarySignalGpiod from '../hw/signal/gpioBinarySignalGpiod.js'
 
 export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, config, mode }) {
   const sensors = Array.isArray(config?.sensors) ? config.sensors : []
@@ -23,16 +23,20 @@ export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, conf
       return new VirtualBinarySignal(false)
     }
 
-    // hw mode
-    const backend = config?.gpio?.backend || 'pigpio'
+    if (mode !== 'hw') {
+      throw new Error(`Unknown mode: ${mode}`)
+    }
+
+    if (process.platform !== 'linux') {
+      throw new Error('HW mode requires Linux (libgpiod)')
+    }
+
     const hw = sensor?.hw || {}
 
-    return createGpioBinarySignal({
-      backend,
+    return new GpioBinarySignalGpiod({
       chip: hw.chip,
       line: hw.line,
       activeHigh: hw.activeHigh !== false,
-      glitchFilterUs: hw.glitchFilterUs,
     })
   }
 

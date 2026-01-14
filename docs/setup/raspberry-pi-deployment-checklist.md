@@ -21,20 +21,6 @@ Use this checklist when deploying Charlie to a Raspberry Pi for real hardware op
 
 ---
 
-### GPIO backend (pigpio)
-- [ ] `pigpio` package installed
-- [ ] `pigpiod.service` created
-- [ ] `pigpiod` enabled and started
-- [ ] `pigs t` returns a number (daemon responding)
-- [ ] `gpio.backend` set to `"pigpio"` in config
-- [ ] GPIO lines match wiring (BCM numbering)
-- [ ] Optional `glitchFilterUs` configured for buttons / reed switches
-
-📄 See:  
-`docs/setup/raspberry-pi-gpio.md`
-
----
-
 ### Sensors & wiring
 - [ ] LD2410 / presence sensors powered and connected
 - [ ] SW-420 vibration sensors connected and adjusted
@@ -46,7 +32,6 @@ Use this checklist when deploying Charlie to a Raspberry Pi for real hardware op
 
 ### Charlie systemd service
 - [ ] `charlie.service` file created
-- [ ] `After=network.target pigpiod.service` set
 - [ ] `WorkingDirectory` correct
 - [ ] `ExecStart` uses:
   - `--cmd daemon`
@@ -125,5 +110,5 @@ Charlie is now running as a **headless, autonomous, recoverable service** and ca
 If something goes wrong:
 1. Check `journalctl -u charlie`
 2. Attach CLI and inspect state
-3. Verify pigpiod and wiring
+3. Verify wiring
 4. Restart service

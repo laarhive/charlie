@@ -1,4 +1,4 @@
-We have a fully event-driven Node.js architecture for an interactive mascot on Raspberry Pi, with domain buses, controllers, CLI, virt/hw parity, pigpio GPIO backend, and Tasker integration planned. We are ready to move from virt mode to real hardware tests and Tasker HTTP integration.
+We have a fully event-driven Node.js architecture for an interactive mascot on Raspberry Pi, with domain buses, controllers, CLI, virt/hw parity, gpiod GPIO backend, and Tasker integration planned. We are ready to move from virt mode to real hardware tests and Tasker HTTP integration.
 
 📌 PROJECT SUMMARY — Project CHARLIE
 
@@ -50,11 +50,7 @@ Audio
 
 External mic + speaker
 
-GPIO backend:
-
-pigpio (default, for glitch filtering + clean callbacks)
-
-libgpiod also implemented as fallback
+GPIO backend: `libgpiod`
 
 3️⃣ Core software architecture (Node.js)
 Design principles
