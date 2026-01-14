@@ -1,6 +1,11 @@
 {
   gpio: {
-    chip: 'gpiochip0'
+    chip: 'gpiochip0',
+    watchdog: {
+      outLine: 17,
+      inLine: 27,
+      toggleMs: 1000
+    }
   },
 
   sensors: [
@@ -11,7 +16,7 @@
       zone: 'front',
       enabled: true,
       params: { debounceOnMs: 150, debounceOffMs: 400 },
-      hw: { chip: 'gpiochip0', line: 17, activeHigh: true }
+      hw: { chip: 'gpiochip0', line: 5, activeHigh: true }
     },
     {
       id: 'presenceBack1',
@@ -20,7 +25,7 @@
       zone: 'back',
       enabled: true,
       params: { debounceOnMs: 150, debounceOffMs: 400 },
-      hw: { chip: 'gpiochip0', line: 27, activeHigh: true }
+      hw: { chip: 'gpiochip0', line: 6, activeHigh: true }
     },
 
     {

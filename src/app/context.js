@@ -8,18 +8,12 @@ import makeBuses from './buses.js'
 import makeTaps from './taps.js'
 import makeDomainControllers, { startAll, disposeAll } from './domainControllers.js'
 import makeHwDrivers, { disposeSignals } from './hwDrivers.js'
+import GpioWatchdog from '../hw/gpio/gpioWatchdog.js'
 
 import WebServer from './webServer.js'
 import TaskerConversationAdapter from '../conversation/taskerConversationAdapter.js'
 import ControlService from './controlService.js'
 
-/**
- * Builds the full runtime context (buses, taps, controllers, core, scheduler, web server).
- *
- * @example
- * const ctx = makeContext({ logger, config, mode: 'virt' })
- * ctx.dispose()
- */
 export const makeContext = function makeContext({ logger, config, mode }) {
   const clock = new Clock()
   clock.freeze()
@@ -50,6 +44,23 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     conversation,
     config,
   })
+
+  // GPIO watchdog
+  const gpioCfg = config?.gpio ?? {}
+  const wdCfg = gpioCfg.watchdog ?? {}
+
+  const gpioWatchdog = new GpioWatchdog({
+    logger,
+    bus: buses.main,
+    clock,
+    mode,
+    chip: gpioCfg.chip || 'gpiochip0',
+    outLine: wdCfg.outLine ?? 17,
+    inLine: wdCfg.inLine ?? 27,
+    toggleMs: wdCfg.toggleMs ?? 1000,
+  })
+
+  gpioWatchdog.start()
 
   const serverPort = Number(config?.server?.port ?? 8787)
 
@@ -101,6 +112,7 @@ export const makeContext = function makeContext({ logger, config, mode }) {
       webServer.dispose()
     }
 
+    gpioWatchdog.dispose()
     core.dispose()
     scheduler.dispose()
 

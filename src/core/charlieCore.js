@@ -1,5 +1,6 @@
 import RuleEngine from './ruleEngine.js'
 import PromptAssembler from './promptAssembler.js'
+import eventTypes from './eventTypes.js'
 
 const CharlieCore = class CharlieCore {
   #clock
@@ -11,7 +12,7 @@ const CharlieCore = class CharlieCore {
   #promptAssembler
 
   #unsubscribe
-  
+
   #state
   #stateVersion
 
@@ -26,6 +27,9 @@ const CharlieCore = class CharlieCore {
   #activeModeId
   #activeOpenerId
   #activeRuleId
+
+  #hardwareStatus
+  #hardwareErrors
 
   constructor({ clock, bus, scheduler, conversation, config }) {
     this.#clock = clock
@@ -52,6 +56,9 @@ const CharlieCore = class CharlieCore {
     this.#activeOpenerId = null
     this.#activeRuleId = null
 
+    this.#hardwareStatus = {}
+    this.#hardwareErrors = {}
+
     this.#unsubscribe = this.#bus.subscribe((event) => {
       this.#handleEvent(event)
     })
@@ -73,7 +80,11 @@ const CharlieCore = class CharlieCore {
       sessionActive: this.#sessionActive,
       activeRuleId: this.#activeRuleId,
       activeModeId: this.#activeModeId,
-      activeOpenerId: this.#activeOpenerId
+      activeOpenerId: this.#activeOpenerId,
+      hardware: {
+        status: this.#hardwareStatus,
+        errors: this.#hardwareErrors,
+      },
     }
   }
 
@@ -91,6 +102,16 @@ const CharlieCore = class CharlieCore {
   }
 
   #handleEvent(event) {
+    if (event.type === eventTypes.system.hardware) {
+      const p = event.payload || {}
+      const subsystem = String(p.subsystem || 'unknown')
+
+      this.#hardwareStatus[subsystem] = p.status || 'unknown'
+      this.#hardwareErrors[subsystem] = p.error || null
+
+      return
+    }
+
     if (event.type === 'presence:enter') {
       this.#setPresence(event.payload.zone, true)
       this.#onPresenceChanged()

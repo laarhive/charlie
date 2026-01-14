@@ -31,6 +31,11 @@ export const eventTypes = Object.freeze({
     turn: 'conv:turn',
     idle: 'conv:idle',
   }),
+
+  system: Object.freeze({
+    // Hardware / system health events (GPIO, disk, temp, network, etc.)
+    hardware: 'system:hardware',
+  }),
 })
 
 export default eventTypes

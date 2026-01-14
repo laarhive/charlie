@@ -1,4 +1,4 @@
-// src/core/rawEventTypes.js
+// src/domain/domainEventTypes.js
 export const domainEventTypes = Object.freeze({
   presence: Object.freeze({
     binary: 'presenceRaw:binary',
