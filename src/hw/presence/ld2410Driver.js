@@ -38,58 +38,41 @@ export class Ld2410Driver {
     this.#enabled = true
   }
 
-  /**
-   * @returns {string}
-   *
-   * @example
-   * const id = driver.getSensorId()
-   */
   getSensorId() {
     return this.#sensor.id
   }
 
-  /**
-   * @returns {boolean}
-   *
-   * @example
-   * if (driver.isEnabled()) ...
-   */
   isEnabled() {
     return this.#enabled
   }
 
-  /**
-   * Enables/disables publishing from this driver.
-   *
-   * @param {boolean} enabled
-   *
-   * @example
-   * driver.setEnabled(false)
-   */
   setEnabled(enabled) {
     this.#enabled = Boolean(enabled)
     this.#logger.notice('driver_enabled_changed', { sensorId: this.#sensor.id, enabled: this.#enabled })
   }
 
-  /**
-   * Starts reading the signal and publishing raw domain events.
-   *
-   * @example
-   * driver.start()
-   */
   start() {
     if (this.#started) {
       return
     }
 
     this.#started = true
-    this.#last = Boolean(this.#signal.read())
 
-    this.#publish(this.#last)
+    // Try to seed an initial state if the signal supports synchronous reads.
+    // For edge-only signals (gpiod), read() intentionally throws and we start "unknown".
+    try {
+      if (this.#signal && typeof this.#signal.read === 'function') {
+        this.#last = Boolean(this.#signal.read())
+        this.#publish(this.#last)
+      }
+    } catch {
+      this.#last = null
+    }
 
     this.#unsubscribe = this.#signal.subscribe((value) => {
       const v = Boolean(value)
-      if (v === this.#last) {
+
+      if (this.#last !== null && v === this.#last) {
         return
       }
 
@@ -100,12 +83,6 @@ export class Ld2410Driver {
     this.#logger.notice('driver_started', { sensorId: this.#sensor.id, type: this.#sensor.type, role: this.#sensor.role })
   }
 
-  /**
-   * Stops and cleans up.
-   *
-   * @example
-   * driver.dispose()
-   */
   dispose() {
     if (!this.#started) {
       return
@@ -133,12 +110,6 @@ export class Ld2410Driver {
     return 'presence'
   }
 
-  /**
-   * @returns {boolean}
-   *
-   * @example
-   * if (driver.isStarted()) ...
-   */
   isStarted() {
     return this.#started
   }
