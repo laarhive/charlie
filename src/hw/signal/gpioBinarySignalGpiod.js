@@ -107,6 +107,13 @@ export class GpioBinarySignalGpiod {
       }
     })
 
+    this.#monitor.on('error', (err) => {
+      this.#monitor = null
+      throw new Error(
+        `Failed to start gpiomon. Is libgpiod installed?\n${err.message}`
+      )
+    })
+
     this.#monitor.on('exit', () => {
       this.#monitor = null
     })
