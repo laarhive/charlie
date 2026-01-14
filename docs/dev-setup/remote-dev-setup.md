@@ -187,6 +187,31 @@ sudo apt install -y build-essential python3 make g++
 ```
 
 
+### Install GPIO userspace tools (libgpiod)
+
+Charlie uses **libgpiod userspace tools** for GPIO edge monitoring.
+The `gpiomon` binary must be available on the system.
+
+Install once on the Raspberry Pi:
+
+```shell
+sudo apt install -y gpiod
+```
+
+Verify availability:
+
+```shell
+which gpiomon
+gpiomon --version
+```
+
+Expected result:
+- `gpiomon` resolves to `/usr/bin/gpiomon`
+- A version string is printed
+
+If `gpiomon` is missing, hardware GPIO drivers will fail at runtime.
+
+
 
 ### Yarn install on Pi (deterministic, no network)
 
