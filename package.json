@@ -15,7 +15,7 @@
     "mocha": "^11.7.5"
   },
   "optionalDependencies": {
-    "node-libgpiod": "0.6.0"
+    "node-libgpiod": "github:sombriks/node-libgpiod#main-2x"
   },
   "dependencies": {
     "json5": "^2.2.3",
