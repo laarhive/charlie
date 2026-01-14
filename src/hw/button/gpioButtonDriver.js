@@ -71,11 +71,7 @@ export class GpioButtonDriver {
       const v = Boolean(value)
 
       // Rising edge => press
-      if (this.#last === false && v === true) {
-        this.#publishPress()
-      }
-
-      if (this.#last === null && v === true) {
+      if (v === true && this.#last !== true) {
         this.#publishPress()
       }
 

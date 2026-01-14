@@ -71,12 +71,7 @@ export class Sw420Driver {
       const v = Boolean(value)
 
       // Rising edge triggers a hit
-      if (this.#last === false && v === true) {
-        this.#publishHit()
-      }
-
-      if (this.#last === null && v === true) {
-        // First event arrives high: treat as hit as well
+      if (v === true && this.#last !== true) {
         this.#publishHit()
       }
 
