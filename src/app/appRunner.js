@@ -2,6 +2,7 @@
 import process from 'node:process'
 
 import Logger from '../logging/logger.js'
+import formatError from './errorFormat.js'
 import CliParser from '../cli/cliParser.js'
 import CliController from '../cli/cliController.js'
 import CliWsController from '../cli/cliWsController.js'
@@ -60,7 +61,21 @@ export class AppRunner {
       this.#context = makeContext({ logger: this.#logger, config, mode: args.mode })
       this.#logger.info('app_started', { configFile: loaded.fullPath, mode: args.mode, cli: args.cli })
     } catch (e) {
-      this.#logger.error('config_load_failed', { configFile: initialConfigFile, error: String(e?.message || e) })
+      const fe = formatError(e)
+
+      this.#logger.error('config_load_failed', {
+        configFile: initialConfigFile,
+        error: fe.message,
+        name: fe.name,
+        stack: fe.stack,
+        cause: fe.cause,
+      })
+
+      // Optional: immediate visibility during dev / CLI
+      if (fe.stack) {
+        console.error(fe.stack)
+      }
+
       process.exit(1)
     }
 
