@@ -1,16 +1,23 @@
+// src/hw/signal/gpioBinarySignalGpiod.js
 import { spawn } from 'node:child_process'
 
 /**
- * GPIO-backed binary signal using libgpiod tools (gpiomon).
+ * GPIO-backed binary signal using libgpiod (gpiomon).
  *
  * Contract:
  * - subscribe(handler) -> unsubscribe
  *
- * Note: read() is intentionally not implemented synchronously.
+ * Notes:
+ * - Edge-based only (no synchronous read)
+ * - Requires libgpiod v2 userspace tools
+ * - Uses absolute path to avoid PATH issues
  *
  * @example
- * const sig = new GpioBinarySignalGpiod({ chip: 'gpiochip0', line: 17, activeHigh: true })
- * const unsub = sig.subscribe((v) => console.log(v))
+ * const sig = new GpioBinarySignalGpiod({
+ *   chip: 'gpiochip0',
+ *   line: 17,
+ *   activeHigh: true
+ * })
  */
 export class GpioBinarySignalGpiod {
   #chip
@@ -21,24 +28,27 @@ export class GpioBinarySignalGpiod {
   #disposed
 
   constructor({ chip, line, activeHigh = true }) {
+    if (!chip) {
+      throw new Error('GpioBinarySignalGpiod requires hw.chip (e.g. gpiochip0)')
+    }
+
+    const n = Number(line)
+    if (Number.isNaN(n)) {
+      throw new Error('GpioBinarySignalGpiod requires hw.line (number)')
+    }
+
     this.#chip = chip
-    this.#line = Number(line)
+    this.#line = n
     this.#activeHigh = Boolean(activeHigh)
     this.#handlers = new Set()
     this.#monitor = null
     this.#disposed = false
-
-    if (!this.#chip) {
-      throw new Error('GpioBinarySignalGpiod requires hw.chip (e.g. gpiochip0)')
-    }
-
-    if (Number.isNaN(this.#line)) {
-      throw new Error('GpioBinarySignalGpiod requires hw.line (number)')
-    }
   }
 
   read() {
-    throw new Error('GpioBinarySignalGpiod.read() not supported synchronously. Use edge events.')
+    throw new Error(
+      'GpioBinarySignalGpiod.read() not supported. Use edge events via subscribe().'
+    )
   }
 
   subscribe(handler) {
@@ -73,25 +83,28 @@ export class GpioBinarySignalGpiod {
   }
 
   #startMonitor() {
-    if (this.#monitor) {
+    if (this.#monitor || this.#disposed) {
       return
     }
 
     const args = [
+      '-c',
+      this.#chip,
       '--num-events=0',
       '--silent',
-      this.#chip,
-      `${this.#line}`,
+      String(this.#line),
     ]
 
-    this.#monitor = spawn('gpiomon', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    this.#monitor = spawn('/usr/bin/gpiomon', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
 
     let buf = ''
 
     this.#monitor.stdout.on('data', (d) => {
       buf += d.toString('utf8')
 
-      const lines = buf.split(/\r?\n/g)
+      const lines = buf.split(/\r?\n/)
       buf = lines.pop() || ''
 
       for (const line of lines) {
@@ -107,10 +120,19 @@ export class GpioBinarySignalGpiod {
       }
     })
 
+    this.#monitor.stderr.on('data', (d) => {
+      // gpiomon is usually silent; stderr indicates real issues
+      // Keep process alive but surface the problem
+      console.error('[gpiomon]', d.toString('utf8').trim())
+    })
+
     this.#monitor.on('error', (err) => {
       this.#monitor = null
+
       throw new Error(
-        `Failed to start gpiomon. Is libgpiod installed?\n${err.message}`
+        `Failed to start gpiomon at /usr/bin/gpiomon.\n` +
+        `Is libgpiod installed and accessible?\n` +
+        err.message
       )
     })
 
@@ -134,6 +156,7 @@ export class GpioBinarySignalGpiod {
       return null
     }
 
+    // libgpiod v2 textual output
     if (s.includes('RISING') || s.includes('rising')) {
       return true
     }
@@ -142,6 +165,7 @@ export class GpioBinarySignalGpiod {
       return false
     }
 
+    // Fallback: trailing numeric value
     const m = /(\d+)\s*$/.exec(s)
     if (!m) {
       return null
