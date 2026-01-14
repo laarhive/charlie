@@ -192,11 +192,18 @@ sudo apt install -y build-essential python3 make g++
 Charlie uses **libgpiod userspace tools** for GPIO edge monitoring.
 The `gpiomon` binary must be available on the system.
 
-Install once on the Raspberry Pi:
+
+
+#### Install `libgpiod` tools on the Raspberry Pi:
 
 ```shell
 sudo apt install -y gpiod
 ```
+
+This provides:
+- `gpiomon`
+- `gpioset`
+- `gpioget`
 
 Verify availability:
 
@@ -210,6 +217,143 @@ Expected result:
 - A version string is printed
 
 If `gpiomon` is missing, hardware GPIO drivers will fail at runtime.
+
+
+
+### Configure GPIO access for non-root users (udev)
+
+By default, GPIO character devices (`/dev/gpiochip*`) are owned by `root`
+and not accessible to normal users.  
+This project requires GPIO access **without sudo**.
+
+The following steps grant safe, group-based access.
+
+
+#### Create a dedicated `gpio` group (if missing)
+
+```shell
+sudo groupadd -f gpio
+```
+
+
+#### Add the project user to the `gpio` group
+
+```shell
+sudo usermod -aG gpio charlie
+```
+
+>  You **must log out and back in** after this step for group membership to apply.
+
+
+#### Install udev rule for GPIO character devices
+
+Create a udev rule that assigns GPIO devices to the `gpio` group
+with read/write permissions:
+
+```shell
+sudo tee /etc/udev/rules.d/60-gpiochip.rules >/dev/null <<'EOF'
+SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
+EOF
+```
+
+
+#### Reload udev rules and apply immediately
+
+```shell
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=gpio
+```
+
+
+#### Log out and log back in
+
+This step is required so the `charlie` user picks up the new group.
+
+
+#### Verify permissions (must succeed without sudo)
+
+```shell
+id
+ls -la /dev/gpiochip*
+```
+
+Expected result:
+
+- `charlie` is a member of the `gpio` group
+- GPIO devices look like:
+
+```text
+crw-rw---- 1 root gpio ... /dev/gpiochip0
+crw-rw---- 1 root gpio ... /dev/gpiochip1
+```
+
+
+#### Verify `gpiomon` works as non-root
+
+First, inspect the GPIO chip and confirm the target line exists:
+
+```shell
+gpioinfo -c gpiochip0
+```
+
+You should see line `17` listed (e.g. `GPIO17`) as an input.
+
+
+##### Monitor a GPIO line for edges (blocking)
+
+Start monitoring line **17** on `gpiochip0`:
+
+```shell
+gpiomon -c gpiochip0 --num-events=1 --silent 17 && echo OK
+```
+
+This command **blocks** until an edge (rising or falling) occurs.  
+This is expected behavior.
+
+Trigger the sensor physically (button press, reed switch, vibration, radar output, etc.).
+
+If an edge is detected, `OK` will print and the command will exit.
+
+
+##### Optional: software-controlled loopback test (recommended for validation)
+
+If you want to validate edge detection without relying on a sensor:
+
+* Physically connect GPIO16 to GPIO17** with a jumper wire  
+   (same voltage domain, no resistor needed for this test).
+
+* In terminal A, monitor GPIO17:
+
+```shell
+gpiomon -c gpiochip0 --num-events=1 --silent 17 && echo OK
+```
+
+* In terminal B, toggle GPIO16:
+
+```shell
+gpioset -c gpiochip0 16=1
+gpioset -c gpiochip0 16=0
+```
+
+If `OK` prints in terminal A, edge monitoring is fully functional.
+
+
+##### Notes
+
+- `gpioset` cannot toggle a line that is already monitored by `gpiomon`
+- The loopback test avoids this by using **two different GPIO lines**
+- Successful detection confirms:
+  - udev permissions
+  - libgpiod tooling
+  - non-root GPIO access
+  - edge monitoring reliability
+
+
+#### Result
+
+- GPIO access works without `sudo`
+- Compatible with `libgpiod` / `gpiomon`
+- Safe for long-running, non-root services
 
 
 
