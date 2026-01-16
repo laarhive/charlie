@@ -2,6 +2,8 @@
 import { spawn } from 'node:child_process'
 import eventTypes from '../../core/eventTypes.js'
 
+let processSignalsBound = false
+
 export class GpioWatchdog {
   #logger
   #bus
@@ -18,7 +20,6 @@ export class GpioWatchdog {
 
   #gpioset
   #gpiomon
-  #signalsBound
 
   #timer
   #disposed
@@ -26,6 +27,7 @@ export class GpioWatchdog {
   #lastEdgeTs
   #lastStatus
   #lastError
+  #lastErrorCode
 
   #restartBackoffMs
   #restartScheduled
@@ -62,7 +64,6 @@ export class GpioWatchdog {
 
     this.#gpioset = null
     this.#gpiomon = null
-    this.#signalsBound = false
 
     this.#timer = null
     this.#disposed = false
@@ -70,15 +71,16 @@ export class GpioWatchdog {
     this.#lastEdgeTs = null
     this.#lastStatus = 'unknown'
     this.#lastError = null
+    this.#lastErrorCode = null
 
     this.#restartBackoffMs = 500
     this.#restartScheduled = false
   }
 
   start() {
-    if (!this.#signalsBound) {
-      this.#bindProcessSignals()
-      this.#signalsBound = true
+    if (!processSignalsBound) {
+      this.#bindProcessSignalsOnce()
+      processSignalsBound = true
     }
 
     if (this.#disposed) {
@@ -100,6 +102,10 @@ export class GpioWatchdog {
   }
 
   dispose() {
+    if (this.#disposed) {
+      return
+    }
+
     this.#disposed = true
 
     if (this.#timer) {
@@ -110,7 +116,7 @@ export class GpioWatchdog {
     this.#stopProcesses()
   }
 
-  #bindProcessSignals() {
+  #bindProcessSignalsOnce() {
     const cleanup = () => {
       this.dispose()
     }
@@ -118,25 +124,60 @@ export class GpioWatchdog {
     process.on('SIGINT', cleanup)
     process.on('SIGTERM', cleanup)
     process.on('SIGHUP', cleanup)
+
     process.on('unhandledRejection', (err) => {
       cleanup()
       this.#logger.error('gpio_watchdog_unhandled_rejection', { error: String(err?.message || err) })
     })
+
     process.on('uncaughtException', (err) => {
       cleanup()
       this.#logger.error('gpio_watchdog_uncaught_exception', { error: String(err?.stack || err?.message || err) })
     })
   }
 
+  #classifyError(message) {
+    const s = String(message || '').toLowerCase()
+
+    if (s.includes('device or resource busy') || s.includes('resource busy') || s.includes('busy')) {
+      return 'busy'
+    }
+
+    if (s.includes('permission denied') || s.includes('operation not permitted')) {
+      return 'permission'
+    }
+
+    if (s.includes('no such file') || s.includes('not found')) {
+      return 'not_found'
+    }
+
+    if (s.includes('invalid argument') || s.includes('unknown option') || s.includes('unrecognized option')) {
+      return 'invalid_args'
+    }
+
+    if (s.includes('already requested') || s.includes('line is requested') || s.includes('requested by')) {
+      return 'line_requested'
+    }
+
+    return 'unknown'
+  }
+
   #publish(status, error = null) {
     const nextError = error || null
-    const changed = status !== this.#lastStatus || nextError !== this.#lastError
+    const nextErrorCode = nextError ? this.#classifyError(nextError) : null
+
+    const changed =
+      status !== this.#lastStatus ||
+      nextError !== this.#lastError ||
+      nextErrorCode !== this.#lastErrorCode
+
     if (!changed) {
       return
     }
 
     this.#lastStatus = status
     this.#lastError = nextError
+    this.#lastErrorCode = nextErrorCode
 
     this.#bus.publish({
       type: eventTypes.system.hardware,
@@ -147,6 +188,7 @@ export class GpioWatchdog {
         mode: this.#mode,
         status,
         error: nextError,
+        errorCode: nextErrorCode,
         loopback: {
           chip: this.#chip,
           outLine: this.#outLine,
@@ -159,7 +201,7 @@ export class GpioWatchdog {
     })
 
     if (status === 'degraded') {
-      this.#logger.error('gpio_watchdog_degraded', { error: nextError })
+      this.#logger.error('gpio_watchdog_degraded', { error: nextError, errorCode: nextErrorCode })
       return
     }
 
@@ -168,7 +210,7 @@ export class GpioWatchdog {
       return
     }
 
-    this.#logger.notice('gpio_watchdog_status', { status, error: nextError })
+    this.#logger.notice('gpio_watchdog_status', { status, error: nextError, errorCode: nextErrorCode })
   }
 
   #tick() {
@@ -176,7 +218,6 @@ export class GpioWatchdog {
       return
     }
 
-    // If any process missing -> degraded + restart attempt
     if (!this.#gpiomon || !this.#gpioset) {
       this.#publish('degraded', 'gpio watchdog process missing')
       this.#scheduleRestart()
@@ -185,7 +226,6 @@ export class GpioWatchdog {
 
     const now = this.#clock.nowMs()
 
-    // If we never saw an edge yet, we remain degraded until first edge observed
     if (this.#lastEdgeTs === null) {
       this.#publish('degraded', 'no loopback edge observed yet')
       return
@@ -201,22 +241,56 @@ export class GpioWatchdog {
   }
 
   #startProcesses() {
+    // Fresh health requirement on each (re)spawn
+    this.#lastEdgeTs = null
+
     // Start monitor first, then toggler
     this.#startMonitor()
     this.#startToggler()
   }
 
+  #isProcessGroupAlive(pid) {
+    if (!pid) return false
+
+    try {
+      process.kill(-pid, 0)
+      return true
+    } catch (e) {
+      return false
+    }
+  }
+
   #killProcessGroup(p) {
     if (!p || !p.pid) return
 
+    const pid = p.pid
+
     try {
-      process.kill(-p.pid, 'SIGTERM')
+      process.kill(-pid, 'SIGTERM')
     } catch (e) {
-      // ESRCH = already gone
       if (e?.code !== 'ESRCH') {
-        this.#logger.error('gpio_watchdog_kill_failed', { pid: p.pid, error: String(e?.message || e) })
+        this.#logger.error('gpio_watchdog_kill_failed', { pid, error: String(e?.message || e) })
       }
+      return
     }
+
+    setTimeout(() => {
+      if (this.#disposed) {
+        return
+      }
+
+      if (!this.#isProcessGroupAlive(pid)) {
+        return
+      }
+
+      try {
+        process.kill(-pid, 'SIGKILL')
+      } catch (e) {
+        if (e?.code !== 'ESRCH') {
+          this.#logger.error('gpio_watchdog_kill_force_failed', { pid, error: String(e?.message || e) })
+        }
+      }
+    }, 600)
   }
 
   #stopProcesses() {
@@ -262,23 +336,21 @@ export class GpioWatchdog {
     }
 
     // libgpiod v2:
-    // gpiomon -c <chip> --num-events=0 --silent <line>
+    // gpiomon -c <chip> --num-events=0 <line>
+    //
+    // NOTE: do NOT use --silent, otherwise we cannot observe edges via stdout.
     const args = [
       '-c',
       this.#chip,
       '--num-events=0',
-      '--silent',
       String(this.#inLine),
     ]
 
-    const p = spawn(
-      '/usr/bin/gpiomon',
-      args,
-      {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true
-      }
-    )
+    const p = spawn('/usr/bin/gpiomon', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true
+    })
+
     this.#gpiomon = p
 
     let outBuf = ''
@@ -291,15 +363,16 @@ export class GpioWatchdog {
       outBuf = lines.pop() || ''
 
       if (lines.length > 0) {
-        // Any line indicates at least one edge
         this.#lastEdgeTs = this.#clock.nowMs()
         this.#resetBackoff()
       }
     })
 
-    // Keep stderr captured for diagnostics, but do not spam terminal
     p.stderr.on('data', (d) => {
       errBuf += d.toString('utf8')
+      if (errBuf.length > 32_768) {
+        errBuf = errBuf.slice(-16_384)
+      }
     })
 
     p.on('error', (err) => {
@@ -311,7 +384,7 @@ export class GpioWatchdog {
     p.on('exit', (code, signal) => {
       this.#gpiomon = null
 
-      const msg = (errBuf.trim())
+      const msg = errBuf.trim()
         ? errBuf.trim()
         : `gpiomon exited (code=${code}, signal=${signal})`
 
@@ -325,13 +398,8 @@ export class GpioWatchdog {
       return
     }
 
-    // Continuous square wave using toggle sequence.
-    //
-    // gpioset holds lines while running.
-    // -t <periods...>: toggles after each period; sequence repeats.
-    // If the last period is 0, gpioset exits else it repeats.
-    //
-    // We want continuous toggling: [toggleMs, toggleMs] repeating forever.
+    // Continuous square wave using a repeating toggle sequence:
+    // gpioset -t A,B repeats A,B forever (unless last period is 0)
     const args = [
       '-c',
       this.#chip,
@@ -340,21 +408,20 @@ export class GpioWatchdog {
       `${this.#outLine}=1`,
     ]
 
-    const p = spawn(
-      '/usr/bin/gpioset',
-      args,
-      {
-        stdio: ['ignore', 'ignore', 'pipe'],
-        detached: true
-      }
-    )
+    const p = spawn('/usr/bin/gpioset', args, {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      detached: true
+    })
+
     this.#gpioset = p
 
     let errBuf = ''
 
-    // Keep stderr captured for diagnostics, but do not spam terminal
     p.stderr.on('data', (d) => {
       errBuf += d.toString('utf8')
+      if (errBuf.length > 32_768) {
+        errBuf = errBuf.slice(-16_384)
+      }
     })
 
     p.on('error', (err) => {
@@ -366,7 +433,7 @@ export class GpioWatchdog {
     p.on('exit', (code, signal) => {
       this.#gpioset = null
 
-      const msg = (errBuf.trim())
+      const msg = errBuf.trim()
         ? errBuf.trim()
         : `gpioset exited (code=${code}, signal=${signal})`
 

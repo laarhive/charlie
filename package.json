@@ -14,9 +14,6 @@
     "chai": "^6.2.2",
     "mocha": "^11.7.5"
   },
-  "optionalDependencies": {
-    "node-libgpiod": "github:sombriks/node-libgpiod#main-2x"
-  },
   "dependencies": {
     "json5": "^2.2.3",
     "uWebSockets.js": "uNetworking/uWebSockets.js#v20.56.0",
