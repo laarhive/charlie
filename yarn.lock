@@ -162,9 +162,6 @@ __metadata:
     uWebSockets.js: "uNetworking/uWebSockets.js#v20.56.0"
     winston: "npm:^3.19.0"
     ws: "npm:^8.19.0"
-  dependenciesMeta:
-    node-libgpiod:
-      optional: true
   languageName: unknown
   linkType: soft
 
