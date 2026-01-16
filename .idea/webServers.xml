@@ -3,7 +3,7 @@
   <component name="WebServers">
     <option name="servers">
       <webServer id="3c304c9a-702c-4fbb-b431-2d66281995c5" name="charlie-pi">
-        <fileTransfer rootFolder="/opt/charlie/charlie" accessType="SFTP" host="192.168.1.145" port="22" sshConfigId="c6675763-2d0f-4ab6-85c6-a3618e642a51" sshConfig="charlie@192.168.1.145:22 key" keyPair="true">
+        <fileTransfer rootFolder="/opt/charlie/charlie" accessType="SFTP" host="192.168.1.88" port="22" sshConfigId="c6675763-2d0f-4ab6-85c6-a3618e642a51" sshConfig="charlie@192.168.1.88:22 key" keyPair="true">
           <advancedOptions>
             <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>
