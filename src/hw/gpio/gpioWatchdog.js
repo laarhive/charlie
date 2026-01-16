@@ -1,8 +1,6 @@
 // src/hw/gpio/gpioWatchdog.js
-import { spawn } from 'node:child_process'
 import eventTypes from '../../core/eventTypes.js'
-
-let processSignalsBound = false
+import Gpio from './gpio.js'
 
 export class GpioWatchdog {
   #logger
@@ -10,35 +8,53 @@ export class GpioWatchdog {
   #clock
   #mode
 
-  #chip
   #outLine
   #inLine
 
   #toggleMs
-  #checkEveryMs
   #staleMs
 
-  #gpioset
-  #gpiomon
+  #out
+  #inp
 
-  #timer
   #disposed
+  #staleTimer
 
-  #lastEdgeTs
   #lastStatus
   #lastError
   #lastErrorCode
 
-  #restartBackoffMs
-  #restartScheduled
+  #level
+  #bias
 
-  constructor({ logger, bus, clock, mode, chip = 'gpiochip0', outLine = 17, inLine = 27, toggleMs = 1000 }) {
+  #gpioOpts
+
+  constructor({
+                logger,
+                bus,
+                clock,
+                mode,
+                outLine = 17,
+                inLine = 27,
+                toggleMs = 1000,
+                bias = Gpio.PULL_DOWN,
+
+                chip = null,
+                binDir = null,
+                gpiomonPath = null,
+                gpiosetPath = null,
+                gpioinfoPath = null,
+                pkillPath = null,
+
+                // Watchdog should always label itself consistently
+                consumerTag = 'charlie',
+                reclaimOnBusy = true,
+              }) {
     this.#logger = logger
     this.#bus = bus
     this.#clock = clock
     this.#mode = mode
 
-    this.#chip = String(chip || 'gpiochip0')
     this.#outLine = Number(outLine)
     this.#inLine = Number(inLine)
 
@@ -56,108 +72,142 @@ export class GpioWatchdog {
       throw new Error('GpioWatchdog requires toggleMs >= 100')
     }
 
-    // Derive:
-    // - check at least twice per toggle period, but not faster than 200ms
-    // - stale after 2 missing toggles + small jitter budget
-    this.#checkEveryMs = Math.max(200, Math.floor(this.#toggleMs / 2))
     this.#staleMs = (2 * this.#toggleMs) + 200
 
-    this.#gpioset = null
-    this.#gpiomon = null
+    this.#out = null
+    this.#inp = null
 
-    this.#timer = null
     this.#disposed = false
+    this.#staleTimer = null
 
-    this.#lastEdgeTs = null
     this.#lastStatus = 'unknown'
     this.#lastError = null
     this.#lastErrorCode = null
 
-    this.#restartBackoffMs = 500
-    this.#restartScheduled = false
+    this.#level = 0
+    this.#bias = bias
+
+    this.#gpioOpts = {
+      logger: this.#logger,
+      clock: this.#clock,
+      chip: chip ?? undefined,
+      binDir: binDir ?? undefined,
+      gpiomonPath: gpiomonPath ?? undefined,
+      gpiosetPath: gpiosetPath ?? undefined,
+      gpioinfoPath: gpioinfoPath ?? undefined,
+      pkillPath: pkillPath ?? undefined,
+      consumerTag,
+      reclaimOnBusy,
+    }
   }
 
   start() {
-    if (!processSignalsBound) {
-      this.#bindProcessSignalsOnce()
-      processSignalsBound = true
-    }
-
-    if (this.#disposed) {
-      return
-    }
+    if (this.#disposed) return
 
     if (this.#mode !== 'hw') {
       this.#publish('skipped', `mode=${this.#mode}`)
       return
     }
 
-    this.#startProcesses()
+    this.#out = new Gpio(this.#outLine, { ...this.#gpioOpts, mode: Gpio.OUTPUT })
+    this.#inp = new Gpio(this.#inLine, {
+      ...this.#gpioOpts,
+      mode: Gpio.INPUT,
+      pullUpDown: this.#bias,
+      edge: Gpio.EITHER_EDGE,
+    })
 
-    this.#timer = setInterval(() => {
-      this.#tick()
-    }, this.#checkEveryMs)
+    this.#inp.on('interrupt', () => {
+      this.#armStaleTimer()
+      this.#publish('ok', null)
+    })
 
-    this.#tick()
+    this.#inp.on('error', ({ source, message }) => {
+      this.#clearStaleTimer()
+      this.#publish('degraded', `${source}: ${message}`)
+    })
+
+    this.#armStaleTimer()
+    this.#publish('degraded', 'no loopback edge observed yet')
+
+    this.#startToggling()
   }
 
   dispose() {
-    if (this.#disposed) {
-      return
-    }
-
+    if (this.#disposed) return
     this.#disposed = true
 
-    if (this.#timer) {
-      clearInterval(this.#timer)
-      this.#timer = null
+    this.#clearStaleTimer()
+
+    if (this.#inp) {
+      this.#inp.dispose()
+      this.#inp = null
     }
 
-    this.#stopProcesses()
+    if (this.#out) {
+      this.#out.dispose()
+      this.#out = null
+    }
   }
 
-  #bindProcessSignalsOnce() {
-    const cleanup = () => {
-      this.dispose()
+  #startToggling() {
+    let backoffMs = 250
+
+    const tick = () => {
+      if (this.#disposed) return
+
+      this.#level = this.#level === 0 ? 1 : 0
+
+      try {
+        this.#out.digitalWrite(this.#level)
+        backoffMs = 250
+      } catch (e) {
+        const msg = `write failed: ${String(e?.message || e)}`
+        this.#publish('degraded', msg)
+
+        const waitMs = Math.min(backoffMs, 5000)
+        backoffMs = Math.min(backoffMs * 2, 5000)
+
+        setTimeout(() => {
+          tick()
+        }, waitMs)
+
+        return
+      }
+
+      setTimeout(() => {
+        tick()
+      }, this.#toggleMs)
     }
 
-    process.on('SIGINT', cleanup)
-    process.on('SIGTERM', cleanup)
-    process.on('SIGHUP', cleanup)
+    tick()
+  }
 
-    process.on('unhandledRejection', (err) => {
-      cleanup()
-      this.#logger.error('gpio_watchdog_unhandled_rejection', { error: String(err?.message || err) })
-    })
+  #armStaleTimer() {
+    this.#clearStaleTimer()
 
-    process.on('uncaughtException', (err) => {
-      cleanup()
-      this.#logger.error('gpio_watchdog_uncaught_exception', { error: String(err?.stack || err?.message || err) })
-    })
+    this.#staleTimer = setTimeout(() => {
+      this.#staleTimer = null
+      if (this.#disposed) return
+
+      this.#publish('degraded', `loopback stale (no edge for ${this.#staleMs}ms)`)
+    }, this.#staleMs)
+  }
+
+  #clearStaleTimer() {
+    if (!this.#staleTimer) return
+    clearTimeout(this.#staleTimer)
+    this.#staleTimer = null
   }
 
   #classifyError(message) {
     const s = String(message || '').toLowerCase()
 
-    if (s.includes('device or resource busy') || s.includes('resource busy') || s.includes('busy')) {
-      return 'busy'
-    }
-
-    if (s.includes('permission denied') || s.includes('operation not permitted')) {
-      return 'permission'
-    }
-
-    if (s.includes('no such file') || s.includes('not found')) {
-      return 'not_found'
-    }
-
-    if (s.includes('invalid argument') || s.includes('unknown option') || s.includes('unrecognized option')) {
-      return 'invalid_args'
-    }
-
-    if (s.includes('already requested') || s.includes('line is requested') || s.includes('requested by')) {
-      return 'line_requested'
-    }
+    if (s.includes('device or resource busy') || s.includes('resource busy') || s.includes('busy')) return 'busy'
+    if (s.includes('permission denied') || s.includes('operation not permitted')) return 'permission'
+    if (s.includes('no such file') || s.includes('not found')) return 'not_found'
+    if (s.includes('invalid argument') || s.includes('unknown option') || s.includes('unrecognized option')) return 'invalid_args'
+    if (s.includes('already requested') || s.includes('line is requested') || s.includes('requested by')) return 'line_requested'
 
     return 'unknown'
   }
@@ -171,9 +221,7 @@ export class GpioWatchdog {
       nextError !== this.#lastError ||
       nextErrorCode !== this.#lastErrorCode
 
-    if (!changed) {
-      return
-    }
+    if (!changed) return
 
     this.#lastStatus = status
     this.#lastError = nextError
@@ -190,12 +238,12 @@ export class GpioWatchdog {
         error: nextError,
         errorCode: nextErrorCode,
         loopback: {
-          chip: this.#chip,
           outLine: this.#outLine,
           inLine: this.#inLine,
           toggleMs: this.#toggleMs,
           staleMs: this.#staleMs,
-          checkEveryMs: this.#checkEveryMs,
+          consumerTag: this.#gpioOpts.consumerTag,
+          reclaimOnBusy: this.#gpioOpts.reclaimOnBusy,
         },
       },
     })
@@ -211,235 +259,6 @@ export class GpioWatchdog {
     }
 
     this.#logger.notice('gpio_watchdog_status', { status, error: nextError, errorCode: nextErrorCode })
-  }
-
-  #tick() {
-    if (this.#disposed || this.#mode !== 'hw') {
-      return
-    }
-
-    if (!this.#gpiomon || !this.#gpioset) {
-      this.#publish('degraded', 'gpio watchdog process missing')
-      this.#scheduleRestart()
-      return
-    }
-
-    const now = this.#clock.nowMs()
-
-    if (this.#lastEdgeTs === null) {
-      this.#publish('degraded', 'no loopback edge observed yet')
-      return
-    }
-
-    const age = now - this.#lastEdgeTs
-    if (age > this.#staleMs) {
-      this.#publish('degraded', `loopback stale (last edge ${age}ms ago)`)
-      return
-    }
-
-    this.#publish('ok', null)
-  }
-
-  #startProcesses() {
-    // Fresh health requirement on each (re)spawn
-    this.#lastEdgeTs = null
-
-    // Start monitor first, then toggler
-    this.#startMonitor()
-    this.#startToggler()
-  }
-
-  #isProcessGroupAlive(pid) {
-    if (!pid) return false
-
-    try {
-      process.kill(-pid, 0)
-      return true
-    } catch (e) {
-      return false
-    }
-  }
-
-  #killProcessGroup(p) {
-    if (!p || !p.pid) return
-
-    const pid = p.pid
-
-    try {
-      process.kill(-pid, 'SIGTERM')
-    } catch (e) {
-      if (e?.code !== 'ESRCH') {
-        this.#logger.error('gpio_watchdog_kill_failed', { pid, error: String(e?.message || e) })
-      }
-      return
-    }
-
-    setTimeout(() => {
-      if (this.#disposed) {
-        return
-      }
-
-      if (!this.#isProcessGroupAlive(pid)) {
-        return
-      }
-
-      try {
-        process.kill(-pid, 'SIGKILL')
-      } catch (e) {
-        if (e?.code !== 'ESRCH') {
-          this.#logger.error('gpio_watchdog_kill_force_failed', { pid, error: String(e?.message || e) })
-        }
-      }
-    }, 600)
-  }
-
-  #stopProcesses() {
-    if (this.#gpiomon) {
-      this.#killProcessGroup(this.#gpiomon)
-      this.#gpiomon = null
-    }
-
-    if (this.#gpioset) {
-      this.#killProcessGroup(this.#gpioset)
-      this.#gpioset = null
-    }
-  }
-
-  #scheduleRestart() {
-    if (this.#restartScheduled || this.#disposed) {
-      return
-    }
-
-    this.#restartScheduled = true
-    const delay = this.#restartBackoffMs
-    this.#restartBackoffMs = Math.min(this.#restartBackoffMs * 2, 10_000)
-
-    setTimeout(() => {
-      this.#restartScheduled = false
-
-      if (this.#disposed || this.#mode !== 'hw') {
-        return
-      }
-
-      this.#stopProcesses()
-      this.#startProcesses()
-    }, delay)
-  }
-
-  #resetBackoff() {
-    this.#restartBackoffMs = 500
-  }
-
-  #startMonitor() {
-    if (this.#gpiomon || this.#disposed) {
-      return
-    }
-
-    // libgpiod v2:
-    // gpiomon -c <chip> --num-events=0 <line>
-    //
-    // NOTE: do NOT use --silent, otherwise we cannot observe edges via stdout.
-    const args = [
-      '-c',
-      this.#chip,
-      '--num-events=0',
-      String(this.#inLine),
-    ]
-
-    const p = spawn('/usr/bin/gpiomon', args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true
-    })
-
-    this.#gpiomon = p
-
-    let outBuf = ''
-    let errBuf = ''
-
-    p.stdout.on('data', (d) => {
-      outBuf += d.toString('utf8')
-
-      const lines = outBuf.split(/\r?\n/)
-      outBuf = lines.pop() || ''
-
-      if (lines.length > 0) {
-        this.#lastEdgeTs = this.#clock.nowMs()
-        this.#resetBackoff()
-      }
-    })
-
-    p.stderr.on('data', (d) => {
-      errBuf += d.toString('utf8')
-      if (errBuf.length > 32_768) {
-        errBuf = errBuf.slice(-16_384)
-      }
-    })
-
-    p.on('error', (err) => {
-      this.#gpiomon = null
-      this.#publish('degraded', `gpiomon failed: ${err.message}`)
-      this.#scheduleRestart()
-    })
-
-    p.on('exit', (code, signal) => {
-      this.#gpiomon = null
-
-      const msg = errBuf.trim()
-        ? errBuf.trim()
-        : `gpiomon exited (code=${code}, signal=${signal})`
-
-      this.#publish('degraded', msg)
-      this.#scheduleRestart()
-    })
-  }
-
-  #startToggler() {
-    if (this.#gpioset || this.#disposed) {
-      return
-    }
-
-    // Continuous square wave using a repeating toggle sequence:
-    // gpioset -t A,B repeats A,B forever (unless last period is 0)
-    const args = [
-      '-c',
-      this.#chip,
-      '-t',
-      `${this.#toggleMs},${this.#toggleMs}`,
-      `${this.#outLine}=1`,
-    ]
-
-    const p = spawn('/usr/bin/gpioset', args, {
-      stdio: ['ignore', 'ignore', 'pipe'],
-      detached: true
-    })
-
-    this.#gpioset = p
-
-    let errBuf = ''
-
-    p.stderr.on('data', (d) => {
-      errBuf += d.toString('utf8')
-      if (errBuf.length > 32_768) {
-        errBuf = errBuf.slice(-16_384)
-      }
-    })
-
-    p.on('error', (err) => {
-      this.#gpioset = null
-      this.#publish('degraded', `gpioset failed: ${err.message}`)
-      this.#scheduleRestart()
-    })
-
-    p.on('exit', (code, signal) => {
-      this.#gpioset = null
-
-      const msg = errBuf.trim()
-        ? errBuf.trim()
-        : `gpioset exited (code=${code}, signal=${signal})`
-
-      this.#publish('degraded', msg)
-      this.#scheduleRestart()
-    })
   }
 }
 
