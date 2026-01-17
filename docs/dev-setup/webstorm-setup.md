@@ -85,6 +85,8 @@ Automatic upload → Always
 
 ## SSH Tunnel for Debugging
 
+### Option 1: Local Port Forwarding
+
 Open a local terminal and run:
 
 ```shell
@@ -94,6 +96,38 @@ ssh -L 9229:127.0.0.1:9229 charlie@<PI_IP>
 Keep this terminal open while debugging.
 
 ---
+
+
+### Option 2: Use Bitvise SSH Client
+
+#### Open Bitvise SSH Client:
+
+* Host: `192.168.1.88`
+* Username: `charlie`
+* Authentication: SSH key or password
+* Click **Log in** (verify normal SSH works first)
+
+![bitvise-profile.png](bitvise-profile.png)
+
+
+#### Create a new SSH Tunnel:
+
+#### Go to **Services** → **Port Forwarding**
+
+#### Add a C2S rule
+
+
+| Field            | Value       |
+|------------------|-------------|
+| Type             | `C2S`       |
+| Listen Interface | `127.0.0.1` |
+| Listen Port      | `9229`      |
+| Destination Host | `127.0.0.1` |
+| Destination Port | `9229`      |
+
+![bitvise-c2s.png](bitvise-c2s.png)
+
+
 
 ## WebStorm Debug Configuration
 
