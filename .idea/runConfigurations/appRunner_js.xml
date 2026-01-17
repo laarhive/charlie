@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="appRunner.js" type="NodeJSConfigurationType" application-parameters="--mode win11 --cli" nameIsGenerated="true" path-to-js-file="appRunner.js" working-dir="$PROJECT_DIR$/src/app">
+    <EXTENSION ID="com.intellij.javascript.debugger.execution.StartBrowserRunConfigurationExtension">
+      <browser with-js-debugger="true" />
+    </EXTENSION>
+    <method v="2" />
+  </configuration>
+</component>
