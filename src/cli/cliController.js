@@ -271,39 +271,75 @@ export class CliController {
 
   #virtList() {
     const { hw } = this.#getContext()
-    const m = hw?.signals?.presence
+    const signals = hw?.signals || {}
 
-    if (!(m instanceof Map)) {
-      this.#logger.warning('virt_no_presence_signals', {})
-      return
+    const listSettableIds = (m) => {
+      if (!(m instanceof Map)) {
+        return []
+      }
+
+      return Array.from(m.entries())
+        .filter(([, sig]) => sig && typeof sig.set === 'function')
+        .map(([id]) => id)
+        .filter(Boolean)
+        .sort()
     }
 
-    const ids = Array.from(m.keys()).sort()
-    this.#logger.info('virt_signals', { presence: ids })
+    const presence = listSettableIds(signals.presence)
+    const vibration = listSettableIds(signals.vibration)
+    const button = listSettableIds(signals.button)
+
+    this.#logger.info('virt_signals', { presence, vibration, button })
   }
 
   #virtSet(sensorId, value) {
     const { hw } = this.#getContext()
-    const m = hw?.signals?.presence
+    const signals = hw?.signals || {}
 
-    if (!(m instanceof Map)) {
-      this.#logger.warning('virt_no_presence_signals', { sensorId })
-      return
+    const targets = [
+      { name: 'presence', map: signals.presence },
+      { name: 'vibration', map: signals.vibration },
+      { name: 'button', map: signals.button },
+    ]
+
+    const matches = []
+
+    for (const t of targets) {
+      const m = t.map
+      if (!(m instanceof Map)) {
+        continue
+      }
+
+      const sig = m.get(sensorId)
+      if (!sig) {
+        continue
+      }
+
+      matches.push({ domain: t.name, sig })
     }
 
-    const sig = m.get(sensorId)
-    if (!sig) {
+    if (matches.length === 0) {
       this.#logger.warning('virt_unknown_signal', { sensorId })
       return
     }
 
+    if (matches.length > 1) {
+      this.#logger.warning('virt_ambiguous_signal', {
+        sensorId,
+        domains: matches.map((x) => x.domain),
+      })
+      return
+    }
+
+    const { domain, sig } = matches[0]
+
     if (typeof sig.set !== 'function') {
-      this.#logger.warning('virt_signal_not_settable', { sensorId })
+      this.#logger.warning('virt_signal_not_settable', { sensorId, domain })
       return
     }
 
     sig.set(Boolean(value))
-    this.#logger.notice('virt_set', { sensorId, value: Boolean(value) })
+    this.#logger.notice('virt_set', { sensorId, domain, value: Boolean(value) })
   }
 
   #virtPress(sensorId, ms) {

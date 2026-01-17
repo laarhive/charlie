@@ -22,10 +22,21 @@ export const printHelp = function printHelp({ mode }) {
   console.log('  config print')
 
   if (mode === 'local') {
-    console.log('  virt list|set <sensorId> on|off')
+    console.log('  virt list')
+    console.log('  virt set <sensorId> on|off')
+    console.log('    Set the raw virtual signal state (all device types)')
     console.log('  virt press <sensorId> [ms]')
+    console.log('    Simulate a button press (buttons only)')
     console.log('  clock now|status|freeze|resume|+MS|set YYYY-MM-DD HH:MM')
     console.log('  config load <filename>')
+  }
+
+  if (mode === 'ws') {
+    console.log('')
+    console.log('Notes:')
+    console.log('  - virt * and clock * are local-only')
+    console.log('  - config load is not supported via WS')
+    console.log('  - inject * gates only semantic injections (main bus)')
   }
 
   console.log('  help')

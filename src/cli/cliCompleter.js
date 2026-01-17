@@ -96,6 +96,34 @@ const listVirtSettableButtonIds = function listVirtSettableButtonIds(getContext,
   }
 }
 
+const listVirtSettableSignalIds = function listVirtSettableSignalIds(getContext, prefix) {
+  try {
+    const ctx = getContext()
+    const signals = ctx?.hw?.signals || {}
+
+    const collect = (m) => {
+      if (!(m instanceof Map)) {
+        return []
+      }
+
+      return Array.from(m.entries())
+        .filter(([, sig]) => sig && typeof sig.set === 'function')
+        .map(([id]) => id)
+        .filter(Boolean)
+    }
+
+    const ids = [
+      ...collect(signals.presence),
+      ...collect(signals.vibration),
+      ...collect(signals.button),
+    ]
+
+    return filterPrefix(uniq(ids).sort(), prefix)
+  } catch {
+    return []
+  }
+}
+
 /*
   Node types:
   - { options: string[] }               -> suggests options
@@ -182,7 +210,7 @@ const commandTree = childrenNode({
     list: optionsNode([]),
 
     set: sequenceNode([
-      dynamicNode((getContext, prefix) => listSensorIds(getContext, prefix)),
+      dynamicNode((getContext, prefix) => listVirtSettableSignalIds(getContext, prefix)),
       optionsNode(['on', 'off']),
     ]),
 
