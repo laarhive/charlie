@@ -1,9 +1,11 @@
-// src/app/args.js
 export const parseArgs = function parseArgs(argv) {
   const args = {
     cmd: 'daemon',
     config: null,
-    mode: 'virt',
+
+    // REQUIRED activation profile, e.g. 'rpi4', 'win11'
+    mode: null,
+
     level: 'info',
     cli: false,
 
@@ -51,10 +53,10 @@ export const parseArgs = function parseArgs(argv) {
     }
 
     if (a === '--mode' || a === '-m') {
-      const v = argv[i + 1] || 'virt'
+      const v = String(argv[i + 1] || '').trim()
       i += 1
 
-      if (v === 'hw' || v === 'virt') {
+      if (v) {
         args.mode = v
       }
 

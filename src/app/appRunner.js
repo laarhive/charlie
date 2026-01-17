@@ -24,6 +24,15 @@ export class AppRunner {
     const args = parseArgs(argv)
     this.#logger = new Logger({ level: args.level })
 
+    if (!args.mode) {
+      this.#logger.error('missing_required_arg', {
+        arg: '--mode',
+        example: '--mode rpi4',
+      })
+
+      process.exit(1)
+    }
+
     if (args.cmd === 'cli') {
       this.#runWsCli(args)
       return
@@ -108,18 +117,10 @@ export class AppRunner {
       return
     }
 
-    if (args.mode === 'hw') {
-      this.#logger.notice('hw_mode_started', { note: 'CLI disabled. Use --cmd cli to attach remotely.' })
-      return
-    }
-
-    if (args.mode === 'virt') {
-      this.#logger.notice('virt_mode_started', { note: 'CLI disabled. Use --cmd cli to attach remotely.' })
-      return
-    }
-
-    this.#logger.error('invalid_mode', { mode: args.mode })
-    process.exit(1)
+    this.#logger.notice('daemon_started', {
+      note: 'CLI disabled. Use --cmd cli to attach remotely.',
+      mode: args.mode,
+    })
   }
 }
 

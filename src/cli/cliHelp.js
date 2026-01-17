@@ -23,6 +23,7 @@ export const printHelp = function printHelp({ mode }) {
 
   if (mode === 'local') {
     console.log('  virt list|set <sensorId> on|off')
+    console.log('  virt press <sensorId> [ms]')
     console.log('  clock now|status|freeze|resume|+MS|set YYYY-MM-DD HH:MM')
     console.log('  config load <filename>')
   }

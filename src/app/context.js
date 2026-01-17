@@ -84,19 +84,8 @@ export const makeContext = function makeContext({ logger, config, mode }) {
 
   webServer.start()
 
-  if (mode === 'hw') {
-    logger.notice('hw_mode_starting_drivers', { driverCount: hw.drivers.length })
-    startAll(hw.drivers)
-  }
-
-  if (mode === 'virt') {
-    logger.notice('virt_mode_virtual_signals', {
-      note: 'Virtual drivers/signals enabled. Use virt set to drive inputs.',
-      driverCount: hw.drivers.length,
-    })
-
-    startAll(hw.drivers)
-  }
+  logger.notice('starting_drivers', { mode, driverCount: hw.drivers.length })
+  startAll(hw.drivers)
 
   logger.info('context_created', { nowMs: clock.nowMs(), mode, serverPort })
 

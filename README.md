@@ -103,19 +103,16 @@ Buses can be tapped live for debugging and observability.
 
 ## 3. Operating modes
 
-### Virtual mode (`virt`)
-- Uses virtual signals instead of physical hardware
-- Full pipeline active (drivers → controllers → core)
-- Safe to run on any machine
-- Intended for:
-  - development
-  - testing
-  - CI
+Charlie uses **activation profiles**, selected via the CLI `--mode` parameter,
+to decide **which devices are active** in a given run.
 
-### Hardware mode (`hw`)
-- Uses real GPIO / serial drivers
-- Intended for Raspberry Pi deployment
-- CLI injection disabled by default
+- `--mode` is an arbitrary label (for example `rpi4`, `win11`, `dev`)
+- devices declare which modes they are active in
+- real and virtual devices may coexist
+- the same configuration can be reused across machines
+
+**Documentation**:
+ - [Configuration](docs/configuration.md)**
 
 
 ## 4. Control plane (WebSocket API)
@@ -127,7 +124,7 @@ Charlie exposes a WebSocket-based RPC API used by:
 
 This API is treated as a **stable contract**.
 
-📄 **Documentation**:
+**Documentation**:
 - [WebSocket RPC API](docs/api/ws.md)
 
 ### Stability rules (summary)

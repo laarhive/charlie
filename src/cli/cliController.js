@@ -30,7 +30,7 @@ export class CliController {
     this.#setContext = setContext
     this.#rl = null
 
-    this.#injectEnabled = mode === 'virt'
+    this.#injectEnabled = false
   }
 
   start() {
@@ -246,6 +246,11 @@ export class CliController {
       return
     }
 
+    if (cmd.kind === 'virtPress') {
+      this.#virtPress(cmd.sensorId, cmd.ms)
+      return
+    }
+
     if (cmd.kind === 'driverList') {
       this.#driverList()
       return
@@ -299,6 +304,36 @@ export class CliController {
 
     sig.set(Boolean(value))
     this.#logger.notice('virt_set', { sensorId, value: Boolean(value) })
+  }
+
+  #virtPress(sensorId, ms) {
+    const { hw } = this.#getContext()
+    const m = hw?.signals?.button
+
+    if (!(m instanceof Map)) {
+      this.#logger.warning('virt_no_button_signals', { sensorId })
+      return
+    }
+
+    const sig = m.get(sensorId)
+    if (!sig) {
+      this.#logger.warning('virt_unknown_signal', { sensorId })
+      return
+    }
+
+    if (typeof sig.set !== 'function') {
+      this.#logger.warning('virt_signal_not_settable', { sensorId })
+      return
+    }
+
+    const holdMs = Number(ms) > 0 ? Number(ms) : 30
+
+    sig.set(true)
+
+    setTimeout(() => {
+      sig.set(false)
+      this.#logger.notice('virt_press', { sensorId, holdMs })
+    }, holdMs)
   }
 
   #driverList() {

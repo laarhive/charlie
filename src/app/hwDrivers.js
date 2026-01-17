@@ -18,20 +18,26 @@ export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, conf
     button: new Map(),
   }
 
+  const isActiveInMode = (sensor) => {
+    if (!sensor?.enabled) {
+      return false
+    }
+
+    const modes = sensor?.modes
+    if (!Array.isArray(modes) || modes.length === 0) {
+      return false
+    }
+
+    return modes.includes(mode)
+  }
+
   const makeSignal = (sensor) => {
-    if (mode === 'virt') {
-      return new VirtualBinarySignal(false)
-    }
-
-    if (mode !== 'hw') {
-      throw new Error(`Unknown mode: ${mode}`)
-    }
-
-    if (process.platform !== 'linux') {
-      throw new Error('HW mode requires Linux (libgpiod)')
-    }
-
     const hw = sensor?.hw || {}
+
+    if (hw.virtual) {
+      const initial = hw.virtual?.initial === true
+      return new VirtualBinarySignal(initial)
+    }
 
     return new GpioBinarySignalGpiod({
       chip: hw.chip,
@@ -41,7 +47,7 @@ export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, conf
   }
 
   for (const sensor of sensors) {
-    if (!sensor?.enabled) {
+    if (!isActiveInMode(sensor)) {
       continue
     }
 
@@ -79,7 +85,7 @@ export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, conf
       continue
     }
 
-    if (sensor.role === 'button' && sensor.type === 'gpioButton') {
+    if (sensor.role === 'button' && sensor.type === 'button') {
       const signal = makeSignal(sensor)
       signals.button.set(sensor.id, signal)
 

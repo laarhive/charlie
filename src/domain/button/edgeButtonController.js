@@ -20,8 +20,9 @@ export class EdgeButtonController extends PushButtonController {
         continue
       }
 
-      this.#sensorsById.set(s.id, s)
-      this.#lastPressTsBySensor.set(s.id, null)
+      const logicalId = s.publishAs ?? s.id
+      this.#sensorsById.set(logicalId, s)
+      this.#lastPressTsBySensor.set(logicalId, null)
     }
   }
 

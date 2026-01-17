@@ -106,12 +106,14 @@ export class GpioButtonDriver {
       return
     }
 
+    const logicalId = this.#sensor.publishAs ?? this.#sensor.id
+
     const event = {
       type: domainEventTypes.button.edge,
       ts: this.#clock.nowMs(),
       source: 'gpioButtonDriver',
       payload: {
-        sensorId: this.#sensor.id,
+        sensorId: logicalId,
         edge: 'press',
       },
     }

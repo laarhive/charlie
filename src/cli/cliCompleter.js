@@ -76,6 +76,26 @@ const listZones = function listZones(getContext, prefix) {
   }
 }
 
+const listVirtSettableButtonIds = function listVirtSettableButtonIds(getContext, prefix) {
+  try {
+    const ctx = getContext()
+    const m = ctx?.hw?.signals?.button
+
+    if (!(m instanceof Map)) {
+      return []
+    }
+
+    const ids = Array.from(m.entries())
+      .filter(([, sig]) => sig && typeof sig.set === 'function')
+      .map(([id]) => id)
+      .filter(Boolean)
+
+    return filterPrefix(uniq(ids), prefix)
+  } catch {
+    return []
+  }
+}
+
 /*
   Node types:
   - { options: string[] }               -> suggests options
@@ -160,11 +180,17 @@ const commandTree = childrenNode({
 
   virt: childrenNode({
     list: optionsNode([]),
+
     set: sequenceNode([
       dynamicNode((getContext, prefix) => listSensorIds(getContext, prefix)),
       optionsNode(['on', 'off']),
     ]),
-  }, ['list', 'set']),
+
+    press: sequenceNode([
+      dynamicNode((getContext, prefix) => listVirtSettableButtonIds(getContext, prefix)),
+      optionsNode(['10', '20', '30', '50', '100', '200', '400', '650', '800', '1000']),
+    ]),
+  }, ['list', 'set', 'press']),
 
   driver: childrenNode({
     list: optionsNode([]),
@@ -248,7 +274,7 @@ const traverseForSuggestions = function traverseForSuggestions({ root, tokens, g
       return []
     }
 
-    // ✅ NEW: leaf nodes like inject/vibration/button
+    // leaf nodes like inject/vibration/button
     return getNodeSuggestions(child, getContext, currentPrefix)
   }
 
@@ -258,31 +284,8 @@ const traverseForSuggestions = function traverseForSuggestions({ root, tokens, g
 /**
  * Creates a readline completer for the CLI.
  *
- * Implemented commands (completer-aware):
- * - help
- * - exit
- * - inject on|off|status
- * - tap <bus> on|off|status
- *   - <bus> is dynamic: context.buses keys + "all"
- * - presence <zone> on|off
- *   - <zone> is dynamic: config.zones keys or default front/back
- * - vibration low|high
- * - button short|long
- * - clock now|status|freeze|resume|set|+<ms>
- * - core state
- * - config load <file>|print
- *   - <file> is dynamic: files under /config (*.json, *.json5)
- * - virt list|set <sensorId> on|off
- *   - <sensorId> is dynamic: config.sensors[].id
- * - driver list|enable|disable <sensorId>
- *   - <sensorId> is dynamic: config.sensors[].id
- *
  * @param {object} args
  * @param {() => any} args.getContext Must return current app context
- *
- * @example
- * const completer = makeCliCompleter({ getContext })
- * readline.createInterface({ input, output, completer })
  */
 export const makeCliCompleter = function makeCliCompleter({ getContext }) {
   return (line) => {
@@ -293,7 +296,6 @@ export const makeCliCompleter = function makeCliCompleter({ getContext }) {
     const head = line.slice(0, line.length - current.length)
 
     const fullLineSuggestions = suggestions.map((s) => {
-      // add trailing space if this looks like a full token
       const needsSpace = s.length > 0 && !s.endsWith(' ')
       return `${head}${s}${needsSpace ? ' ' : ''}`
     })

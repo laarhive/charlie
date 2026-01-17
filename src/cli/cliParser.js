@@ -207,6 +207,25 @@ export class CliParser {
         return { kind: 'virtSet', sensorId, value: action === 'on' }
       }
 
+      if (b === 'press') {
+        const sensorId = c
+        const msRaw = rest[0]
+
+        if (!sensorId) {
+          return { kind: 'error', message: 'usage: virt press <sensorId> [ms]' }
+        }
+
+        let ms = null
+        if (msRaw !== undefined) {
+          ms = Number(msRaw)
+          if (Number.isNaN(ms) || ms <= 0) {
+            return { kind: 'error', message: 'ms must be a positive number' }
+          }
+        }
+
+        return { kind: 'virtPress', sensorId, ms }
+      }
+
       return { kind: 'error', message: 'usage: virt list|set <sensorId> on|off' }
     }
 
