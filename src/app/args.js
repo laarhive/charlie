@@ -1,14 +1,20 @@
+// src/app/args.js
 export const parseArgs = function parseArgs(argv) {
   const args = {
-    cmd: 'daemon',
+    // process role
+    run: 'daemon', // 'daemon' | 'cli'
+
+    // runtime config
     config: null,
+    mode: null, // REQUIRED for daemon
 
-    // REQUIRED activation profile, e.g. 'rpi4', 'win11'
-    mode: null,
-
+    // logging
     level: 'info',
-    cli: false,
 
+    // local CLI attachment
+    interactive: false,
+
+    // ws client / server
     host: '127.0.0.1',
     port: 8787,
     portProvided: false,
@@ -17,12 +23,12 @@ export const parseArgs = function parseArgs(argv) {
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i]
 
-    if (a === '--cmd') {
+    if (a === '--run') {
       const v = String(argv[i + 1] || '').trim()
       i += 1
 
       if (v === 'daemon' || v === 'cli') {
-        args.cmd = v
+        args.run = v
       }
 
       continue
@@ -69,8 +75,8 @@ export const parseArgs = function parseArgs(argv) {
       continue
     }
 
-    if (a === '--cli') {
-      args.cli = true
+    if (a === '--interactive') {
+      args.interactive = true
       continue
     }
   }

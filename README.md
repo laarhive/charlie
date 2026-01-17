@@ -112,7 +112,7 @@ to decide **which devices are active** in a given run.
 - the same configuration can be reused across machines
 
 **Documentation**:
- - [Configuration](docs/configuration.md)**
+- [Configuration](docs/configuration.md)
 
 
 ## 4. Control plane (WebSocket API)
@@ -166,34 +166,32 @@ If you prefer a traditional install, you can still run `yarn install`,
 but it is not required for development.
 
 
-### Run in virtual hardware mode with CLI
+### Run the daemon with a local interactive CLI
 
 ```bash
-node src/app/appRunner.js --mode virt --cli --log-level info
+node src/app/appRunner.js --run daemon --mode win11 --interactive --log-level info
 ```
 
 This starts:
 - the full Charlie runtime
-- virtual hardware drivers
 - the WebSocket server
 - an interactive CLI attached to the daemon
+
+The meaning of `--mode` depends on your configuration.
+
+See:
+- [Configuration](docs/configuration.md)
+- [CLI usage](docs/cli.md)
 
 
 ## 6. CLI usage
 
 The CLI can run:
-- locally (attached at startup)
+- locally (attached to the daemon process)
 - remotely (via WebSocket)
 
-Capabilities include:
-- enabling/disabling bus taps
-- inspecting core state and configuration
-- listing and toggling drivers
-- enabling/disabling injection
-- injecting semantic events (guarded)
-- controlling the runtime clock (freeze / advance)
-
-Tab completion is context-aware.
+A detailed CLI guide is available here:
+- [CLI usage](docs/cli.md)
 
 
 ## 7. Raspberry Pi setup
@@ -257,13 +255,16 @@ from high-level concepts to concrete implementation details.
 - [Simulation mode](docs/simulation.md)  
   Virtual hardware, CLI injection, and deterministic testing
 
+### CLI
+- [CLI usage](docs/cli.md)
+
 ### APIs
 - [WebSocket API](docs/api/ws.md)  
   Stable control and observability API used by the CLI and future Web UI
 
 ### Development
 
-- [Development Setup (RPi Runtime)](docs/dev-setup/README.md) 
+- [Development Setup (RPi Runtime)](docs/dev-setup/README.md)
   Development and remote runtime setup instructions
 
 ## 10. Future development

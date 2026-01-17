@@ -24,6 +24,11 @@ export class AppRunner {
     const args = parseArgs(argv)
     this.#logger = new Logger({ level: args.level })
 
+    if (args.run === 'cli') {
+      this.#runWsCli(args)
+      return
+    }
+
     if (!args.mode) {
       this.#logger.error('missing_required_arg', {
         arg: '--mode',
@@ -31,11 +36,6 @@ export class AppRunner {
       })
 
       process.exit(1)
-    }
-
-    if (args.cmd === 'cli') {
-      this.#runWsCli(args)
-      return
     }
 
     this.#runDaemon(args)
@@ -68,7 +68,7 @@ export class AppRunner {
       }
 
       this.#context = makeContext({ logger: this.#logger, config, mode: args.mode })
-      this.#logger.info('app_started', { configFile: loaded.fullPath, mode: args.mode, cli: args.cli })
+      this.#logger.info('app_started', { configFile: loaded.fullPath, mode: args.mode, interactive: args.interactive })
     } catch (e) {
       const fe = formatError(e)
 
@@ -80,7 +80,6 @@ export class AppRunner {
         cause: fe.cause,
       })
 
-      // Optional: immediate visibility during dev / CLI
       if (fe.stack) {
         console.error(fe.stack)
       }
@@ -101,7 +100,7 @@ export class AppRunner {
 
     const loadConfig = (filename) => loadConfigFile(filename)
 
-    if (args.cli) {
+    if (args.interactive) {
       const parser = new CliParser()
 
       const cli = new CliController({
@@ -118,7 +117,7 @@ export class AppRunner {
     }
 
     this.#logger.notice('daemon_started', {
-      note: 'CLI disabled. Use --cmd cli to attach remotely.',
+      note: 'Interactive CLI disabled. Use --run cli to attach remotely.',
       mode: args.mode,
     })
   }
