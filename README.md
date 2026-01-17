@@ -204,7 +204,7 @@ Tab completion is context-aware.
 Production deployment on Raspberry Pi requires additional setup.
 
 See:
-- [Raspberry Pi systemd service (Charlie)](docs/setup/raspberry-pi-systemd)
+- [Raspberry Pi systemd service (Charlie)](docs/setup/rpi-systemd)
 
 
 ## 8. Testing strategy
@@ -246,7 +246,7 @@ from high-level concepts to concrete implementation details.
 - [Hardware](docs/hardware.md)  
   Sensors, wiring concepts, and physical deployment considerations
 
-- [Deployment & systemd](docs/setup/raspberry-pi-systemd.md)
+- [Deployment & systemd](docs/setup/rpi-systemd.md)
   Running Charlie as a system service on the Pi
 
 ### AI Client & Phone
