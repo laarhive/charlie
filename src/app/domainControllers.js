@@ -1,7 +1,7 @@
 // src/app/domainControllers.js
-import BinaryPresenceController from '../domain/presence/binaryPresenceController.js'
-import HitVibrationController from '../domain/vibration/hitVibrationController.js'
-import EdgeButtonController from '../domain/button/edgeButtonController.js'
+import BinaryPresenceController from '../domains/presence/binaryPresenceController.js'
+import HitVibrationController from '../domains/vibration/hitVibrationController.js'
+import EdgeButtonController from '../domains/button/edgeButtonController.js'
 
 /**
  * Builds domain controllers that consume domain buses and publish to main bus.

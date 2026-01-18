@@ -1,4 +1,4 @@
-import domainEventTypes from '../../domain/domainEventTypes.js'
+import domainEventTypes from '../../domains/domainEventTypes.js'
 
 /**
  * SW-420 driver.

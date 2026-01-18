@@ -1,4 +1,5 @@
-import domainEventTypes from '../../domain/domainEventTypes.js'
+//src/hw/button/gpioButtonDriver.js
+import domainEventTypes from '../../domains/domainEventTypes.js'
 
 /**
  * GPIO button driver.
