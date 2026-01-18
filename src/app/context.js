@@ -7,7 +7,6 @@ import FakeConversationAdapter from '../conversation/fakeConversationAdapter.js'
 import makeBuses from './buses.js'
 import makeTaps from './taps.js'
 import makeDomainControllers, { startAll, disposeAll } from './domainControllers.js'
-import GpioWatchdog from '../devices/legacy/hw/gpio/gpioWatchdog.js'
 
 import WebServer from './webServer.js'
 import TaskerConversationAdapter from '../conversation/taskerConversationAdapter.js'
@@ -51,26 +50,9 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     config,
   })
 
-  // GPIO watchdog
-  const gpioCfg = config?.gpio ?? {}
-  const wdCfg = gpioCfg.watchdog ?? {}
-
-  const gpioWatchdog = new GpioWatchdog({
-    logger,
-    bus: buses.main,
-    clock,
-    mode,
-    chip: gpioCfg.chip || 'gpiochip0',
-    outLine: wdCfg.outLine ?? 17,
-    inLine: wdCfg.inLine ?? 27,
-    toggleMs: wdCfg.toggleMs ?? 1000,
-  })
-
-  gpioWatchdog.start()
-
   const serverPort = Number(config?.server?.port ?? 8787)
 
-  // Device manager owns device/driver lifecycle and publishes system:hardware
+  // Device manager owns device lifecycle and publishes system:hardware
   const deviceManager = new DeviceManager({
     logger,
     mainBus: buses.main,
@@ -112,7 +94,6 @@ export const makeContext = function makeContext({ logger, config, mode }) {
 
     deviceManager.dispose()
 
-    gpioWatchdog.dispose()
     core.dispose()
     scheduler.dispose()
 
