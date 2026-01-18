@@ -7,7 +7,7 @@ import FakeConversationAdapter from '../conversation/fakeConversationAdapter.js'
 import makeBuses from './buses.js'
 import makeTaps from './taps.js'
 import makeDomainControllers, { startAll, disposeAll } from './domainControllers.js'
-import GpioWatchdog from '../hw/gpio/gpioWatchdog.js'
+import GpioWatchdog from '../devices/legacy/hw/gpio/gpioWatchdog.js'
 
 import WebServer from './webServer.js'
 import TaskerConversationAdapter from '../conversation/taskerConversationAdapter.js'
