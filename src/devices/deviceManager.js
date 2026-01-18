@@ -143,6 +143,12 @@ export class DeviceManager {
     const cfg = this.#deviceConfigById.get(id)
     if (!cfg) return { ok: false, error: 'DEVICE_NOT_FOUND' }
 
+    // If already active, do nothing (idempotent)
+    const current = this.#stateById.get(id)
+    if (current === 'active') {
+      return { ok: true, note: 'already_active' }
+    }
+
     let inst = this.#deviceById.get(id)
 
     if (!inst) {

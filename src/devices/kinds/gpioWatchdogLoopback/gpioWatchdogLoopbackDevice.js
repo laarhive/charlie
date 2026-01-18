@@ -1,15 +1,73 @@
 // src/devices/kinds/gpioWatchdogLoopback/gpioWatchdogLoopbackDevice.js
+/**
+ * GPIO loopback watchdog device.
+ *
+ * Purpose:
+ * - Continuously verifies GPIO subsystem health using an output→input loopback
+ *
+ * How it works:
+ * - Periodically toggles an output GPIO line
+ * - Expects corresponding edges on an input GPIO line
+ * - If no edge is observed within the stale window → degraded
+ *
+ * This device:
+ * - Does NOT emit domain events
+ * - Only emits system-level hardware health events
+ *
+ * Runtime states:
+ * - active          → loopback edges observed
+ * - degraded        → missing edges or GPIO error
+ * - manualBlocked   → device manually blocked
+ *
+ * Configuration:
+ * - protocol.outLine      GPIO output line
+ * - protocol.inLine       GPIO input line
+ * - protocol.chip         GPIO chip (default gpiochip0)
+ * - protocol.consumerTag  libgpiod consumer tag
+ * - protocol.reclaimOnBusy whether to reclaim orphaned lines
+ *
+ * Params:
+ * - params.toggleMs   interval between output toggles
+ * - params.bias       input pull configuration
+ *
+ * Error handling:
+ * - Classifies GPIO errors into stable error codes
+ * - Deduplicates identical state transitions
+ * - Never throws during runtime
+ *
+ * Injection:
+ * - Not supported (no-op)
+ *
+ * System output:
+ * - Emits eventTypes.system.hardware with:
+ *   - deviceId
+ *   - state
+ *   - error / errorCode
+ *   - loopback configuration details
+ *
+ * @example
+ * {
+ *   kind: 'gpioWatchdogLoopback',
+ *   protocol: {
+ *     outLine: 17,
+ *     inLine: 27,
+ *     chip: 'gpiochip0'
+ *   },
+ *   params: {
+ *     toggleMs: 1000
+ *   }
+ * }
+ */
+
+// src/devices/kinds/gpioWatchdogLoopback/gpioWatchdogLoopbackDevice.js
 import eventTypes from '../../../core/eventTypes.js'
+import BaseDevice from '../../base/baseDevice.js'
 import Gpio from '../../../gpio/gpio.js'
 
-export default class GpioWatchdogLoopbackDevice {
+export default class GpioWatchdogLoopbackDevice extends BaseDevice {
   #logger
   #clock
   #mainBus
-  #device
-
-  #disposed
-  #blocked
 
   #toggleMs
   #staleMs
@@ -26,15 +84,15 @@ export default class GpioWatchdogLoopbackDevice {
   #staleTimer
   #level
 
-  #lastStatus
-  #lastError
+  #lastState
   #lastErrorCode
 
   constructor({ logger, clock, buses, device }) {
+    super(device)
+
     this.#logger = logger
     this.#clock = clock
     this.#mainBus = buses?.main
-    this.#device = device
 
     if (!this.#mainBus?.publish) {
       throw new Error('gpioWatchdogLoopback requires buses.main')
@@ -82,24 +140,18 @@ export default class GpioWatchdogLoopbackDevice {
       reclaimOnBusy,
     }
 
-    this.#disposed = false
-    this.#blocked = false
-
     this.#out = null
     this.#inp = null
 
     this.#staleTimer = null
     this.#level = 0
 
-    this.#lastStatus = 'unknown'
-    this.#lastError = null
+    this.#lastState = 'unknown'
     this.#lastErrorCode = null
   }
 
-  start() {
-    if (this.#disposed || this.#blocked) {
-      return
-    }
+  _startImpl() {
+    this._setLastError(null)
 
     this.#closeGpio()
 
@@ -127,25 +179,14 @@ export default class GpioWatchdogLoopbackDevice {
     this.#startToggling()
   }
 
-  dispose() {
-    if (this.#disposed) return
-    this.#disposed = true
-    this.#blocked = true
-
+  _stopImpl(reason) {
     this.#clearStaleTimer()
     this.#closeGpio()
-  }
 
-  block(reason) {
-    this.#blocked = true
-    this.#publish('manualBlocked', reason ? `blocked: ${reason}` : 'blocked')
-    this.#clearStaleTimer()
-    this.#closeGpio()
-  }
-
-  unblock() {
-    this.#blocked = false
-    this.start()
+    if (reason !== 'dispose') {
+      const msg = reason ? `blocked: ${String(reason)}` : 'blocked'
+      this.#publish('manualBlocked', msg)
+    }
   }
 
   inject(payload) {
@@ -156,7 +197,7 @@ export default class GpioWatchdogLoopbackDevice {
     let backoffMs = 250
 
     const tick = () => {
-      if (this.#disposed || this.#blocked) return
+      if (this.isDisposed() || this.isBlocked()) return
       if (!this.#out) return
 
       this.#level = this.#level === 0 ? 1 : 0
@@ -191,7 +232,7 @@ export default class GpioWatchdogLoopbackDevice {
 
     this.#staleTimer = setTimeout(() => {
       this.#staleTimer = null
-      if (this.#disposed || this.#blocked) return
+      if (this.isDisposed() || this.isBlocked()) return
 
       this.#publish('degraded', `loopback stale (no edge for ${this.#staleMs}ms)`)
     }, this.#staleMs)
@@ -227,41 +268,40 @@ export default class GpioWatchdogLoopbackDevice {
     return 'unknown'
   }
 
-  #publish(state, error = null) {
+  #publish(state, error) {
     const nextError = error || null
     const nextErrorCode = nextError ? this.#classifyError(nextError) : null
 
     const changed =
-      state !== this.#lastStatus ||
-      nextError !== this.#lastError ||
+      state !== this.#lastState ||
+      nextError !== this.getLastError() ||
       nextErrorCode !== this.#lastErrorCode
 
     if (!changed) return
 
-    this.#lastStatus = state
-    this.#lastError = nextError
+    this.#lastState = state
+    this._setLastError(nextError)
     this.#lastErrorCode = nextErrorCode
-
-    const deviceId = this.#device?.id ?? null
-    const publishAs = this.#device?.publishAs ?? deviceId
 
     this.#mainBus.publish({
       type: eventTypes.system.hardware,
       ts: this.#clock.nowMs(),
       source: 'gpioWatchdogLoopback',
       payload: {
-        deviceId,
-        publishAs,
+        deviceId: this.getId(),
+        publishAs: this.getPublishAs(),
         state,
-        error: nextError,
-        errorCode: nextErrorCode,
-        loopback: {
-          outLine: this.#outLine,
-          inLine: this.#inLine,
-          toggleMs: this.#toggleMs,
-          staleMs: this.#staleMs,
-          consumerTag: this.#gpioOpts.consumerTag,
-          reclaimOnBusy: this.#gpioOpts.reclaimOnBusy,
+        detail: {
+          error: nextError,
+          errorCode: nextErrorCode,
+          loopback: {
+            outLine: this.#outLine,
+            inLine: this.#inLine,
+            toggleMs: this.#toggleMs,
+            staleMs: this.#staleMs,
+            consumerTag: this.#gpioOpts.consumerTag,
+            reclaimOnBusy: this.#gpioOpts.reclaimOnBusy,
+          },
         },
       },
     })

@@ -1,4 +1,52 @@
 // src/devices/kinds/buttonEdge/buttonEdgeDevice.js
+/**
+ * Button edge device.
+ *
+ * Purpose:
+ * - Converts a binary input protocol into semantic "button pressed" domain events
+ *
+ * Behavior:
+ * - Emits a domain button edge only on rising transitions
+ * - Suppresses duplicate presses while the input remains HIGH
+ * - Reports hardware health via system:hardware events on the main bus
+ *
+ * Protocol requirements:
+ * - Must provide a binary input with:
+ *   - subscribe(callback)
+ *   - optional set(value) for injection
+ *   - optional dispose()
+ *
+ * Runtime states emitted:
+ * - active          → input is functioning
+ * - degraded        → protocol error occurred
+ * - manualBlocked   → device was blocked by user or config
+ *
+ * Injection:
+ * - Supported commands:
+ *   - "press"
+ *   - "press <ms>"
+ *   - { type: "press", ms: number }
+ *
+ * Injection simulates a press by toggling the protocol input HIGH → LOW.
+ *
+ * Error handling:
+ * - Protocol errors are deduplicated in time
+ * - Errors do not crash the device
+ * - Degraded state is reported once per distinct failure
+ *
+ * Domain output:
+ * - Emits domainEventTypes.button.edge
+ *
+ * System output:
+ * - Emits eventTypes.system.hardware
+ *
+ * @example
+ * device.inject('press 100')
+ *
+ * @example
+ * device.inject({ type: 'press', ms: 50 })
+ */
+
 import eventTypes from '../../../core/eventTypes.js'
 import BaseDevice from '../../base/baseDevice.js'
 import domainEventTypes from '../../../domains/domainEventTypes.js'
@@ -8,15 +56,12 @@ export default class ButtonEdgeDevice extends BaseDevice {
   #clock
   #domainBus
   #mainBus
-  #device
   #protocolFactory
 
   #input
   #unsub
   #last
-  #blocked
 
-  #lastError
   #lastProtocolErrorMsg
   #lastProtocolErrorTs
 
@@ -27,15 +72,12 @@ export default class ButtonEdgeDevice extends BaseDevice {
     this.#clock = clock
     this.#domainBus = domainBus
     this.#mainBus = mainBus
-    this.#device = device
     this.#protocolFactory = protocolFactory
 
     this.#input = null
     this.#unsub = null
     this.#last = null
-    this.#blocked = false
 
-    this.#lastError = null
     this.#lastProtocolErrorMsg = null
     this.#lastProtocolErrorTs = 0
 
@@ -44,15 +86,11 @@ export default class ButtonEdgeDevice extends BaseDevice {
     }
   }
 
-  start() {
-    if (this.#blocked) {
-      return
-    }
-
+  _startImpl() {
     if (!this.#input) {
-      this.#lastError = null
+      this._setLastError(null)
 
-      this.#input = this.#protocolFactory.makeBinaryInput(this.#device.protocol, {
+      this.#input = this.#protocolFactory.makeBinaryInput(this._device().protocol, {
         onError: (e) => {
           const msg = String(e?.message || '')
           const now = this.#clock.nowMs()
@@ -64,17 +102,17 @@ export default class ButtonEdgeDevice extends BaseDevice {
           this.#lastProtocolErrorMsg = msg
           this.#lastProtocolErrorTs = now
 
-          this.#lastError = msg || 'gpio_error'
+          this._setLastError(msg || 'gpio_error')
 
           if (!duplicate) {
             this.#logger.error('device_protocol_error', {
-              deviceId: this.#device.id,
+              deviceId: this.getId(),
               source: e?.source,
               message: e?.message,
             })
           }
 
-          this.#publishHardwareState('degraded', this.#lastError)
+          this.#publishHardwareState('degraded', this.getLastError())
         }
       })
     }
@@ -88,7 +126,7 @@ export default class ButtonEdgeDevice extends BaseDevice {
     this.#unsub = this.#input.subscribe((value) => {
       const v = Boolean(value)
 
-      if (!this.#blocked && v === true && this.#last !== true) {
+      if (!this.isBlocked() && v === true && this.#last !== true) {
         this.#publishPress()
       }
 
@@ -98,19 +136,7 @@ export default class ButtonEdgeDevice extends BaseDevice {
     this.#publishHardwareState('active', null)
   }
 
-  dispose() {
-    this.block()
-
-    if (this.#input?.dispose) {
-      this.#input.dispose()
-    }
-
-    this.#input = null
-  }
-
-  block(reason) {
-    this.#blocked = true
-
+  _stopImpl(reason) {
     if (this.#unsub) {
       this.#unsub()
       this.#unsub = null
@@ -118,19 +144,17 @@ export default class ButtonEdgeDevice extends BaseDevice {
 
     this.#last = null
 
-    this.#publishHardwareState('manualBlocked', reason ? `blocked: ${reason}` : 'blocked')
-  }
-
-  unblock() {
-    this.#blocked = false
-
     if (this.#input?.dispose) {
       this.#input.dispose()
     }
 
     this.#input = null
-    this.#unsub = null
-    this.start()
+
+    // Only publish manualBlocked if it was a manual action (not dispose)
+    if (reason !== 'dispose') {
+      const msg = reason ? `blocked: ${String(reason)}` : 'blocked'
+      this.#publishHardwareState('manualBlocked', msg)
+    }
   }
 
   inject(payload) {
@@ -178,9 +202,7 @@ export default class ButtonEdgeDevice extends BaseDevice {
       throw err
     }
 
-    if (!this.#input) {
-      this.start()
-    }
+    this.start()
 
     if (typeof this.#input?.set !== 'function') {
       const err = new Error('inject_requires_settable_input')
@@ -195,29 +217,14 @@ export default class ButtonEdgeDevice extends BaseDevice {
     }, holdMs)
   }
 
-  getSnapshot() {
-    return {
-      id: this.#device.id,
-      publishAs: this.#device.publishAs ?? this.#device.id,
-      kind: this.#device.kind ?? null,
-      domain: this.#device.domain ?? null,
-      configuredState: this.#device.state ?? 'active',
-      blocked: this.#blocked,
-      lastError: this.#lastError,
-    }
-  }
-
   #publishHardwareState(state, error) {
-    const deviceId = this.#device.id
-    const publishAs = this.#device.publishAs ?? deviceId
-
     this.#mainBus.publish({
       type: eventTypes.system.hardware,
       ts: this.#clock.nowMs(),
       source: 'buttonEdgeDevice',
       payload: {
-        deviceId,
-        publishAs,
+        deviceId: this.getId(),
+        publishAs: this.getPublishAs(),
         state,
         detail: error ? { error } : {},
       },
@@ -225,16 +232,13 @@ export default class ButtonEdgeDevice extends BaseDevice {
   }
 
   #publishPress() {
-    const deviceId = this.#device.id
-    const publishAs = this.#device.publishAs ?? deviceId
-
     this.#domainBus.publish({
       type: domainEventTypes.button.edge,
       ts: this.#clock.nowMs(),
       source: 'buttonEdgeDevice',
       payload: {
-        deviceId,
-        publishAs,
+        deviceId: this.getId(),
+        publishAs: this.getPublishAs(),
         edge: 'press',
       },
     })
