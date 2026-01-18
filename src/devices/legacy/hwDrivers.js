@@ -1,10 +1,10 @@
 // src/app/hwDrivers.js
-import Ld2410Driver from '../hw/presence/ld2410Driver.js'
-import Sw420Driver from '../hw/vibration/sw420Driver.js'
-import GpioButtonDriver from '../hw/button/gpioButtonDriver.js'
+import Ld2410Driver from '../../hw/presence/ld2410Driver.js'
+import Sw420Driver from '../../hw/vibration/sw420Driver.js'
+import GpioButtonDriver from '../../hw/button/gpioButtonDriver.js'
 
-import VirtualBinarySignal from '../hw/signal/virtualBinarySignal.js'
-import GpioBinarySignalGpiod from '../hw/signal/gpioBinarySignalGpiod.js'
+import VirtualBinarySignal from '../../hw/signal/virtualBinarySignal.js'
+import GpioBinarySignalGpiod from '../../hw/signal/gpioBinarySignalGpiod.js'
 
 export const makeHwDrivers = function makeHwDrivers({ logger, buses, clock, config, mode }) {
   const sensors = Array.isArray(config?.sensors) ? config.sensors : []

@@ -1,6 +1,6 @@
 // src/devices/deviceManager.js
 import eventTypes from '../core/eventTypes.js'
-import makeHwDrivers, { disposeSignals } from '../app/hwDrivers.js'
+import makeHwDrivers, { disposeSignals } from './legacy/hwDrivers.js'
 
 export class DeviceManager {
   #logger
