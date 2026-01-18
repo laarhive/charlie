@@ -59,10 +59,11 @@
  * }
  */
 
-// src/devices/kinds/gpioWatchdogLoopback/gpioWatchdogLoopbackDevice.js
 import eventTypes from '../../../core/eventTypes.js'
 import BaseDevice from '../../base/baseDevice.js'
 import Gpio from '../../../gpio/gpio.js'
+import deviceErrorCodes from '../../deviceErrorCodes.js'
+import { err } from '../../deviceResult.js'
 
 export default class GpioWatchdogLoopbackDevice extends BaseDevice {
   #logger
@@ -155,13 +156,22 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
 
     this.#closeGpio()
 
-    this.#out = new Gpio(this.#outLine, { ...this.#gpioOpts, mode: Gpio.OUTPUT })
-    this.#inp = new Gpio(this.#inLine, {
-      ...this.#gpioOpts,
-      mode: Gpio.INPUT,
-      pullUpDown: this.#bias,
-      edge: Gpio.EITHER_EDGE,
-    })
+    try {
+      this.#out = new Gpio(this.#outLine, { ...this.#gpioOpts, mode: Gpio.OUTPUT })
+      this.#inp = new Gpio(this.#inLine, {
+        ...this.#gpioOpts,
+        mode: Gpio.INPUT,
+        pullUpDown: this.#bias,
+        edge: Gpio.EITHER_EDGE,
+      })
+    } catch (e) {
+      this.#clearStaleTimer()
+      this.#closeGpio()
+
+      const msg = `gpio_init_failed: ${String(e?.message || e)}`
+      this.#publish('degraded', msg)
+      return
+    }
 
     this.#inp.on('interrupt', () => {
       this.#armStaleTimer()
@@ -179,6 +189,7 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
     this.#startToggling()
   }
 
+
   _stopImpl(reason) {
     this.#clearStaleTimer()
     this.#closeGpio()
@@ -191,6 +202,7 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
 
   inject(payload) {
     void payload
+    return err(deviceErrorCodes.notSupported, 'inject_not_supported')
   }
 
   #startToggling() {
