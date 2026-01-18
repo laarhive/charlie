@@ -72,13 +72,13 @@ export default class GpioWatchdogLoopbackDevice {
     const params = device?.params || {}
     const protocol = device?.protocol || {}
 
-    this.#outLine = Number(params?.outLine ?? 17)
-    this.#inLine = Number(params?.inLine ?? 27)
+    this.#outLine = Number(protocol?.outLine)
+    this.#inLine = Number(protocol?.inLine)
     this.#toggleMs = Number(params?.toggleMs ?? 1000)
     this.#bias = params?.bias ?? Gpio.PULL_DOWN
 
     if (Number.isNaN(this.#outLine) || Number.isNaN(this.#inLine)) {
-      throw new Error('gpioWatchdogLoopback requires numeric outLine and inLine')
+      throw new Error('gpioWatchdogLoopback requires protocol.outLine and protocol.inLine')
     }
 
     if (this.#outLine === this.#inLine) {
