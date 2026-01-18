@@ -50,6 +50,8 @@
 import eventTypes from '../../../core/eventTypes.js'
 import BaseDevice from '../../base/baseDevice.js'
 import domainEventTypes from '../../../domains/domainEventTypes.js'
+import deviceErrorCodes from '../../deviceErrorCodes.js'
+import { ok, err } from '../../deviceResult.js'
 
 export default class ButtonEdgeDevice extends BaseDevice {
   #logger
@@ -181,33 +183,25 @@ export default class ButtonEdgeDevice extends BaseDevice {
       const name = parts[0]
 
       if (name !== 'press') {
-        const err = new Error('unsupported_command')
-        err.code = 'NOT_SUPPORTED'
-        throw err
+        return err(deviceErrorCodes.notSupported, 'unsupported_command', { cmd: name })
       }
 
       const ms = Number(parts[1])
       holdMs = Number.isNaN(ms) ? 30 : Math.max(1, ms)
     } else if (cmd && typeof cmd === 'object') {
       if (cmd.type !== 'press') {
-        const err = new Error('unsupported_command')
-        err.code = 'NOT_SUPPORTED'
-        throw err
+        return err(deviceErrorCodes.notSupported, 'unsupported_command', { cmd: cmd.type })
       }
 
       holdMs = Number(cmd.ms) > 0 ? Number(cmd.ms) : 30
     } else {
-      const err = new Error('unsupported_command')
-      err.code = 'NOT_SUPPORTED'
-      throw err
+      return err(deviceErrorCodes.notSupported, 'unsupported_command')
     }
 
     this.start()
 
     if (typeof this.#input?.set !== 'function') {
-      const err = new Error('inject_requires_settable_input')
-      err.code = 'NOT_SUPPORTED'
-      throw err
+      return err(deviceErrorCodes.notSupported, 'inject_requires_settable_input')
     }
 
     this.#input.set(true)
@@ -215,6 +209,8 @@ export default class ButtonEdgeDevice extends BaseDevice {
     setTimeout(() => {
       this.#input.set(false)
     }, holdMs)
+
+    return ok()
   }
 
   #publishHardwareState(state, error) {

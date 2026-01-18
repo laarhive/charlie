@@ -40,14 +40,10 @@ export class DeviceManager {
     const devices = Array.isArray(this.#config?.devices) ? this.#config.devices : []
 
     for (const cfg of devices) {
-      if (!cfg?.id) {
-        continue
-      }
+      if (!cfg?.id) continue
 
       const modes = Array.isArray(cfg?.modes) ? cfg.modes : []
-      if (!modes.includes(this.#mode)) {
-        continue
-      }
+      if (!modes.includes(this.#mode)) continue
 
       this.#deviceConfigById.set(cfg.id, cfg)
     }
@@ -143,13 +139,12 @@ export class DeviceManager {
     const cfg = this.#deviceConfigById.get(id)
     if (!cfg) return { ok: false, error: 'DEVICE_NOT_FOUND' }
 
-    // If already active, do nothing (idempotent)
     const current = this.#stateById.get(id)
     if (current === 'active') {
       return { ok: true, note: 'already_active' }
     }
 
-    let inst = this.#deviceById.get(id)
+    const inst = this.#deviceById.get(id)
 
     if (!inst) {
       const ok = this.#ensureStarted(cfg, { reason })
@@ -162,7 +157,12 @@ export class DeviceManager {
       return { ok: true }
     } catch (e) {
       this.#logger.error('device_unblock_failed', { deviceId: id, error: e?.message || String(e) })
-      this.#setState(id, 'degraded', { phase: 'unblock', reason, error: e?.message || String(e) })
+      this.#setState(id, 'degraded', {
+        phase: 'unblock',
+        reason,
+        error: e?.message || String(e),
+        errorCode: e?.code ? String(e.code) : null,
+      })
       return { ok: false, error: 'START_FAILED' }
     }
   }
@@ -173,16 +173,34 @@ export class DeviceManager {
     if (!cfg) return { ok: false, error: 'DEVICE_NOT_FOUND' }
 
     const inst = this.#deviceById.get(id)
-
     if (!inst?.inject) {
       return { ok: false, error: 'NOT_SUPPORTED' }
     }
 
     try {
-      inst.inject(payload)
+      const res = inst.inject(payload)
+
+      if (res && res.ok === false) {
+        return res
+      }
+
       return { ok: true }
     } catch (e) {
-      return { ok: false, error: 'INJECT_FAILED', message: e?.message || String(e) }
+      if (e && typeof e === 'object') {
+        if (e.error) {
+          return { ok: false, error: e.error, message: e.message, detail: e.detail }
+        }
+
+        if (e.code) {
+          return { ok: false, error: String(e.code), message: e.message, detail: e.detail }
+        }
+
+        if (e.message) {
+          return { ok: false, error: 'INJECT_FAILED', message: e.message }
+        }
+      }
+
+      return { ok: false, error: 'INJECT_FAILED', message: String(e) }
     }
   }
 
@@ -202,8 +220,18 @@ export class DeviceManager {
 
         this.#deviceById.set(id, inst)
       } catch (e) {
-        this.#logger.error('device_create_failed', { deviceId: id, error: e?.message || String(e) })
-        this.#setState(id, 'degraded', { phase: 'create', error: e?.message || String(e), ...detail })
+        const msg = e?.message || String(e)
+        const code = e?.code ? String(e.code) : null
+
+        this.#logger.error('device_create_failed', { deviceId: id, error: msg, errorCode: code })
+
+        this.#setState(id, 'degraded', {
+          phase: 'create',
+          error: msg,
+          errorCode: code,
+          ...detail,
+        })
+
         return false
       }
     }
@@ -213,8 +241,18 @@ export class DeviceManager {
       this.#setState(id, 'active', { phase: 'start', ...detail })
       return true
     } catch (e) {
-      this.#logger.error('device_start_failed', { deviceId: id, error: e?.message || String(e) })
-      this.#setState(id, 'degraded', { phase: 'start', error: e?.message || String(e), ...detail })
+      const msg = e?.message || String(e)
+      const code = e?.code ? String(e.code) : null
+
+      this.#logger.error('device_start_failed', { deviceId: id, error: msg, errorCode: code })
+
+      this.#setState(id, 'degraded', {
+        phase: 'start',
+        error: msg,
+        errorCode: code,
+        ...detail,
+      })
+
       return false
     }
   }
