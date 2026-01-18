@@ -1,4 +1,7 @@
 Instruction to paste at the start of the next chat:
+
+
+
 When you provide documentation in Markdown format meant to be copied into a repository:
 * Always wrap the entire document in an outer quadruple-backtick Markdown block (````markdown … ````).
 * Inside that document, use normal triple backticks for code blocks.

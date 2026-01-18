@@ -15,6 +15,7 @@ Charlie AI is the voice and AI interaction component.
 - Optionally send callbacks/telemetry to Charlie Core
 
 ## Interface with Charlie Core
+
 Charlie Core does not run AI inference.
 
 Charlie Core requests actions such as:
@@ -22,5 +23,5 @@ Charlie Core requests actions such as:
 - stop a conversation
 - (later) report conversation events back (started/ended/turn/idle)
 
-The transport can be LAN or WireGuard. The adapter on Core hides transport details from the rest of the system.
-```
+The transport can be LAN or WireGuard.  
+The adapter on Core hides transport details from the rest of the system.

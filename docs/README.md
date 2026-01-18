@@ -3,14 +3,25 @@
 
 This folder documents the system architecture and the key interfaces between components.
 
-## Start here
+## Architecture
 
-- [System overview](architecture/system-overview.md)
-- [Charlie Core architecture](architecture/charlie-core.md)
-- [Charlie AI architecture](architecture/charlie-ai.md)
+- `architecture/system-overview.md`
+- `architecture/charlie-core.md`
+- `architecture/devices.md`
+- `architecture/charlie-ai.md`
 
-## Interfaces (contracts)
+## How-to
 
-This repo keeps interface details close to code. Markdown explains structure and responsibilities; JSDoc defines field names, allowed values, and examples.
+- `cli.md`
+- `configuration.md`
+- `hardware.md`
+- `tasker-endpoints.md`
 
-- [Interface index](interfaces/index.md)
+## Raspberry Pi
+
+- `rpi/deployment-checklist.md`
+- `rpi/gpio-libgpiod-setup.md`
+
+## API
+
+- `api/ws.md`

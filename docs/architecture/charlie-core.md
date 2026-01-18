@@ -12,7 +12,8 @@ Charlie Core is an event-driven Node.js runtime. It separates:
 Charlie uses multiple EventBus instances.
 
 ### Domain buses
-Domain buses carry raw-ish events produced by device drivers. They are consumed by domain controllers only.
+Domain buses carry raw-ish events produced by device drivers.  
+They are consumed by domain controllers only.
 
 Typical domain buses:
 - presence
@@ -23,7 +24,8 @@ Typical domain buses:
 The main bus carries semantic events consumed by the core state machine and rules engine.
 
 ### Tasker bus (adapter channel)
-The adapter layer uses a dedicated channel for integration with Tasker / external clients. Internally, the adapter still publishes semantic events on the main bus when needed.
+The adapter layer uses a dedicated channel for integration with Tasker / external clients.  
+Internally, the adapter still publishes semantic events on the main bus when needed.
 
 ## Layer responsibilities
 
@@ -42,9 +44,9 @@ Protocols are selected per device instance via configuration.
 A device is a configured instance:
 - has an id and optional publishAs
 - declares modes in which it is active
-- has a configured state (active/manualBlocked)
+- has a configured state (active / manualBlocked)
 - has a kind (driver implementation)
-- selects a protocol (gpio/uart/i2c/virt)
+- selects a protocol (gpio / uart / i2c / virt)
 - belongs to a domain (routes to a controller)
 - has a role (used by core logic, independent of hardware identity)
 
@@ -111,7 +113,7 @@ Observability:
 - the Device Manager subscribes to the main bus to observe device health
 
 Control:
-- the Device Manager holds references to device instances and can call block/unblock/inject
+- the Device Manager holds references to device instances and can call block / unblock / inject
 
 ## Testing surfaces
 
@@ -126,5 +128,5 @@ Control:
 ## Interface documentation
 
 Event payload shapes, device config fields, and injection command schemas are defined in code via JSDoc.
-See: ../interfaces/index.md
-```
+
+See: `docs/interfaces/index.md`

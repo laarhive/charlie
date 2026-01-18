@@ -1,3 +1,5 @@
+<!-- docs/architecture/devices.md -->
+
 # docs/architecture/devices.md
 
 # Devices
@@ -19,34 +21,34 @@ A device:
 - is instantiated from a config entry (`config.devices[]`)
 - creates and owns its protocols
 - publishes raw domain events (or system events) to a bus
-- supports block/unblock
-- supports injection with a generic payload (string/JSON) interpreted by the device kind
+- supports block / unblock
+- supports injection with a generic payload (string or JSON) interpreted by the device kind
 
 A device does NOT:
-- apply debounce/cooldown/semantic mapping (that belongs to controllers)
+- apply debounce / cooldown / semantic mapping (that belongs to controllers)
 - contain core decision logic (that belongs to CharlieCore)
 
 ### Protocol
 A protocol:
-- provides IO primitives (subscribe/read/write/etc.)
-- can throw on construction if the platform/tools are missing
+- provides IO primitives (subscribe / read / write / etc.)
+- can throw on construction if the platform or tools are missing
 - does not publish to buses
 
 ## Lifecycle
 
 Configured state (from config):
-- `active`
-- `manualBlocked`
+- active
+- manualBlocked
 
 Runtime state (reported by DeviceManager via `system:hardware`):
-- `active`
-- `degraded`
-- `manualBlocked`
+- active
+- degraded
+- manualBlocked
 
 Rules:
-- `manualBlocked` means the device should not run.
-- `degraded` means the device is configured active but not functioning.
-- recovery is device-specific (DeviceManager calls `unblock()`, device decides what to do).
+- manualBlocked means the device should not run
+- degraded means the device is configured active but not functioning
+- recovery is device-specific (DeviceManager calls `unblock()`, device decides what to do)
 
 ## Device Manager contract
 
@@ -67,33 +69,34 @@ DeviceManager does NOT:
 
 There are two separate injection surfaces:
 
-1) **Semantic injection** (core testing)
+### 1) Semantic injection (core testing)
 - publishes semantic events directly on the main bus
 - uses `coreRole` in payloads (not deviceId)
 
-2) **Device injection** (device testing / virtual control)
+### 2) Device injection (device testing / virtual control)
 - routes to `device.inject(payload)`
-- payload is a raw string or JSON; device kind decides what it means
+- payload is a raw string or JSON
+- device kind decides what it means
 
 ## Required fields
 
-Each config.devices entry should include:
+Each `config.devices[]` entry must include:
 - `id`
 - `kind`
-- `domain` (which bus the device publishes to, or `main` for system devices)
+- `domain` (bus the device publishes to, or `main` for system devices)
 - `modes` (activation profiles)
 - `state` (`active` or `manualBlocked`)
-- `protocol` (protocol config object used by the device kind)
+- `protocol` (protocol config object)
 
 Optional:
 - `publishAs`
-- `coreRole` (used by controllers when publishing semantic events)
-- `params` (device-specific parameters)
+- `coreRole`
+- `params`
 
 ## Error handling
 
-- If `start()` throws: DeviceManager publishes `degraded`.
-- If a device encounters runtime faults: the device should publish `system:hardware` (details) and may enter a degraded internal state.
+- If `start()` throws: DeviceManager publishes `degraded`
+- If a device encounters runtime faults: device publishes `system:hardware`
 - Recovery:
-  - manual: `device unblock <id>` calls `device.unblock()`
+  - manual: `device unblock <id>`
   - device decides whether it can re-init protocols, restart timers, etc.
