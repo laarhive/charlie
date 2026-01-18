@@ -1,14 +1,28 @@
 {
-  gpio: {
-    chip: 'gpiochip0',
-    watchdog: {
-      outLine: 17,
-      inLine: 27,
-      toggleMs: 1000
-    }
-  },
-
   devices: [
+    {
+      id: 'gpioWatchdog1',
+      kind: 'gpioWatchdogLoopback',
+      domain: 'main',
+      modes: ['rpi4'],
+      state: 'active',
+      publishAs: 'gpioWatchdog1',
+
+      protocol: {
+        type: 'gpio',
+        chip: 'gpiochip0',
+        outLine: 17,
+        inLine: 27,
+        consumerTag: 'charlie',
+        reclaimOnBusy: true
+      },
+
+      params: {
+        toggleMs: 1000,
+        bias: 'pull-down'
+      }
+    },
+
     {
       id: 'buttonVirt1',
       publishAs: 'button1',

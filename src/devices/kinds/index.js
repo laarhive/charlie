@@ -1,6 +1,4 @@
 // src/devices/kinds/index.js
-import ButtonEdgeDevice from './buttonEdge/buttonEdgeDevice.js'
-
 /**
  * Device kind registry.
  *
@@ -10,7 +8,13 @@ import ButtonEdgeDevice from './buttonEdge/buttonEdgeDevice.js'
  * @example
  * const inst = makeDeviceInstance({ logger, clock, buses, device, protocolFactory })
  */
+
+import ButtonEdgeDevice from './buttonEdge/buttonEdgeDevice.js'
+import GpioWatchdogLoopbackDevice from './gpioWatchdogLoopback/gpioWatchdogLoopbackDevice.js'
+
 export const makeDeviceInstance = function makeDeviceInstance({ logger, clock, buses, device, protocolFactory }) {
+  void protocolFactory
+
   const domain = String(device?.domain || '').trim()
   if (!domain) {
     throw new Error('device_requires_domain')
@@ -30,6 +34,15 @@ export const makeDeviceInstance = function makeDeviceInstance({ logger, clock, b
       domainBus,
       device,
       protocolFactory,
+    })
+  }
+
+  if (kind === 'gpioWatchdogLoopback') {
+    return new GpioWatchdogLoopbackDevice({
+      logger,
+      clock,
+      buses,
+      device,
     })
   }
 
