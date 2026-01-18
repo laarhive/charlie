@@ -129,4 +129,4 @@ Control:
 
 Event payload shapes, device config fields, and injection command schemas are defined in code via JSDoc.
 
-See: `docs/interfaces/index.md`
+See: [Interface index](docs/interfaces/index.md)

@@ -14,12 +14,12 @@ It can:
 
 ## Read next
 
-- `docs/README.md`
+- [Documentation](docs/README.md)
 
 ## Links
 
-- Architecture: `docs/architecture/charlie-core.md`
-- Devices: `docs/architecture/devices.md`
-- CLI: `docs/cli.md`
-- Configuration: `docs/configuration.md`
-- WebSocket API: `docs/api/ws.md`
+- [Architecture](docs/architecture/charlie-core.md)
+- [Devices](docs/architecture/devices.md)
+- [CLI](docs/cli.md)
+- [Configuration](docs/configuration.md)
+- [WebSocket API](docs/api/ws.md)
