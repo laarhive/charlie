@@ -1,4 +1,4 @@
-<-- docs/cli.md -->
+<!-- docs/cli.md -->
 # CLI
 
 The CLI can run locally (interactive) or remotely (WebSocket).
