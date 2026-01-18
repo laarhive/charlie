@@ -46,7 +46,7 @@
       role: 'button',
 
       kind: 'buttonEdge',
-      protocol: { type: 'gpio', chip: 'gpiochip0', line: 24, activeHigh: false },
+      protocol: { type: 'gpio', chip: 'gpiochip0', line: 21, activeHigh: false },
 
       modes: ['win11', 'rpi4'],
       state: 'active',
