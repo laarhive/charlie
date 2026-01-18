@@ -1,5 +1,5 @@
 // src/hw/presence/ld2410Driver.js
-import domainEventTypes from '../../domains/domainEventTypes.js'
+import domainEventTypes from '../../../../domains/domainEventTypes.js'
 
 /**
  * LD2410 driver (binary output).

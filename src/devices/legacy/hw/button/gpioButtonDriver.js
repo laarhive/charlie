@@ -1,18 +1,19 @@
-import domainEventTypes from '../../domains/domainEventTypes.js'
+//src/hw/button/gpioButtonDriver.js
+import domainEventTypes from '../../../../domains/domainEventTypes.js'
 
 /**
- * SW-420 driver.
- * Publishes raw vibration hit events to vibration bus.
+ * GPIO button driver.
+ * Publishes raw edge press events to button bus.
  *
- * No cooldown here (domain controller handles it).
+ * No short/long here (controller handles it later if needed).
  *
  * @example
- * const d = new Sw420Driver({ logger, vibrationBus, clock, sensor, signal })
+ * const d = new GpioButtonDriver({ logger, buttonBus, clock, sensor, signal })
  * d.start()
  */
-export class Sw420Driver {
+export class GpioButtonDriver {
   #logger
-  #vibrationBus
+  #buttonBus
   #clock
   #sensor
   #signal
@@ -21,9 +22,9 @@ export class Sw420Driver {
   #enabled
   #last
 
-  constructor({ logger, vibrationBus, clock, sensor, signal }) {
+  constructor({ logger, buttonBus, clock, sensor, signal }) {
     this.#logger = logger
-    this.#vibrationBus = vibrationBus
+    this.#buttonBus = buttonBus
     this.#clock = clock
     this.#sensor = sensor
     this.#signal = signal
@@ -47,7 +48,7 @@ export class Sw420Driver {
   }
 
   getBus() {
-    return 'vibration'
+    return 'button'
   }
 
   isEnabled() {
@@ -70,9 +71,9 @@ export class Sw420Driver {
     this.#unsubscribe = this.#signal.subscribe((value) => {
       const v = Boolean(value)
 
-      // Rising edge triggers a hit
+      // Rising edge => press
       if (v === true && this.#last !== true) {
-        this.#publishHit()
+        this.#publishPress()
       }
 
       this.#last = v
@@ -100,24 +101,27 @@ export class Sw420Driver {
     return this.#started
   }
 
-  #publishHit() {
+  #publishPress() {
     if (!this.#enabled) {
-      this.#logger.debug('driver_publish_skipped', { sensorId: this.#sensor.id, kind: 'hit' })
+      this.#logger.debug('driver_publish_skipped', { sensorId: this.#sensor.id, kind: 'press' })
       return
     }
 
+    const logicalId = this.#sensor.publishAs ?? this.#sensor.id
+
     const event = {
-      type: domainEventTypes.vibration.hit,
+      type: domainEventTypes.button.edge,
       ts: this.#clock.nowMs(),
-      source: 'sw420Driver',
+      source: 'gpioButtonDriver',
       payload: {
-        sensorId: this.#sensor.id,
+        sensorId: logicalId,
+        edge: 'press',
       },
     }
 
-    this.#logger.debug('event_publish', { bus: 'vibration', event })
-    this.#vibrationBus.publish(event)
+    this.#logger.debug('event_publish', { bus: 'button', event })
+    this.#buttonBus.publish(event)
   }
 }
 
-export default Sw420Driver
+export default GpioButtonDriver
