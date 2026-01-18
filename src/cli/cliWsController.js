@@ -30,7 +30,7 @@ export class CliWsController {
 
     this.#cache = {
       config: null,
-      drivers: [],
+      devices: [],
     }
   }
 
@@ -83,7 +83,8 @@ export class CliWsController {
       process.exit(0)
     })
 
-    printHelp({ mode: 'local' })
+    // WS CLI is still a CLI, just remote. We print the same help.
+    printHelp({ mode: 'ws' })
     this.#updatePrompt()
     this.#rl.prompt()
   }
@@ -103,7 +104,7 @@ export class CliWsController {
     }
 
     if (cmd.kind === 'help') {
-      printHelp({ mode: 'local' })
+      printHelp({ mode: 'ws' })
       return
     }
 
@@ -188,12 +189,13 @@ export class CliWsController {
       return
     }
 
-    if (cmd.kind === 'virtList' || cmd.kind === 'virtSet') {
+    if (cmd.kind === 'virtList' || cmd.kind === 'virtSet' || cmd.kind === 'virtPress') {
       console.log('virt commands are local-only and not available via WS CLI')
       return
     }
 
-    if (cmd.kind === 'clockNow' ||
+    if (
+      cmd.kind === 'clockNow' ||
       cmd.kind === 'clockStatus' ||
       cmd.kind === 'clockFreeze' ||
       cmd.kind === 'clockResume' ||
@@ -204,24 +206,30 @@ export class CliWsController {
       return
     }
 
-    if (cmd.kind === 'driverList') {
-      const res = await this.#client.request('driver.list')
-      this.#cache.drivers = Array.isArray(res?.drivers) ? res.drivers : []
-      this.#logger.info('driver_list', { drivers: this.#cache.drivers })
+    if (cmd.kind === 'deviceList') {
+      const res = await this.#client.request('device.list')
+      this.#cache.devices = Array.isArray(res?.devices) ? res.devices : []
+      this.#logger.info('device_list', { devices: this.#cache.devices })
       return
     }
 
-    if (cmd.kind === 'driverEnable') {
-      await this.#client.request('driver.enable', { sensorId: cmd.sensorId })
-      await this.#refreshDriversOnly()
-      this.#logger.notice('driver_toggled', { sensorId: cmd.sensorId, enabled: true })
+    if (cmd.kind === 'deviceBlock') {
+      await this.#client.request('device.block', { deviceId: cmd.deviceId })
+      await this.#refreshDevicesOnly()
+      this.#logger.notice('device_blocked', { deviceId: cmd.deviceId })
       return
     }
 
-    if (cmd.kind === 'driverDisable') {
-      await this.#client.request('driver.disable', { sensorId: cmd.sensorId })
-      await this.#refreshDriversOnly()
-      this.#logger.notice('driver_toggled', { sensorId: cmd.sensorId, enabled: false })
+    if (cmd.kind === 'deviceUnblock') {
+      await this.#client.request('device.unblock', { deviceId: cmd.deviceId })
+      await this.#refreshDevicesOnly()
+      this.#logger.notice('device_unblocked', { deviceId: cmd.deviceId })
+      return
+    }
+
+    if (cmd.kind === 'deviceInject') {
+      await this.#client.request('device.inject', { deviceId: cmd.deviceId, payload: cmd.payload })
+      this.#logger.notice('device_injected', { deviceId: cmd.deviceId })
       return
     }
 
@@ -229,12 +237,12 @@ export class CliWsController {
   }
 
   async #refreshCache() {
-    await this.#refreshDriversOnly()
+    await this.#refreshDevicesOnly()
 
     try {
       const cfg = await this.#client.request('config.get')
       this.#cache.config = cfg
-    } catch (e) {
+    } catch {
       this.#cache.config = null
     }
 
@@ -243,38 +251,37 @@ export class CliWsController {
       if (typeof st?.injectEnabled === 'boolean') {
         this.#injectEnabled = st.injectEnabled
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
   }
 
-  async #refreshDriversOnly() {
+  async #refreshDevicesOnly() {
     try {
-      const res = await this.#client.request('driver.list')
-      this.#cache.drivers = Array.isArray(res?.drivers) ? res.drivers : []
-    } catch (e) {
-      this.#cache.drivers = []
+      const res = await this.#client.request('device.list')
+      this.#cache.devices = Array.isArray(res?.devices) ? res.devices : []
+    } catch {
+      this.#cache.devices = []
     }
   }
 
   #getRemoteContext() {
-    const driverBySensorId = new Map()
-    for (const d of this.#cache.drivers) {
-      if (d?.id) {
-        driverBySensorId.set(d.id, d)
-      }
-    }
+    const cfg = this.#cache.config ?? {}
+    const devices = Array.isArray(cfg?.devices) ? cfg.devices : []
 
     return {
-      config: this.#cache.config ?? {},
-      hw: { driverBySensorId },
+      config: {
+        ...cfg,
+        devices,
+      },
+
+      // For completer: it expects buses in some cases
+      buses: {},
+
+      // Taps are handled on the server; completer can live without them
       taps: {},
 
-      /*
-        cliCompleter may look for these keys even if unused.
-        Keep them present but minimal.
-      */
-      buses: {},
+      // Present but unused by completer
       core: {},
       clock: {},
     }
@@ -354,70 +361,60 @@ export class CliWsController {
 
   async #injectPresence(zone, present) {
     const cfg = this.#cache.config ?? {}
-    const sensors = Array.isArray(cfg?.sensors) ? cfg.sensors : []
+    const defaults = cfg?.core?.injectDefaults ?? {}
 
-    const match = sensors.find((s) =>
-      s?.enabled &&
-      s?.role === 'presence' &&
-      s?.zone === zone
-    )
+    const key = zone === 'front' ? 'presenceFront' : 'presenceBack'
+    const coreRole = defaults?.[key] ?? null
 
-    if (!match) {
-      this.#logger.warning('inject_presence_no_sensor', { zone })
+    if (!coreRole) {
+      this.#logger.warning('inject_missing_coreRole', { kind: 'presence', zone })
       return
     }
 
     await this.#client.request('inject.event', {
       bus: 'main',
       type: present ? eventTypes.presence.enter : eventTypes.presence.exit,
-      payload: { zone, sensorId: match.id },
+      payload: { coreRole, zone },
       source: 'cliWsInject',
     })
   }
 
   async #injectVibration(level) {
     const cfg = this.#cache.config ?? {}
-    const sensors = Array.isArray(cfg?.sensors) ? cfg.sensors : []
+    const defaults = cfg?.core?.injectDefaults ?? {}
 
-    const mapped = level === 'high' ? 'heavy' : 'light'
+    const key = level === 'high' ? 'vibrationHigh' : 'vibrationLow'
+    const coreRole = defaults?.[key] ?? null
 
-    const match = sensors.find((s) =>
-      s?.enabled &&
-      s?.role === 'vibration' &&
-      (s?.level === mapped || s?.params?.level === mapped)
-    )
-
-    if (!match) {
-      this.#logger.warning('inject_vibration_no_sensor', { level, mapped })
+    if (!coreRole) {
+      this.#logger.warning('inject_missing_coreRole', { kind: 'vibration', level })
       return
     }
 
     await this.#client.request('inject.event', {
       bus: 'main',
       type: eventTypes.vibration.hit,
-      payload: { level, mapped, sensorId: match.id },
+      payload: { coreRole, level },
       source: 'cliWsInject',
     })
   }
 
   async #injectButton(pressType) {
     const cfg = this.#cache.config ?? {}
-    const sensors = Array.isArray(cfg?.sensors) ? cfg.sensors : []
+    const defaults = cfg?.core?.injectDefaults ?? {}
 
-    const match = sensors.find((s) =>
-      s?.enabled &&
-      s?.role === 'button'
-    )
+    const key = pressType === 'long' ? 'buttonLong' : 'buttonShort'
+    const coreRole = defaults?.[key] ?? null
 
-    if (!match) {
-      this.#logger.warning('inject_button_no_sensor', { pressType })
+    if (!coreRole) {
+      this.#logger.warning('inject_missing_coreRole', { kind: 'button', pressType })
       return
     }
 
     await this.#client.request('inject.event', {
       bus: 'main',
       type: eventTypes.button.press,
-      payload: { kind: pressType, sensorId: match.id },
+      payload: { coreRole, kind: pressType },
       source: 'cliWsInject',
     })
   }
