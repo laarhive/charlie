@@ -53,54 +53,6 @@
       params: { cooldownMs: 250 }
     }
   ],
-  /*
-      {
-        id: 'presenceFront1',
-        type: 'ld2410',
-        role: 'presence',
-        zone: 'front',
-        enabled: true,
-        params: { debounceOnMs: 150, debounceOffMs: 400 },
-        hw: { chip: 'gpiochip0', line: 5, activeHigh: true }
-      },
-      {
-        id: 'presenceBack1',
-        type: 'ld2410',
-        role: 'presence',
-        zone: 'back',
-        enabled: true,
-        params: { debounceOnMs: 150, debounceOffMs: 400 },
-        hw: { chip: 'gpiochip0', line: 6, activeHigh: true }
-      },
-
-      {
-        id: 'vibLight1',
-        type: 'sw420',
-        role: 'vibration',
-        enabled: true,
-        level: 'light',
-        params: { cooldownMs: 600 },
-        hw: { chip: 'gpiochip0', line: 22, activeHigh: true }
-      },
-      {
-        id: 'vibHeavy1',
-        type: 'sw420',
-        role: 'vibration',
-        enabled: true,
-        level: 'heavy',
-        params: { cooldownMs: 600 },
-        hw: { chip: 'gpiochip0', line: 23, activeHigh: true }
-      },
-
-      {
-        id: 'button1',
-        type: 'gpioButton',
-        role: 'button',
-        enabled: true,
-        params: { cooldownMs: 250 },
-        hw: { chip: 'gpiochip0', line: 24, activeHigh: true }
-      }
-  */
   core: {
     armingDelayMs: 1200,
     cooldownMs: 60000,
