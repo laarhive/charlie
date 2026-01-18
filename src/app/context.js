@@ -7,12 +7,13 @@ import FakeConversationAdapter from '../conversation/fakeConversationAdapter.js'
 import makeBuses from './buses.js'
 import makeTaps from './taps.js'
 import makeDomainControllers, { startAll, disposeAll } from './domainControllers.js'
-import makeHwDrivers, { disposeSignals } from './hwDrivers.js'
 import GpioWatchdog from '../hw/gpio/gpioWatchdog.js'
 
 import WebServer from './webServer.js'
 import TaskerConversationAdapter from '../conversation/taskerConversationAdapter.js'
 import ControlService from './controlService.js'
+
+import DeviceManager from '../devices/deviceManager.js'
 
 export const makeContext = function makeContext({ logger, config, mode }) {
   const clock = new Clock()
@@ -64,12 +65,21 @@ export const makeContext = function makeContext({ logger, config, mode }) {
 
   const serverPort = Number(config?.server?.port ?? 8787)
 
-  // Create HW drivers BEFORE WebServer so control can expose driver.* commands
-  const hw = makeHwDrivers({ logger, buses, clock, config, mode })
+  // Device manager owns device/driver lifecycle and publishes system:hardware
+  const deviceManager = new DeviceManager({
+    logger,
+    mainBus: buses.main,
+    buses,
+    clock,
+    config,
+    mode,
+  })
+
+  deviceManager.start()
 
   const control = ControlService({
     buses,
-    hw,
+    deviceManager,
     logger,
   })
 
@@ -84,9 +94,6 @@ export const makeContext = function makeContext({ logger, config, mode }) {
 
   webServer.start()
 
-  logger.notice('starting_drivers', { mode, driverCount: hw.drivers.length })
-  startAll(hw.drivers)
-
   logger.info('context_created', { nowMs: clock.nowMs(), mode, serverPort })
 
   const dispose = function dispose() {
@@ -94,12 +101,11 @@ export const makeContext = function makeContext({ logger, config, mode }) {
       t.dispose()
     }
 
-    disposeAll(hw.drivers)
-    disposeSignals(hw.signals)
-
     if (webServer) {
       webServer.dispose()
     }
+
+    deviceManager.dispose()
 
     gpioWatchdog.dispose()
     core.dispose()
@@ -117,9 +123,11 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     domainControllers,
     core,
     config,
-    hw,
+
+    deviceManager,
     webServer,
     control,
+
     dispose,
   }
 }

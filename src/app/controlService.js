@@ -1,26 +1,18 @@
 // src/app/controlService.js
-export default function ControlService ({ buses, hw, logger }) {
+export default function ControlService ({ buses, deviceManager, logger }) {
   let injectEnabled = false
 
-  /* concise internal helper */
-  const getDriverId = (driver) => {
-    if (typeof driver.getSensorId === 'function') {
-      return driver.getSensorId()
-    }
-
-    return driver?.sensor?.id ?? driver?.id ?? null
-  }
-
   const listDrivers = () => {
-    const drivers = Array.isArray(hw?.drivers) ? hw.drivers : []
+    const out = deviceManager?.list?.()
+    const devices = Array.isArray(out?.devices) ? out.devices : []
 
-    return drivers.map((d) => ({
-      id: getDriverId(d),
-      role: typeof d.getRole === 'function' ? d.getRole() : null,
-      type: typeof d.getType === 'function' ? d.getType() : null,
-      bus: typeof d.getBus === 'function' ? d.getBus() : null,
-      enabled: typeof d.isEnabled === 'function' ? d.isEnabled() : null,
-      started: typeof d.isStarted === 'function' ? d.isStarted() : null,
+    return devices.map((d) => ({
+      id: d.id,
+      role: d.role ?? null,
+      type: d.type ?? null,
+      bus: d.bus ?? null,
+      enabled: d.enabled ?? null,
+      started: d.started ?? null,
     }))
   }
 
@@ -54,36 +46,39 @@ export default function ControlService ({ buses, hw, logger }) {
     return { ok: true }
   }
 
-  const findDriver = ({ sensorId }) => {
-    const byId = hw?.driverBySensorId
-    if (byId instanceof Map) {
-      return byId.get(sensorId) ?? null
-    }
-
-    const drivers = Array.isArray(hw?.drivers) ? hw.drivers : []
-    return drivers.find((d) => getDriverId(d) === sensorId) ?? null
-  }
-
   const setDriverEnabled = async ({ sensorId, enabled }) => {
-    const driver = findDriver({ sensorId })
-    if (!driver) {
-      const err = new Error(`unknown_driver:${sensorId}`)
-      err.code = 'DRIVER_NOT_FOUND'
+    if (!deviceManager) {
+      const err = new Error('device_manager_missing')
+      err.code = 'INTERNAL_ERROR'
       throw err
     }
 
-    if (typeof driver.setEnabled !== 'function') {
-      const err = new Error(`driver_setEnabled_missing:${sensorId}`)
-      err.code = 'NOT_SUPPORTED'
+    const id = String(sensorId || '').trim()
+    if (!id) {
+      const err = new Error('missing_sensorId')
+      err.code = 'BAD_REQUEST'
       throw err
     }
 
-    driver.setEnabled(enabled === true)
+    const out = enabled === true
+      ? deviceManager.unblock(id)
+      : deviceManager.block(id)
+
+    if (!out?.ok) {
+      const code = out?.error === 'DEVICE_NOT_FOUND' ? 'DRIVER_NOT_FOUND' : 'INTERNAL_ERROR'
+      const err = new Error(`driver_toggle_failed:${id}`)
+      err.code = code
+      throw err
+    }
+
+    const list = deviceManager.list()
+    const devices = Array.isArray(list?.devices) ? list.devices : []
+    const found = devices.find((d) => d?.id === id) ?? null
 
     return {
       ok: true,
-      id: sensorId,
-      enabled: typeof driver.isEnabled === 'function' ? driver.isEnabled() : enabled === true
+      id,
+      enabled: found?.enabled ?? enabled === true,
     }
   }
 
@@ -93,7 +88,7 @@ export default function ControlService ({ buses, hw, logger }) {
         id,
         ok: true,
         type,
-        payload: { drivers: listDrivers() }
+        payload: { drivers: listDrivers() },
       }
     }
 
@@ -111,7 +106,7 @@ export default function ControlService ({ buses, hw, logger }) {
   }
 
   const getSnapshot = () => ({
-    injectEnabled
+    injectEnabled,
   })
 
   return {
