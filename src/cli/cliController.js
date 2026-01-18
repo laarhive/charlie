@@ -4,14 +4,6 @@ import eventTypes from '../core/eventTypes.js'
 import makeCliCompleter from './cliCompleter.js'
 import { printHelp } from './cliHelp.js'
 
-/**
- * CLI controller (optional). Can run in hw or virt mode.
- * Semantic injections are gated by injectEnabled.
- *
- * @example
- * const cli = new CliSimController({ logger, parser, loadConfig, getContext, setContext, mode: 'virt' })
- * cli.start()
- */
 export class CliController {
   #logger
   #parser
@@ -269,9 +261,14 @@ export class CliController {
     console.log('unknown command, type: help')
   }
 
+  #getSignals() {
+    const { deviceManager } = this.#getContext()
+    const signals = deviceManager?.getSignals?.()
+    return signals || {}
+  }
+
   #virtList() {
-    const { hw } = this.#getContext()
-    const signals = hw?.signals || {}
+    const signals = this.#getSignals()
 
     const listSettableIds = (m) => {
       if (!(m instanceof Map)) {
@@ -293,8 +290,7 @@ export class CliController {
   }
 
   #virtSet(sensorId, value) {
-    const { hw } = this.#getContext()
-    const signals = hw?.signals || {}
+    const signals = this.#getSignals()
 
     const targets = [
       { name: 'presence', map: signals.presence },
@@ -343,8 +339,8 @@ export class CliController {
   }
 
   #virtPress(sensorId, ms) {
-    const { hw } = this.#getContext()
-    const m = hw?.signals?.button
+    const signals = this.#getSignals()
+    const m = signals?.button
 
     if (!(m instanceof Map)) {
       this.#logger.warning('virt_no_button_signals', { sensorId })
@@ -373,47 +369,54 @@ export class CliController {
   }
 
   #driverList() {
-    const { hw } = this.#getContext()
-    const m = hw?.driverBySensorId
+    const { deviceManager } = this.#getContext()
 
-    if (!(m instanceof Map)) {
-      this.#logger.warning('driver_map_missing', {})
+    if (!deviceManager || typeof deviceManager.list !== 'function') {
+      this.#logger.warning('device_manager_missing', {})
       return
     }
 
-    const items = Array.from(m.entries()).map(([sensorId, driver]) => ({
-      sensorId,
-      type: typeof driver?.getType === 'function' ? driver.getType() : null,
-      role: typeof driver?.getRole === 'function' ? driver.getRole() : null,
-      bus: typeof driver?.getBus === 'function' ? driver.getBus() : null,
-      enabled: typeof driver?.isEnabled === 'function' ? driver.isEnabled() : null,
+    const out = deviceManager.list()
+    const devices = Array.isArray(out?.devices) ? out.devices : []
+
+    const items = devices.map((d) => ({
+      sensorId: d.id,
+      publishAs: d.publishAs ?? null,
+      type: d.type ?? null,
+      role: d.role ?? null,
+      bus: d.bus ?? null,
+      enabled: d.enabled ?? null,
+      started: d.started ?? null,
+      runtimeState: d.runtimeState ?? null,
     }))
 
     this.#logger.info('driver_list', { drivers: items })
   }
 
   #driverSetEnabled(sensorId, enabled) {
-    const { hw } = this.#getContext()
-    const m = hw?.driverBySensorId
+    const { deviceManager } = this.#getContext()
 
-    if (!(m instanceof Map)) {
-      this.#logger.warning('driver_map_missing', { sensorId })
+    if (!deviceManager) {
+      this.#logger.warning('device_manager_missing', { sensorId })
       return
     }
 
-    const driver = m.get(sensorId)
-    if (!driver) {
+    const id = String(sensorId || '').trim()
+    if (!id) {
       this.#logger.warning('driver_not_found', { sensorId })
       return
     }
 
-    if (typeof driver.setEnabled !== 'function') {
-      this.#logger.warning('driver_not_toggleable', { sensorId })
+    const out = enabled === true
+      ? deviceManager.unblock(id)
+      : deviceManager.block(id)
+
+    if (!out?.ok) {
+      this.#logger.warning('driver_not_found', { sensorId: id })
       return
     }
 
-    driver.setEnabled(Boolean(enabled))
-    this.#logger.notice('driver_toggled', { sensorId, enabled: Boolean(enabled) })
+    this.#logger.notice('driver_toggled', { sensorId: id, enabled: Boolean(enabled) })
   }
 
   #guardInject(fn) {
@@ -472,7 +475,7 @@ export class CliController {
 
     const sensors = Array.isArray(config?.sensors) ? config.sensors : []
     const match = sensors.find((s) =>
-      s?.enabled &&
+      s?.enabled !== false &&
       s?.role === 'presence' &&
       s?.zone === zone
     )
@@ -500,7 +503,7 @@ export class CliController {
 
     const sensors = Array.isArray(config?.sensors) ? config.sensors : []
     const match = sensors.find((s) =>
-      s?.enabled &&
+      s?.enabled !== false &&
       s?.role === 'vibration' &&
       (s?.level === mapped || s?.params?.level === mapped)
     )
@@ -526,7 +529,7 @@ export class CliController {
 
     const sensors = Array.isArray(config?.sensors) ? config.sensors : []
     const match = sensors.find((s) =>
-      s?.enabled &&
+      s?.enabled !== false &&
       s?.role === 'button'
     )
 

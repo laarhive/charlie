@@ -11,61 +11,34 @@
   sensors: [
     {
       id: 'buttonVirt1',
-      type: 'button',          // keep same driver for now (it consumes a BinarySignal)
-      role: 'button',
-      enabled: true,
-      modes: ['win11'],
-      params: { cooldownMs: 250 },
-
-      // optional aliasing (if you want it to act as the same logical button as HW)
       publishAs: 'button1',
 
-      hw: {
-        virtual: { initial: false }
-      }
-    },
-    {
-      id: 'presenceFront1',
-      type: 'ld2410',
-      role: 'presence',
-      zone: 'front',
-      enabled: true,
-      modes: ['rpi4'],
-      params: { debounceOnMs: 150, debounceOffMs: 400 },
-      hw: { chip: 'gpiochip0', line: 5, activeHigh: true }
-    },
-    {
-      id: 'buttonUsb1',
-      type: 'button',
+      domain: 'button',
       role: 'button',
-      enabled: true,
-      modes: ['rpi4'],
-      params: { cooldownMs: 250 },
-      hw: {
-        serial: {
-          port: { byId: '/dev/serial/by-id/usb-REPLACE_ME' },
-          baudRate: 115200,
-          protocol: 'binary01',
-          activeHigh: true
-        }
-      }
+
+      kind: 'buttonEdge',
+      protocol: { type: 'virt', initial: false },
+
+      modes: ['win11'],
+      state: 'active',
+      params: { cooldownMs: 250 }
     },
+
     {
-      id: 'button1',
-      type: 'gpioButton',
+      id: 'buttonGpio1',
+      publishAs: 'button1',
+
+      domain: 'button',
       role: 'button',
-      enabled: true,
-      modes: ['rpi4'],
-      params: { cooldownMs: 250 },
-      hw: {
-        serial: {
-          port: { byId: '/dev/serial/by-id/usb-REPLACE_ME' },
-          baudRate: 115200,
-          protocol: 'binary01',
-          activeHigh: true
-        }
-      }
-    },
+
+      kind: 'buttonEdge',
+      protocol: { type: 'gpio', chip: 'gpiochip0', line: 24, activeHigh: false },
+
+      modes: ['win11', 'rpi4'],
+      state: 'active',
+      params: { cooldownMs: 250 }
+    }
+  ],
   /*
       {
         id: 'presenceFront1',
@@ -114,8 +87,6 @@
         hw: { chip: 'gpiochip0', line: 24, activeHigh: true }
       }
   */
-  ],
-
   core: {
     armingDelayMs: 1200,
     cooldownMs: 60000
