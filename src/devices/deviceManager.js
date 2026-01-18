@@ -3,23 +3,6 @@ import eventTypes from '../core/eventTypes.js'
 import ProtocolFactory from './protocols/protocolFactory.js'
 import makeDeviceInstance from './kinds/index.js'
 
-/**
- * Device Manager
- *
- * Responsibilities:
- * - Activates devices based on (modes + state)
- * - Instantiates device kinds (registry) and tracks instances
- * - Calls device.start()/block()/unblock()
- * - Publishes `system:hardware` on main bus for state changes
- *
- * Notes:
- * - DeviceManager does not create protocols. Devices do.
- * - Recovery is device-specific: DeviceManager calls device.unblock().
- *
- * @example
- * const dm = new DeviceManager({ logger, mainBus: buses.main, buses, clock, config, mode })
- * dm.start()
- */
 export class DeviceManager {
   #logger
   #mainBus
@@ -32,7 +15,9 @@ export class DeviceManager {
 
   #deviceConfigById
   #deviceById
-  #runtimeStateById
+  #stateById
+
+  #unsubMain
 
   constructor({ logger, mainBus, buses, clock, config, mode }) {
     this.#logger = logger
@@ -46,29 +31,16 @@ export class DeviceManager {
 
     this.#deviceConfigById = new Map()
     this.#deviceById = new Map()
-    this.#runtimeStateById = new Map()
+    this.#stateById = new Map()
+
+    this.#unsubMain = null
   }
 
   start() {
     const devices = Array.isArray(this.#config?.devices) ? this.#config.devices : []
 
-    for (const d of devices) {
-      if (!d?.id) {
-        continue
-      }
-
-      this.#deviceConfigById.set(d.id, d)
-    }
-
     for (const cfg of devices) {
-      const id = cfg?.id
-      if (!id) {
-        continue
-      }
-
-      const configuredState = cfg?.state ?? 'active'
-      if (configuredState === 'manualBlocked') {
-        this.#setRuntimeState(id, 'manualBlocked', { phase: 'config' })
+      if (!cfg?.id) {
         continue
       }
 
@@ -77,16 +49,43 @@ export class DeviceManager {
         continue
       }
 
-      this.#ensureStarted(cfg, { reason: 'startup' })
+      this.#deviceConfigById.set(cfg.id, cfg)
     }
 
-    this.#logger.notice('device_manager_started', {
-      mode: this.#mode,
-      devices: this.#deviceById.size,
-    })
+    if (!this.#unsubMain) {
+      this.#unsubMain = this.#mainBus.subscribe((evt) => {
+        if (evt?.type !== eventTypes.system.hardware) return
+
+        const p = evt?.payload || {}
+        const id = p.deviceId
+        const state = p.state
+
+        if (!id || !state) return
+        if (!this.#deviceConfigById.has(id)) return
+
+        this.#stateById.set(id, state)
+      })
+    }
+
+    for (const cfg of this.#deviceConfigById.values()) {
+      const id = cfg.id
+
+      const configuredState = cfg?.state ?? 'active'
+      if (configuredState === 'manualBlocked') {
+        this.#setState(id, 'manualBlocked', { phase: 'config' })
+        continue
+      }
+
+      this.#ensureStarted(cfg, { reason: 'startup' })
+    }
   }
 
   dispose() {
+    if (this.#unsubMain) {
+      this.#unsubMain()
+      this.#unsubMain = null
+    }
+
     for (const [id, d] of this.#deviceById.entries()) {
       try {
         d.dispose()
@@ -97,9 +96,7 @@ export class DeviceManager {
 
     this.#deviceById.clear()
     this.#deviceConfigById.clear()
-    this.#runtimeStateById.clear()
-
-    this.#logger.notice('device_manager_disposed', {})
+    this.#stateById.clear()
   }
 
   list() {
@@ -107,19 +104,16 @@ export class DeviceManager {
 
     for (const cfg of this.#deviceConfigById.values()) {
       const id = cfg.id
-      const runtimeState = this.#runtimeStateById.get(id) || 'unknown'
+      const state = this.#stateById.get(id) || 'unknown'
       const started = this.#deviceById.has(id)
 
       devices.push({
         id,
         publishAs: cfg.publishAs ?? id,
-        role: cfg.coreRole ?? null,
-        type: cfg.kind ?? null,
-        bus: cfg.domain ?? null,
-
-        enabled: runtimeState !== 'manualBlocked',
+        kind: cfg.kind ?? null,
+        domain: cfg.domain ?? null,
+        state,
         started,
-        runtimeState,
       })
     }
 
@@ -129,56 +123,49 @@ export class DeviceManager {
   block(deviceId, reason = 'manual') {
     const id = String(deviceId || '').trim()
     const cfg = this.#deviceConfigById.get(id)
-    if (!cfg) {
-      return { ok: false, error: 'DEVICE_NOT_FOUND' }
-    }
+    if (!cfg) return { ok: false, error: 'DEVICE_NOT_FOUND' }
 
     const inst = this.#deviceById.get(id)
     if (inst?.block) {
       try {
-        inst.block()
+        inst.block(reason)
       } catch (e) {
         this.#logger.error('device_block_failed', { deviceId: id, error: e?.message || String(e) })
       }
     }
 
-    this.#setRuntimeState(id, 'manualBlocked', { reason })
+    this.#setState(id, 'manualBlocked', { reason })
     return { ok: true }
   }
 
   unblock(deviceId, reason = 'manual') {
     const id = String(deviceId || '').trim()
     const cfg = this.#deviceConfigById.get(id)
-    if (!cfg) {
-      return { ok: false, error: 'DEVICE_NOT_FOUND' }
-    }
+    if (!cfg) return { ok: false, error: 'DEVICE_NOT_FOUND' }
 
-    const modes = Array.isArray(cfg?.modes) ? cfg.modes : []
-    if (!modes.includes(this.#mode)) {
-      this.#setRuntimeState(id, 'manualBlocked', { reason: 'mode_mismatch', mode: this.#mode })
-      return { ok: false, error: 'MODE_MISMATCH' }
-    }
-
-    const inst = this.#deviceById.get(id)
+    let inst = this.#deviceById.get(id)
 
     if (!inst) {
-      // Create instance (still not creating protocols here)
-      return this.#ensureStarted(cfg, { reason }) ? { ok: true } : { ok: false, error: 'START_FAILED' }
+      const ok = this.#ensureStarted(cfg, { reason })
+      return ok ? { ok: true } : { ok: false, error: 'START_FAILED' }
     }
 
     try {
       inst.unblock?.()
-      this.#setRuntimeState(id, 'active', { phase: 'unblock', reason })
+      this.#setState(id, 'active', { phase: 'unblock', reason })
       return { ok: true }
     } catch (e) {
       this.#logger.error('device_unblock_failed', { deviceId: id, error: e?.message || String(e) })
-      this.#setRuntimeState(id, 'degraded', { phase: 'unblock', reason, error: e?.message || String(e) })
+      this.#setState(id, 'degraded', { phase: 'unblock', reason, error: e?.message || String(e) })
       return { ok: false, error: 'START_FAILED' }
     }
   }
 
-  inject(deviceId, raw) {
+  inject(deviceId, payload) {
     const id = String(deviceId || '').trim()
+    const cfg = this.#deviceConfigById.get(id)
+    if (!cfg) return { ok: false, error: 'DEVICE_NOT_FOUND' }
+
     const inst = this.#deviceById.get(id)
 
     if (!inst?.inject) {
@@ -186,7 +173,7 @@ export class DeviceManager {
     }
 
     try {
-      inst.inject(raw)
+      inst.inject(payload)
       return { ok: true }
     } catch (e) {
       return { ok: false, error: 'INJECT_FAILED', message: e?.message || String(e) }
@@ -196,33 +183,38 @@ export class DeviceManager {
   #ensureStarted(cfg, detail = {}) {
     const id = cfg.id
 
-    // Create new instance if missing
     let inst = this.#deviceById.get(id)
     if (!inst) {
-      inst = makeDeviceInstance({
-        logger: this.#logger,
-        clock: this.#clock,
-        buses: this.#buses,
-        device: cfg,
-        protocolFactory: this.#protocolFactory,
-      })
+      try {
+        inst = makeDeviceInstance({
+          logger: this.#logger,
+          clock: this.#clock,
+          buses: this.#buses,
+          device: cfg,
+          protocolFactory: this.#protocolFactory,
+        })
 
-      this.#deviceById.set(id, inst)
+        this.#deviceById.set(id, inst)
+      } catch (e) {
+        this.#logger.error('device_create_failed', { deviceId: id, error: e?.message || String(e) })
+        this.#setState(id, 'degraded', { phase: 'create', error: e?.message || String(e), ...detail })
+        return false
+      }
     }
 
     try {
       inst.start?.()
-      this.#setRuntimeState(id, 'active', { phase: 'start', ...detail })
+      this.#setState(id, 'active', { phase: 'start', ...detail })
       return true
     } catch (e) {
       this.#logger.error('device_start_failed', { deviceId: id, error: e?.message || String(e) })
-      this.#setRuntimeState(id, 'degraded', { phase: 'start', error: e?.message || String(e), ...detail })
+      this.#setState(id, 'degraded', { phase: 'start', error: e?.message || String(e), ...detail })
       return false
     }
   }
 
-  #setRuntimeState(deviceId, state, detail = {}) {
-    this.#runtimeStateById.set(deviceId, state)
+  #setState(deviceId, state, detail = {}) {
+    this.#stateById.set(deviceId, state)
 
     const cfg = this.#deviceConfigById.get(deviceId)
     const publishAs = cfg?.publishAs ?? deviceId

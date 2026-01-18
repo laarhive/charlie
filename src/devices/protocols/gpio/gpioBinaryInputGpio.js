@@ -1,24 +1,6 @@
 // src/devices/protocols/gpio/gpioBinaryInputGpio.js
 import Gpio from '../../../gpio/gpio.js'
 
-/**
- * Protocol: GPIO binary input using the project's Gpio wrapper.
- *
- * Contract:
- * - subscribe(handler) -> unsubscribe
- *   handler(value:boolean) receives logical level.
- *
- * Semantics:
- * - activeHigh=true: raw level 1 => true
- * - activeHigh=false: raw level 1 => false (inverted)
- *
- * Notes:
- * - Construction can throw if libgpiod tools are missing (expected on win11).
- *
- * @example
- * const p = new GpioBinaryInputGpio({ line: 24, chip: 'gpiochip0', activeHigh: false })
- * const unsub = p.subscribe((v) => console.log(v))
- */
 export default class GpioBinaryInputGpio {
   #gpio
   #handlers
@@ -26,6 +8,7 @@ export default class GpioBinaryInputGpio {
 
   #activeHigh
   #interruptBridge
+  #errorBridge
 
   constructor({
                 line,
@@ -46,6 +29,8 @@ export default class GpioBinaryInputGpio {
                 gpiosetPath = null,
                 gpioinfoPath = null,
                 pkillPath = null,
+
+                onError = null,
               }) {
     const n = Number(line)
     if (Number.isNaN(n)) {
@@ -75,7 +60,24 @@ export default class GpioBinaryInputGpio {
 
     this.#handlers = new Set()
     this.#disposed = false
+
     this.#interruptBridge = null
+    this.#errorBridge = null
+
+    /* concise error forwarder */
+    const errSink = typeof onError === 'function' ? onError : null
+
+    if (errSink) {
+      this.#errorBridge = (evt) => {
+        errSink({
+          source: evt?.source ?? 'gpio',
+          message: evt?.message ?? null,
+          line: n,
+        })
+      }
+
+      this.#gpio.on('error', this.#errorBridge)
+    }
   }
 
   subscribe(handler) {
@@ -106,6 +108,12 @@ export default class GpioBinaryInputGpio {
     this.#disposed = true
     this.#handlers.clear()
     this.#detach()
+
+    if (this.#errorBridge) {
+      this.#gpio.off('error', this.#errorBridge)
+      this.#errorBridge = null
+    }
+
     this.#gpio.dispose()
   }
 

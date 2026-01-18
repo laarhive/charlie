@@ -2,15 +2,6 @@
 import VirtualBinaryInput from './virt/virtualBinaryInput.js'
 import GpioBinaryInputGpio from './gpio/gpioBinaryInputGpio.js'
 
-/**
- * ProtocolFactory creates protocol instances from protocol config objects.
- *
- * DeviceManager does not create protocols. Devices call this factory.
- *
- * @example
- * const pf = new ProtocolFactory({ logger, clock, config })
- * const input = pf.makeBinaryInput(device.protocol)
- */
 export default class ProtocolFactory {
   #logger
   #clock
@@ -22,7 +13,7 @@ export default class ProtocolFactory {
     this.#config = config
   }
 
-  makeBinaryInput(protocol) {
+  makeBinaryInput(protocol, { onError } = {}) {
     const p = protocol || {}
     const t = String(p?.type || '').trim()
 
@@ -50,6 +41,8 @@ export default class ProtocolFactory {
         gpiosetPath: p?.gpiosetPath ?? undefined,
         gpioinfoPath: p?.gpioinfoPath ?? undefined,
         pkillPath: p?.pkillPath ?? undefined,
+
+        onError,
       })
     }
 

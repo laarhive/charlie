@@ -2,33 +2,6 @@
 import eventTypes from '../../../core/eventTypes.js'
 import Gpio from '../../../gpio/gpio.js'
 
-/**
- * Device kind: gpioWatchdogLoopback
- *
- * Purpose:
- * - Toggles an output GPIO line and expects loopback edges on an input GPIO line.
- * - Publishes `system:hardware` when status changes.
- *
- * Domain wiring:
- * - This device publishes directly to the main bus (system events).
- * - It still uses `device.domain` for consistency; set domain: 'main' in config.
- *
- * Config fields (device):
- * - id, modes, state, kind, domain ('main')
- * - protocol (gpio options: chip, binDir, paths, consumerTag, reclaimOnBusy)
- * - params: { outLine, inLine, toggleMs, bias }
- *
- * Status:
- * - ok: loopback edges observed recently
- * - degraded: no edges observed within stale window, or IO errors
- *
- * Commands (inject):
- * - Generic payload supported, but currently no commands are implemented.
- *
- * @example
- * const d = new GpioWatchdogLoopbackDevice({ logger, clock, buses, device, protocolFactory })
- * d.start()
- */
 export default class GpioWatchdogLoopbackDevice {
   #logger
   #clock
@@ -38,13 +11,14 @@ export default class GpioWatchdogLoopbackDevice {
   #disposed
   #blocked
 
-  #outLine
-  #inLine
   #toggleMs
   #staleMs
   #bias
 
   #gpioOpts
+
+  #outLine
+  #inLine
 
   #out
   #inp
@@ -66,16 +40,18 @@ export default class GpioWatchdogLoopbackDevice {
       throw new Error('gpioWatchdogLoopback requires buses.main')
     }
 
-    this.#disposed = false
-    this.#blocked = false
-
     const params = device?.params || {}
     const protocol = device?.protocol || {}
 
-    this.#outLine = Number(protocol?.outLine)
-    this.#inLine = Number(protocol?.inLine)
     this.#toggleMs = Number(params?.toggleMs ?? 1000)
     this.#bias = params?.bias ?? Gpio.PULL_DOWN
+
+    if (Number.isNaN(this.#toggleMs) || this.#toggleMs < 100) {
+      throw new Error('gpioWatchdogLoopback requires params.toggleMs >= 100')
+    }
+
+    this.#outLine = Number(protocol?.outLine)
+    this.#inLine = Number(protocol?.inLine)
 
     if (Number.isNaN(this.#outLine) || Number.isNaN(this.#inLine)) {
       throw new Error('gpioWatchdogLoopback requires protocol.outLine and protocol.inLine')
@@ -83,10 +59,6 @@ export default class GpioWatchdogLoopbackDevice {
 
     if (this.#outLine === this.#inLine) {
       throw new Error('gpioWatchdogLoopback requires outLine and inLine to be different')
-    }
-
-    if (Number.isNaN(this.#toggleMs) || this.#toggleMs < 100) {
-      throw new Error('gpioWatchdogLoopback requires toggleMs >= 100')
     }
 
     this.#staleMs = (2 * this.#toggleMs) + 200
@@ -110,6 +82,9 @@ export default class GpioWatchdogLoopbackDevice {
       reclaimOnBusy,
     }
 
+    this.#disposed = false
+    this.#blocked = false
+
     this.#out = null
     this.#inp = null
 
@@ -126,7 +101,6 @@ export default class GpioWatchdogLoopbackDevice {
       return
     }
 
-    // Recreate GPIO objects on every start to allow recovery
     this.#closeGpio()
 
     this.#out = new Gpio(this.#outLine, { ...this.#gpioOpts, mode: Gpio.OUTPUT })
@@ -139,7 +113,7 @@ export default class GpioWatchdogLoopbackDevice {
 
     this.#inp.on('interrupt', () => {
       this.#armStaleTimer()
-      this.#publish('ok', null)
+      this.#publish('active', null)
     })
 
     this.#inp.on('error', ({ source, message }) => {
@@ -154,10 +128,7 @@ export default class GpioWatchdogLoopbackDevice {
   }
 
   dispose() {
-    if (this.#disposed) {
-      return
-    }
-
+    if (this.#disposed) return
     this.#disposed = true
     this.#blocked = true
 
@@ -178,11 +149,6 @@ export default class GpioWatchdogLoopbackDevice {
   }
 
   inject(payload) {
-    // Generic injection accepted. No commands implemented yet.
-    // You can later add commands like:
-    // - "status"
-    // - "force_degraded"
-    // - "force_ok"
     void payload
   }
 
@@ -261,18 +227,18 @@ export default class GpioWatchdogLoopbackDevice {
     return 'unknown'
   }
 
-  #publish(status, error = null) {
+  #publish(state, error = null) {
     const nextError = error || null
     const nextErrorCode = nextError ? this.#classifyError(nextError) : null
 
     const changed =
-      status !== this.#lastStatus ||
+      state !== this.#lastStatus ||
       nextError !== this.#lastError ||
       nextErrorCode !== this.#lastErrorCode
 
     if (!changed) return
 
-    this.#lastStatus = status
+    this.#lastStatus = state
     this.#lastError = nextError
     this.#lastErrorCode = nextErrorCode
 
@@ -286,8 +252,7 @@ export default class GpioWatchdogLoopbackDevice {
       payload: {
         deviceId,
         publishAs,
-        subsystem: 'gpio',
-        status,
+        state,
         error: nextError,
         errorCode: nextErrorCode,
         loopback: {
@@ -301,16 +266,16 @@ export default class GpioWatchdogLoopbackDevice {
       },
     })
 
-    if (status === 'degraded') {
+    if (state === 'degraded') {
       this.#logger?.error?.('gpio_watchdog_degraded', { error: nextError, errorCode: nextErrorCode })
       return
     }
 
-    if (status === 'ok') {
+    if (state === 'active') {
       this.#logger?.notice?.('gpio_watchdog_ok', {})
       return
     }
 
-    this.#logger?.notice?.('gpio_watchdog_status', { status, error: nextError, errorCode: nextErrorCode })
+    this.#logger?.notice?.('gpio_watchdog_status', { state, error: nextError, errorCode: nextErrorCode })
   }
 }
