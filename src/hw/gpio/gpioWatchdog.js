@@ -1,6 +1,6 @@
 // src/hw/gpio/gpioWatchdog.js
 import eventTypes from '../../core/eventTypes.js'
-import Gpio from './gpio.js'
+import Gpio from '../../gpio/gpio.js'
 
 export class GpioWatchdog {
   #logger

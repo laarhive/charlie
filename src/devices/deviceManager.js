@@ -1,22 +1,37 @@
 // src/devices/deviceManager.js
 import eventTypes from '../core/eventTypes.js'
+import ProtocolFactory from './protocols/protocolFactory.js'
+import makeDeviceInstance from './kinds/index.js'
 
-import ButtonEdgeDevice from './kinds/buttonEdge/buttonEdgeDevice.js'
-import VirtualBinaryInput from './protocols/virt/virtualBinaryInput.js'
-import GpioBinaryInputGpiod from './protocols/gpio/gpioBinaryInputGpiod.js'
-
+/**
+ * Device Manager
+ *
+ * Responsibilities:
+ * - Activates devices based on (modes + state)
+ * - Instantiates device kinds (registry) and tracks instances
+ * - Calls device.start()/block()/unblock()
+ * - Publishes `system:hardware` on main bus for state changes
+ *
+ * Notes:
+ * - DeviceManager does not create protocols. Devices do.
+ * - Recovery is device-specific: DeviceManager calls device.unblock().
+ *
+ * @example
+ * const dm = new DeviceManager({ logger, mainBus: buses.main, buses, clock, config, mode })
+ * dm.start()
+ */
 export class DeviceManager {
   #logger
   #mainBus
-  #clock
-  #mode
-  #config
   #buses
+  #clock
+  #config
+  #mode
 
-  #devices
-  #deviceById
+  #protocolFactory
 
   #deviceConfigById
+  #deviceById
   #runtimeStateById
 
   constructor({ logger, mainBus, buses, clock, config, mode }) {
@@ -27,18 +42,14 @@ export class DeviceManager {
     this.#config = config
     this.#mode = mode
 
-    this.#devices = []
-    this.#deviceById = new Map()
+    this.#protocolFactory = new ProtocolFactory({ logger, clock, config })
 
     this.#deviceConfigById = new Map()
+    this.#deviceById = new Map()
     this.#runtimeStateById = new Map()
   }
 
   start() {
-    if (this.#devices.length > 0) {
-      return
-    }
-
     const devices = Array.isArray(this.#config?.devices) ? this.#config.devices : []
 
     for (const d of devices) {
@@ -50,14 +61,14 @@ export class DeviceManager {
     }
 
     for (const cfg of devices) {
-      const deviceId = cfg?.id
-      if (!deviceId) {
+      const id = cfg?.id
+      if (!id) {
         continue
       }
 
       const configuredState = cfg?.state ?? 'active'
       if (configuredState === 'manualBlocked') {
-        this.#setRuntimeState(deviceId, 'manualBlocked', { phase: 'config' })
+        this.#setRuntimeState(id, 'manualBlocked', { phase: 'config' })
         continue
       }
 
@@ -66,45 +77,24 @@ export class DeviceManager {
         continue
       }
 
-      try {
-        const dev = this.#makeDevice(cfg)
-        this.#devices.push(dev)
-        this.#deviceById.set(deviceId, dev)
-
-        dev.start()
-        this.#setRuntimeState(deviceId, 'active', { phase: 'start' })
-      } catch (e) {
-        this.#logger.error('device_start_failed', {
-          deviceId,
-          error: e?.message || String(e),
-        })
-
-        this.#setRuntimeState(deviceId, 'degraded', {
-          phase: 'start',
-          error: e?.message || String(e),
-        })
-      }
+      this.#ensureStarted(cfg, { reason: 'startup' })
     }
 
     this.#logger.notice('device_manager_started', {
       mode: this.#mode,
-      devices: this.#devices.length,
+      devices: this.#deviceById.size,
     })
   }
 
   dispose() {
-    for (const d of this.#devices) {
+    for (const [id, d] of this.#deviceById.entries()) {
       try {
         d.dispose()
       } catch (e) {
-        this.#logger.error('device_dispose_failed', {
-          deviceId: d.getId?.() || null,
-          error: e?.message || String(e),
-        })
+        this.#logger.error('device_dispose_failed', { deviceId: id, error: e?.message || String(e) })
       }
     }
 
-    this.#devices = []
     this.#deviceById.clear()
     this.#deviceConfigById.clear()
     this.#runtimeStateById.clear()
@@ -118,22 +108,16 @@ export class DeviceManager {
     for (const cfg of this.#deviceConfigById.values()) {
       const id = cfg.id
       const runtimeState = this.#runtimeStateById.get(id) || 'unknown'
-
-      const kind = cfg.kind ?? null
-      const role = cfg.role ?? null
-      const domain = cfg.domain ?? null
-
       const started = this.#deviceById.has(id)
-      const enabled = runtimeState !== 'manualBlocked'
 
       devices.push({
         id,
         publishAs: cfg.publishAs ?? id,
-        role,
-        type: kind,
-        bus: domain,
+        role: cfg.coreRole ?? null,
+        type: cfg.kind ?? null,
+        bus: cfg.domain ?? null,
 
-        enabled,
+        enabled: runtimeState !== 'manualBlocked',
         started,
         runtimeState,
       })
@@ -144,18 +128,18 @@ export class DeviceManager {
 
   block(deviceId, reason = 'manual') {
     const id = String(deviceId || '').trim()
-    if (!id) {
-      return { ok: false, error: 'DEVICE_NOT_FOUND' }
-    }
-
     const cfg = this.#deviceConfigById.get(id)
     if (!cfg) {
       return { ok: false, error: 'DEVICE_NOT_FOUND' }
     }
 
-    const d = this.#deviceById.get(id)
-    if (d?.block) {
-      d.block()
+    const inst = this.#deviceById.get(id)
+    if (inst?.block) {
+      try {
+        inst.block()
+      } catch (e) {
+        this.#logger.error('device_block_failed', { deviceId: id, error: e?.message || String(e) })
+      }
     }
 
     this.#setRuntimeState(id, 'manualBlocked', { reason })
@@ -164,10 +148,6 @@ export class DeviceManager {
 
   unblock(deviceId, reason = 'manual') {
     const id = String(deviceId || '').trim()
-    if (!id) {
-      return { ok: false, error: 'DEVICE_NOT_FOUND' }
-    }
-
     const cfg = this.#deviceConfigById.get(id)
     if (!cfg) {
       return { ok: false, error: 'DEVICE_NOT_FOUND' }
@@ -179,33 +159,65 @@ export class DeviceManager {
       return { ok: false, error: 'MODE_MISMATCH' }
     }
 
-    const d = this.#deviceById.get(id)
-    if (d?.unblock) {
-      d.unblock()
-      this.#setRuntimeState(id, 'active', { reason })
-      return { ok: true }
+    const inst = this.#deviceById.get(id)
+
+    if (!inst) {
+      // Create instance (still not creating protocols here)
+      return this.#ensureStarted(cfg, { reason }) ? { ok: true } : { ok: false, error: 'START_FAILED' }
     }
 
-    this.#setRuntimeState(id, 'active', { reason, note: 'not_started_v1' })
-    return { ok: true }
+    try {
+      inst.unblock?.()
+      this.#setRuntimeState(id, 'active', { phase: 'unblock', reason })
+      return { ok: true }
+    } catch (e) {
+      this.#logger.error('device_unblock_failed', { deviceId: id, error: e?.message || String(e) })
+      this.#setRuntimeState(id, 'degraded', { phase: 'unblock', reason, error: e?.message || String(e) })
+      return { ok: false, error: 'START_FAILED' }
+    }
   }
 
-  inject(deviceId, command) {
+  inject(deviceId, raw) {
     const id = String(deviceId || '').trim()
-    if (!id) {
-      return { ok: false, error: 'DEVICE_NOT_FOUND' }
-    }
+    const inst = this.#deviceById.get(id)
 
-    const d = this.#deviceById.get(id)
-    if (!d?.inject) {
+    if (!inst?.inject) {
       return { ok: false, error: 'NOT_SUPPORTED' }
     }
 
     try {
-      d.inject(command)
+      inst.inject(raw)
       return { ok: true }
     } catch (e) {
       return { ok: false, error: 'INJECT_FAILED', message: e?.message || String(e) }
+    }
+  }
+
+  #ensureStarted(cfg, detail = {}) {
+    const id = cfg.id
+
+    // Create new instance if missing
+    let inst = this.#deviceById.get(id)
+    if (!inst) {
+      inst = makeDeviceInstance({
+        logger: this.#logger,
+        clock: this.#clock,
+        buses: this.#buses,
+        device: cfg,
+        protocolFactory: this.#protocolFactory,
+      })
+
+      this.#deviceById.set(id, inst)
+    }
+
+    try {
+      inst.start?.()
+      this.#setRuntimeState(id, 'active', { phase: 'start', ...detail })
+      return true
+    } catch (e) {
+      this.#logger.error('device_start_failed', { deviceId: id, error: e?.message || String(e) })
+      this.#setRuntimeState(id, 'degraded', { phase: 'start', error: e?.message || String(e), ...detail })
+      return false
     }
   }
 
@@ -226,51 +238,6 @@ export class DeviceManager {
         detail,
       },
     })
-  }
-
-  #makeDevice(cfg) {
-    const domain = String(cfg?.domain || '').trim()
-    if (!domain) {
-      throw new Error('device_requires_domain')
-    }
-
-    const domainBus = this.#buses?.[domain]
-    if (!domainBus?.publish) {
-      throw new Error(`unknown_domain_bus:${domain}`)
-    }
-
-    if (cfg.kind === 'buttonEdge') {
-      const input = this.#makeBinaryInput(cfg)
-
-      return new ButtonEdgeDevice({
-        logger: this.#logger,
-        clock: this.#clock,
-        domainBus,
-        device: cfg,
-        input,
-      })
-    }
-
-    throw new Error(`unsupported_device_kind:${cfg.kind}`)
-  }
-
-  #makeBinaryInput(device) {
-    const p = device?.protocol || {}
-    const t = String(p?.type || '').trim()
-
-    if (t === 'virt') {
-      return new VirtualBinaryInput(p?.initial === true)
-    }
-
-    if (t === 'gpio') {
-      const chip = p?.chip ?? this.#config?.gpio?.chip
-      const line = p?.line
-      const activeHigh = p?.activeHigh !== false
-
-      return new GpioBinaryInputGpiod({ chip, line, activeHigh })
-    }
-
-    throw new Error(`unsupported_protocol_type:${t || 'missing'}`)
   }
 }
 

@@ -39,11 +39,11 @@ const listConfigFiles = function listConfigFiles(prefix) {
   }
 }
 
-const listSensorIds = function listSensorIds(getContext, prefix) {
+const listDeviceIds = function listDeviceIds(getContext, prefix) {
   try {
     const ctx = getContext()
-    const sensors = Array.isArray(ctx?.config?.sensors) ? ctx.config.sensors : []
-    const ids = sensors.map((s) => s?.id).filter(Boolean)
+    const devices = Array.isArray(ctx?.config?.devices) ? ctx.config.devices : []
+    const ids = devices.map((d) => d?.id).filter(Boolean)
 
     return filterPrefix(uniq(ids), prefix)
   } catch {
@@ -73,54 +73,6 @@ const listZones = function listZones(getContext, prefix) {
     return filterPrefix(uniq(zones), prefix)
   } catch {
     return filterPrefix(['front', 'back'], prefix)
-  }
-}
-
-const listVirtSettableButtonIds = function listVirtSettableButtonIds(getContext, prefix) {
-  try {
-    const ctx = getContext()
-    const m = ctx?.hw?.signals?.button
-
-    if (!(m instanceof Map)) {
-      return []
-    }
-
-    const ids = Array.from(m.entries())
-      .filter(([, sig]) => sig && typeof sig.set === 'function')
-      .map(([id]) => id)
-      .filter(Boolean)
-
-    return filterPrefix(uniq(ids), prefix)
-  } catch {
-    return []
-  }
-}
-
-const listVirtSettableSignalIds = function listVirtSettableSignalIds(getContext, prefix) {
-  try {
-    const ctx = getContext()
-    const signals = ctx?.hw?.signals || {}
-
-    const collect = (m) => {
-      if (!(m instanceof Map)) {
-        return []
-      }
-
-      return Array.from(m.entries())
-        .filter(([, sig]) => sig && typeof sig.set === 'function')
-        .map(([id]) => id)
-        .filter(Boolean)
-    }
-
-    const ids = [
-      ...collect(signals.presence),
-      ...collect(signals.vibration),
-      ...collect(signals.button),
-    ]
-
-    return filterPrefix(uniq(ids).sort(), prefix)
-  } catch {
-    return []
   }
 }
 
@@ -173,6 +125,37 @@ const commandTree = childrenNode({
 
   button: optionsNode(['short', 'long']),
 
+  device: childrenNode({
+    list: optionsNode([]),
+
+    block: sequenceNode([
+      dynamicNode((getContext, prefix) => listDeviceIds(getContext, prefix)),
+    ]),
+
+    unblock: sequenceNode([
+      dynamicNode((getContext, prefix) => listDeviceIds(getContext, prefix)),
+    ]),
+
+    inject: sequenceNode([
+      dynamicNode((getContext, prefix) => listDeviceIds(getContext, prefix)),
+      optionsNode([
+        '{"type":"press","ms":200}',
+        'press',
+        'press 200',
+      ]),
+    ]),
+  }, ['list', 'block', 'unblock', 'inject']),
+
+  driver: childrenNode({
+    list: optionsNode([]),
+    enable: sequenceNode([
+      dynamicNode((getContext, prefix) => listDeviceIds(getContext, prefix)),
+    ]),
+    disable: sequenceNode([
+      dynamicNode((getContext, prefix) => listDeviceIds(getContext, prefix)),
+    ]),
+  }, ['list', 'enable', 'disable']),
+
   clock: childrenNode({
     now: optionsNode([]),
     status: optionsNode([]),
@@ -205,30 +188,6 @@ const commandTree = childrenNode({
     ]),
     print: optionsNode([]),
   }, ['load', 'print']),
-
-  virt: childrenNode({
-    list: optionsNode([]),
-
-    set: sequenceNode([
-      dynamicNode((getContext, prefix) => listVirtSettableSignalIds(getContext, prefix)),
-      optionsNode(['on', 'off']),
-    ]),
-
-    press: sequenceNode([
-      dynamicNode((getContext, prefix) => listVirtSettableButtonIds(getContext, prefix)),
-      optionsNode(['10', '20', '30', '50', '100', '200', '400', '650', '800', '1000']),
-    ]),
-  }, ['list', 'set', 'press']),
-
-  driver: childrenNode({
-    list: optionsNode([]),
-    enable: sequenceNode([
-      dynamicNode((getContext, prefix) => listSensorIds(getContext, prefix)),
-    ]),
-    disable: sequenceNode([
-      dynamicNode((getContext, prefix) => listSensorIds(getContext, prefix)),
-    ]),
-  }, ['list', 'enable', 'disable']),
 })
 
 const getNodeSuggestions = function getNodeSuggestions(node, getContext, prefix) {
@@ -302,7 +261,6 @@ const traverseForSuggestions = function traverseForSuggestions({ root, tokens, g
       return []
     }
 
-    // leaf nodes like inject/vibration/button
     return getNodeSuggestions(child, getContext, currentPrefix)
   }
 

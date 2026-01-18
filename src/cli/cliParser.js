@@ -1,24 +1,5 @@
-// src/app/cliParser.js
-
-/**
- * CLI parser.
- *
- * Converts user input lines into command objects consumed by CliSimController.
- *
- * @example
- * const parser = new CliParser()
- * parser.parse('inject on')
- */
+// src/cli/cliParser.js
 export class CliParser {
-  /**
-   * Parses a single input line into a command object.
-   *
-   * @param {string} line
-   * @returns {object}
-   *
-   * @example
-   * const cmd = parser.parse('presence front on')
-   */
   parse(line) {
     const trimmed = String(line || '').trim()
     if (!trimmed) {
@@ -37,18 +18,9 @@ export class CliParser {
     }
 
     if (a === 'inject') {
-      if (b === 'on') {
-        return { kind: 'injectOn' }
-      }
-
-      if (b === 'off') {
-        return { kind: 'injectOff' }
-      }
-
-      if (b === 'status') {
-        return { kind: 'injectStatus' }
-      }
-
+      if (b === 'on') return { kind: 'injectOn' }
+      if (b === 'off') return { kind: 'injectOff' }
+      if (b === 'status') return { kind: 'injectStatus' }
       return { kind: 'error', message: 'usage: inject on|off|status' }
     }
 
@@ -68,17 +40,9 @@ export class CliParser {
         return { kind: 'error', message: 'usage: tap main|presence|vibration|button|tasker|all on|off|status' }
       }
 
-      if (action === 'on') {
-        return { kind: 'tapOn', bus }
-      }
-
-      if (action === 'off') {
-        return { kind: 'tapOff', bus }
-      }
-
-      if (action === 'status') {
-        return { kind: 'tapStatus', bus }
-      }
+      if (action === 'on') return { kind: 'tapOn', bus }
+      if (action === 'off') return { kind: 'tapOff', bus }
+      if (action === 'status') return { kind: 'tapStatus', bus }
 
       return { kind: 'error', message: 'usage: tap main|presence|vibration|button|tasker|all on|off|status' }
     }
@@ -91,20 +55,14 @@ export class CliParser {
         return { kind: 'error', message: 'usage: presence front|back on|off' }
       }
 
-      if (action === 'on') {
-        return { kind: 'presence', zone, present: true }
-      }
-
-      if (action === 'off') {
-        return { kind: 'presence', zone, present: false }
-      }
+      if (action === 'on') return { kind: 'presence', zone, present: true }
+      if (action === 'off') return { kind: 'presence', zone, present: false }
 
       return { kind: 'error', message: 'usage: presence front|back on|off' }
     }
 
     if (a === 'vibration') {
       const level = b
-
       if (level !== 'low' && level !== 'high') {
         return { kind: 'error', message: 'usage: vibration low|high' }
       }
@@ -114,7 +72,6 @@ export class CliParser {
 
     if (a === 'button') {
       const pressType = b
-
       if (pressType !== 'short' && pressType !== 'long') {
         return { kind: 'error', message: 'usage: button short|long' }
       }
@@ -123,21 +80,10 @@ export class CliParser {
     }
 
     if (a === 'clock') {
-      if (b === 'now') {
-        return { kind: 'clockNow' }
-      }
-
-      if (b === 'status') {
-        return { kind: 'clockStatus' }
-      }
-
-      if (b === 'freeze') {
-        return { kind: 'clockFreeze' }
-      }
-
-      if (b === 'resume') {
-        return { kind: 'clockResume' }
-      }
+      if (b === 'now') return { kind: 'clockNow' }
+      if (b === 'status') return { kind: 'clockStatus' }
+      if (b === 'freeze') return { kind: 'clockFreeze' }
+      if (b === 'resume') return { kind: 'clockResume' }
 
       if (b && b.startsWith('+')) {
         const ms = Number(b.slice(1))
@@ -180,79 +126,48 @@ export class CliParser {
     }
 
     if (a === 'core') {
-      if (b === 'state') {
-        return { kind: 'coreState' }
-      }
-
+      if (b === 'state') return { kind: 'coreState' }
       return { kind: 'error', message: 'usage: core state' }
     }
 
-    if (a === 'virt') {
+    if (a === 'device') {
       if (b === 'list') {
-        return { kind: 'virtList' }
+        return { kind: 'deviceList' }
       }
 
-      if (b === 'set') {
-        const sensorId = c
-        const action = rest[0]
-
-        if (!sensorId) {
-          return { kind: 'error', message: 'usage: virt set <sensorId> on|off' }
+      if (b === 'block') {
+        const deviceId = c
+        if (!deviceId) {
+          return { kind: 'error', message: 'usage: device block <deviceId>' }
         }
 
-        if (action !== 'on' && action !== 'off') {
-          return { kind: 'error', message: 'usage: virt set <sensorId> on|off' }
-        }
-
-        return { kind: 'virtSet', sensorId, value: action === 'on' }
+        return { kind: 'deviceBlock', deviceId }
       }
 
-      if (b === 'press') {
-        const sensorId = c
-        const msRaw = rest[0]
-
-        if (!sensorId) {
-          return { kind: 'error', message: 'usage: virt press <sensorId> [ms]' }
+      if (b === 'unblock') {
+        const deviceId = c
+        if (!deviceId) {
+          return { kind: 'error', message: 'usage: device unblock <deviceId>' }
         }
 
-        let ms = null
-        if (msRaw !== undefined) {
-          ms = Number(msRaw)
-          if (Number.isNaN(ms) || ms <= 0) {
-            return { kind: 'error', message: 'ms must be a positive number' }
-          }
+        return { kind: 'deviceUnblock', deviceId }
+      }
+
+      if (b === 'inject') {
+        const deviceId = c
+        if (!deviceId) {
+          return { kind: 'error', message: 'usage: device inject <deviceId> <payload...>' }
         }
 
-        return { kind: 'virtPress', sensorId, ms }
-      }
-
-      return { kind: 'error', message: 'usage: virt list|set <sensorId> on|off' }
-    }
-
-    if (a === 'driver') {
-      if (b === 'list') {
-        return { kind: 'driverList' }
-      }
-
-      if (b === 'enable') {
-        const sensorId = c
-        if (!sensorId) {
-          return { kind: 'error', message: 'usage: driver enable <sensorId>' }
+        const payload = rest.join(' ').trim()
+        if (!payload) {
+          return { kind: 'error', message: 'usage: device inject <deviceId> <payload...>' }
         }
 
-        return { kind: 'driverEnable', sensorId }
+        return { kind: 'deviceInject', deviceId, payload }
       }
 
-      if (b === 'disable') {
-        const sensorId = c
-        if (!sensorId) {
-          return { kind: 'error', message: 'usage: driver disable <sensorId>' }
-        }
-
-        return { kind: 'driverDisable', sensorId }
-      }
-
-      return { kind: 'error', message: 'usage: driver list|enable|disable <sensorId>' }
+      return { kind: 'error', message: 'usage: device list|block|unblock|inject <deviceId> <payload...>' }
     }
 
     return { kind: 'error', message: 'unknown command, type: help' }

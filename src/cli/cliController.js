@@ -84,12 +84,10 @@ export class CliController {
   }
 
   #handleCommand(cmd) {
-    if (cmd.kind === 'empty') {
-      return
-    }
+    if (cmd.kind === 'empty') return
 
     if (cmd.kind === 'help') {
-      printHelp()
+      printHelp({ mode: 'local' })
       return
     }
 
@@ -228,195 +226,89 @@ export class CliController {
       return
     }
 
-    if (cmd.kind === 'virtList') {
-      this.#virtList()
+    if (cmd.kind === 'deviceList') {
+      this.#deviceList()
       return
     }
 
-    if (cmd.kind === 'virtSet') {
-      this.#virtSet(cmd.sensorId, cmd.value)
+    if (cmd.kind === 'deviceBlock') {
+      this.#deviceBlock(cmd.deviceId)
       return
     }
 
-    if (cmd.kind === 'virtPress') {
-      this.#virtPress(cmd.sensorId, cmd.ms)
+    if (cmd.kind === 'deviceUnblock') {
+      this.#deviceUnblock(cmd.deviceId)
       return
     }
 
-    if (cmd.kind === 'driverList') {
-      this.#driverList()
-      return
-    }
-
-    if (cmd.kind === 'driverEnable') {
-      this.#driverSetEnabled(cmd.sensorId, true)
-      return
-    }
-
-    if (cmd.kind === 'driverDisable') {
-      this.#driverSetEnabled(cmd.sensorId, false)
+    if (cmd.kind === 'deviceInject') {
+      this.#deviceInject(cmd.deviceId, cmd.payload)
       return
     }
 
     console.log('unknown command, type: help')
   }
 
-  #getSignals() {
-    const { deviceManager } = this.#getContext()
-    const signals = deviceManager?.getSignals?.()
-    return signals || {}
-  }
-
-  #virtList() {
-    const signals = this.#getSignals()
-
-    const listSettableIds = (m) => {
-      if (!(m instanceof Map)) {
-        return []
-      }
-
-      return Array.from(m.entries())
-        .filter(([, sig]) => sig && typeof sig.set === 'function')
-        .map(([id]) => id)
-        .filter(Boolean)
-        .sort()
-    }
-
-    const presence = listSettableIds(signals.presence)
-    const vibration = listSettableIds(signals.vibration)
-    const button = listSettableIds(signals.button)
-
-    this.#logger.info('virt_signals', { presence, vibration, button })
-  }
-
-  #virtSet(sensorId, value) {
-    const signals = this.#getSignals()
-
-    const targets = [
-      { name: 'presence', map: signals.presence },
-      { name: 'vibration', map: signals.vibration },
-      { name: 'button', map: signals.button },
-    ]
-
-    const matches = []
-
-    for (const t of targets) {
-      const m = t.map
-      if (!(m instanceof Map)) {
-        continue
-      }
-
-      const sig = m.get(sensorId)
-      if (!sig) {
-        continue
-      }
-
-      matches.push({ domain: t.name, sig })
-    }
-
-    if (matches.length === 0) {
-      this.#logger.warning('virt_unknown_signal', { sensorId })
-      return
-    }
-
-    if (matches.length > 1) {
-      this.#logger.warning('virt_ambiguous_signal', {
-        sensorId,
-        domains: matches.map((x) => x.domain),
-      })
-      return
-    }
-
-    const { domain, sig } = matches[0]
-
-    if (typeof sig.set !== 'function') {
-      this.#logger.warning('virt_signal_not_settable', { sensorId, domain })
-      return
-    }
-
-    sig.set(Boolean(value))
-    this.#logger.notice('virt_set', { sensorId, domain, value: Boolean(value) })
-  }
-
-  #virtPress(sensorId, ms) {
-    const signals = this.#getSignals()
-    const m = signals?.button
-
-    if (!(m instanceof Map)) {
-      this.#logger.warning('virt_no_button_signals', { sensorId })
-      return
-    }
-
-    const sig = m.get(sensorId)
-    if (!sig) {
-      this.#logger.warning('virt_unknown_signal', { sensorId })
-      return
-    }
-
-    if (typeof sig.set !== 'function') {
-      this.#logger.warning('virt_signal_not_settable', { sensorId })
-      return
-    }
-
-    const holdMs = Number(ms) > 0 ? Number(ms) : 30
-
-    sig.set(true)
-
-    setTimeout(() => {
-      sig.set(false)
-      this.#logger.notice('virt_press', { sensorId, holdMs })
-    }, holdMs)
-  }
-
-  #driverList() {
+  #deviceList() {
     const { deviceManager } = this.#getContext()
 
-    if (!deviceManager || typeof deviceManager.list !== 'function') {
+    if (!deviceManager?.list) {
       this.#logger.warning('device_manager_missing', {})
       return
     }
 
-    const out = deviceManager.list()
-    const devices = Array.isArray(out?.devices) ? out.devices : []
-
-    const items = devices.map((d) => ({
-      sensorId: d.id,
-      publishAs: d.publishAs ?? null,
-      type: d.type ?? null,
-      role: d.role ?? null,
-      bus: d.bus ?? null,
-      enabled: d.enabled ?? null,
-      started: d.started ?? null,
-      runtimeState: d.runtimeState ?? null,
-    }))
-
-    this.#logger.info('driver_list', { drivers: items })
+    this.#logger.info('device_list', deviceManager.list())
   }
 
-  #driverSetEnabled(sensorId, enabled) {
+  #deviceBlock(deviceId) {
     const { deviceManager } = this.#getContext()
 
-    if (!deviceManager) {
-      this.#logger.warning('device_manager_missing', { sensorId })
+    if (!deviceManager?.block) {
+      this.#logger.warning('device_manager_missing', { deviceId })
       return
     }
 
-    const id = String(sensorId || '').trim()
-    if (!id) {
-      this.#logger.warning('driver_not_found', { sensorId })
-      return
-    }
-
-    const out = enabled === true
-      ? deviceManager.unblock(id)
-      : deviceManager.block(id)
-
+    const out = deviceManager.block(deviceId)
     if (!out?.ok) {
-      this.#logger.warning('driver_not_found', { sensorId: id })
+      this.#logger.warning('device_block_failed', { deviceId, error: out?.error })
       return
     }
 
-    this.#logger.notice('driver_toggled', { sensorId: id, enabled: Boolean(enabled) })
+    this.#logger.notice('device_blocked', { deviceId })
+  }
+
+  #deviceUnblock(deviceId) {
+    const { deviceManager } = this.#getContext()
+
+    if (!deviceManager?.unblock) {
+      this.#logger.warning('device_manager_missing', { deviceId })
+      return
+    }
+
+    const out = deviceManager.unblock(deviceId)
+    if (!out?.ok) {
+      this.#logger.warning('device_unblock_failed', { deviceId, error: out?.error })
+      return
+    }
+
+    this.#logger.notice('device_unblocked', { deviceId })
+  }
+
+  #deviceInject(deviceId, payload) {
+    const { deviceManager } = this.#getContext()
+
+    if (!deviceManager?.inject) {
+      this.#logger.warning('device_manager_missing', { deviceId })
+      return
+    }
+
+    const out = deviceManager.inject(deviceId, payload)
+    if (!out?.ok) {
+      this.#logger.warning('device_inject_failed', { deviceId, error: out?.error, message: out?.message })
+      return
+    }
+
+    this.#logger.notice('device_injected', { deviceId })
   }
 
   #guardInject(fn) {
@@ -547,6 +439,7 @@ export class CliController {
     this.#logger.debug('event_publish', { bus: 'main', event })
     buses.main.publish(event)
   }
+
   #reloadConfig(filename) {
     try {
       const { config } = this.#loadConfig(filename)
