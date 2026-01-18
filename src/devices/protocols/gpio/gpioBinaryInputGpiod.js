@@ -1,4 +1,19 @@
 // src/devices/protocols/gpio/gpioBinaryInputGpiod.js
+/**
+ * Protocol: gpio binary input (libgpiod gpiomon)
+ *
+ * Contract:
+ * - subscribe(handler) -> unsubscribe
+ *   handler(value:boolean) receives logical value (after activeHigh inversion)
+ *
+ * Notes:
+ * - Edge-driven: values are emitted on GPIO edges observed by gpiomon.
+ * - Intended for Linux environments with libgpiod tools available.
+ *
+ * @example
+ * const inp = new GpioBinaryInputGpiod({ chip: 'gpiochip0', line: 24, activeHigh: false })
+ * const unsub = inp.subscribe((v) => console.log('level', v))
+ */
 import { spawn } from 'node:child_process'
 
 export default class GpioBinaryInputGpiod {

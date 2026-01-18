@@ -1,28 +1,48 @@
 // src/domain/button/edgeButtonController.js
+/**
+ * Domain controller: button edge -> semantic press
+ *
+ * Input (domain bus: button):
+ * - `buttonRaw:edge` with payload: { deviceId, publishAs, edge: 'press' }
+ *
+ * Output (main bus):
+ * - `button:press` with payload: { coreRole, deviceId, publishAs, sensorId }
+ *
+ * Behavior:
+ * - Applies per-device cooldown to suppress rapid repeats.
+ * - Does not interpret core semantics; it forwards coreRole from config.
+ *
+ * @example
+ * const c = new EdgeButtonController({ logger, buttonBus, mainBus, clock, controllerId, devices })
+ * c.start()
+ */
+
 import PushButtonController from './pushButtonController.js'
 import domainEventTypes from '../domainEventTypes.js'
 
 export class EdgeButtonController extends PushButtonController {
-  #sensorsById
+  #devicesById
   #unsubscribe
-  #lastPressTsBySensor
+  #lastPressTsByDeviceId
 
-  constructor({ logger, buttonBus, mainBus, clock, controllerId, sensors }) {
+  constructor({ logger, buttonBus, mainBus, clock, controllerId, devices, sensors }) {
     super({ logger, buttonBus, mainBus, clock, controllerId })
 
-    this.#sensorsById = new Map()
+    this.#devicesById = new Map()
     this.#unsubscribe = null
-    this.#lastPressTsBySensor = new Map()
+    this.#lastPressTsByDeviceId = new Map()
 
-    const list = Array.isArray(sensors) ? sensors : []
-    for (const s of list) {
-      if (!s?.id) {
+    const list = Array.isArray(devices)
+      ? devices
+      : (Array.isArray(sensors) ? sensors : [])
+
+    for (const d of list) {
+      if (!d?.id) {
         continue
       }
 
-      const logicalId = s.publishAs ?? s.id
-      this.#sensorsById.set(logicalId, s)
-      this.#lastPressTsBySensor.set(logicalId, null)
+      this.#devicesById.set(d.id, d)
+      this.#lastPressTsByDeviceId.set(d.id, null)
     }
   }
 
@@ -55,26 +75,34 @@ export class EdgeButtonController extends PushButtonController {
 
   #onEdge(event) {
     const p = event?.payload || {}
-    const sensorId = p.sensorId
-    const edge = p.edge
 
+    const edge = p.edge
     if (edge !== 'press') {
       return
     }
 
-    const sensor = this.#sensorsById.get(sensorId)
-    if (!sensor) {
-      this._logger().warning('button_unknown_sensor', { sensorId })
+    const deviceId = p.deviceId
+    const publishAs = p.publishAs
+
+    if (!deviceId) {
+      this._logger().warning('button_missing_deviceId', { payload: p })
       return
     }
 
-    if (!sensor.enabled) {
+    const device = this.#devicesById.get(deviceId)
+    if (!device) {
+      this._logger().warning('button_unknown_device', { deviceId })
+      return
+    }
+
+    const configuredState = device.state ?? 'active'
+    if (configuredState === 'manualBlocked') {
       return
     }
 
     const now = this._clock().nowMs()
-    const cooldownMs = sensor.params?.cooldownMs ?? 250
-    const last = this.#lastPressTsBySensor.get(sensorId)
+    const cooldownMs = device.params?.cooldownMs ?? 250
+    const last = this.#lastPressTsByDeviceId.get(deviceId)
 
     if (last !== null && cooldownMs > 0) {
       const dt = now - last
@@ -83,8 +111,10 @@ export class EdgeButtonController extends PushButtonController {
       }
     }
 
-    this.#lastPressTsBySensor.set(sensorId, now)
-    this._publishPress({ sensorId })
+    this.#lastPressTsByDeviceId.set(deviceId, now)
+
+    const coreRole = device.coreRole ?? null
+    this._publishPress({ coreRole, deviceId, publishAs })
   }
 }
 

@@ -1,10 +1,9 @@
 // src/devices/deviceManager.js
 import eventTypes from '../core/eventTypes.js'
-import makeHwDrivers, { disposeSignals } from './legacy/hwDrivers.js'
 
 import ButtonEdgeDevice from './kinds/buttonEdge/buttonEdgeDevice.js'
 import VirtualBinaryInput from './protocols/virt/virtualBinaryInput.js'
-import GpioBinaryInputGpiod from './protocols/gpio/gpioBinarySignalGpiod.js'
+import GpioBinaryInputGpiod from './protocols/gpio/gpioBinaryInputGpiod.js'
 
 export class DeviceManager {
   #logger
@@ -14,12 +13,10 @@ export class DeviceManager {
   #config
   #buses
 
-  #legacy
-  #signals
-
   #devices
   #deviceById
 
+  #deviceConfigById
   #runtimeStateById
 
   constructor({ logger, mainBus, buses, clock, config, mode }) {
@@ -30,58 +27,47 @@ export class DeviceManager {
     this.#config = config
     this.#mode = mode
 
-    this.#legacy = null
-    this.#signals = null
-
     this.#devices = []
     this.#deviceById = new Map()
 
+    this.#deviceConfigById = new Map()
     this.#runtimeStateById = new Map()
   }
 
   start() {
-    if (this.#devices.length > 0 || this.#legacy) {
+    if (this.#devices.length > 0) {
       return
     }
 
-    const sensors = Array.isArray(this.#config?.sensors) ? this.#config.sensors : []
+    const devices = Array.isArray(this.#config?.devices) ? this.#config.devices : []
 
-    const isActiveInModeNew = (s) => {
-      const modes = Array.isArray(s?.modes) ? s.modes : []
-      const state = s?.state ?? 'active'
-      return modes.includes(this.#mode) && state === 'active'
-    }
-
-    const isManualBlockedNew = (s) => (s?.state ?? 'active') === 'manualBlocked'
-
-    const isActiveLegacy = (s) => {
-      if (s?.enabled === false) {
-        return false
-      }
-
-      const modes = Array.isArray(s?.modes) ? s.modes : []
-      return modes.includes(this.#mode)
-    }
-
-    // 1) New devices (only those with kind)
-    for (const s of sensors) {
-      if (!s?.id || !s?.kind) {
+    for (const d of devices) {
+      if (!d?.id) {
         continue
       }
 
-      const deviceId = s.id
+      this.#deviceConfigById.set(d.id, d)
+    }
 
-      if (isManualBlockedNew(s)) {
-        this.#registerDevice(deviceId, null, 'manualBlocked', { phase: 'config' })
+    for (const cfg of devices) {
+      const deviceId = cfg?.id
+      if (!deviceId) {
         continue
       }
 
-      if (!isActiveInModeNew(s)) {
+      const configuredState = cfg?.state ?? 'active'
+      if (configuredState === 'manualBlocked') {
+        this.#setRuntimeState(deviceId, 'manualBlocked', { phase: 'config' })
+        continue
+      }
+
+      const modes = Array.isArray(cfg?.modes) ? cfg.modes : []
+      if (!modes.includes(this.#mode)) {
         continue
       }
 
       try {
-        const dev = this.#makeNewDevice(s)
+        const dev = this.#makeDevice(cfg)
         this.#devices.push(dev)
         this.#deviceById.set(deviceId, dev)
 
@@ -100,45 +86,9 @@ export class DeviceManager {
       }
     }
 
-    // 2) Legacy (everything else)
-    const legacy = makeHwDrivers({
-      logger: this.#logger,
-      buses: this.#buses,
-      clock: this.#clock,
-      config: {
-        ...this.#config,
-        sensors: sensors.filter((s) => !s?.kind).filter((s) => isActiveLegacy(s)),
-      },
-      mode: this.#mode,
-    })
-
-    this.#legacy = legacy
-    this.#signals = legacy.signals
-
-    for (const d of legacy.drivers) {
-      const id = d.getSensorId()
-
-      try {
-        d.start()
-        this.#setRuntimeState(id, 'active', { phase: 'start', legacy: true })
-      } catch (e) {
-        this.#logger.error('device_start_failed', {
-          deviceId: id,
-          error: e?.message || String(e),
-        })
-
-        this.#setRuntimeState(id, 'degraded', {
-          phase: 'start',
-          legacy: true,
-          error: e?.message || String(e),
-        })
-      }
-    }
-
     this.#logger.notice('device_manager_started', {
       mode: this.#mode,
-      devicesNew: this.#devices.length,
-      devicesLegacy: legacy.drivers.length,
+      devices: this.#devices.length,
     })
   }
 
@@ -156,68 +106,35 @@ export class DeviceManager {
 
     this.#devices = []
     this.#deviceById.clear()
+    this.#deviceConfigById.clear()
     this.#runtimeStateById.clear()
 
-    if (this.#legacy) {
-      for (const d of this.#legacy.drivers) {
-        try {
-          d.dispose()
-        } catch (e) {
-          this.#logger.error('device_dispose_failed', {
-            deviceId: d.getSensorId(),
-            error: e?.message || String(e),
-          })
-        }
-      }
-
-      disposeSignals(this.#legacy.signals)
-      this.#legacy = null
-      this.#signals = null
-    }
-
     this.#logger.notice('device_manager_disposed', {})
-  }
-
-  getSignals() {
-    return this.#signals
   }
 
   list() {
     const devices = []
 
-    // New devices
-    for (const d of this.#devices) {
-      const id = d.getId()
+    for (const cfg of this.#deviceConfigById.values()) {
+      const id = cfg.id
       const runtimeState = this.#runtimeStateById.get(id) || 'unknown'
+
+      const kind = cfg.kind ?? null
+      const role = cfg.role ?? null
+      const domain = cfg.domain ?? null
+
+      const started = this.#deviceById.has(id)
+      const enabled = runtimeState !== 'manualBlocked'
 
       devices.push({
         id,
-        publishAs: d.getPublishAs?.() ?? id,
-        role: d.getRole?.() ?? null,
-        type: d.getKind?.() ?? null,
-        bus: d.getDomain?.() ?? null,
+        publishAs: cfg.publishAs ?? id,
+        role,
+        type: kind,
+        bus: domain,
 
-        enabled: runtimeState !== 'manualBlocked',
-        started: true,
-        runtimeState,
-      })
-    }
-
-    // Legacy devices
-    const legacyDrivers = Array.isArray(this.#legacy?.drivers) ? this.#legacy.drivers : []
-    for (const d of legacyDrivers) {
-      const id = d.getSensorId()
-      const runtimeState = this.#runtimeStateById.get(id) || 'unknown'
-
-      devices.push({
-        id,
-        publishAs: this.#getPublishAsLegacy(id),
-        role: d.getRole?.() ?? null,
-        type: d.getType?.() ?? null,
-        bus: d.getBus?.() ?? null,
-
-        enabled: d.isEnabled?.() ?? null,
-        started: d.isStarted?.() ?? null,
+        enabled,
+        started,
         runtimeState,
       })
     }
@@ -231,22 +148,18 @@ export class DeviceManager {
       return { ok: false, error: 'DEVICE_NOT_FOUND' }
     }
 
+    const cfg = this.#deviceConfigById.get(id)
+    if (!cfg) {
+      return { ok: false, error: 'DEVICE_NOT_FOUND' }
+    }
+
     const d = this.#deviceById.get(id)
-    if (d) {
-      d.block?.()
-      this.#setRuntimeState(id, 'manualBlocked', { reason })
-      return { ok: true }
+    if (d?.block) {
+      d.block()
     }
 
-    const legacy = this.#legacy?.driverBySensorId
-    const ld = legacy instanceof Map ? legacy.get(id) : null
-    if (ld?.setEnabled) {
-      ld.setEnabled(false)
-      this.#setRuntimeState(id, 'manualBlocked', { reason, legacy: true })
-      return { ok: true }
-    }
-
-    return { ok: false, error: 'DEVICE_NOT_FOUND' }
+    this.#setRuntimeState(id, 'manualBlocked', { reason })
+    return { ok: true }
   }
 
   unblock(deviceId, reason = 'manual') {
@@ -255,22 +168,26 @@ export class DeviceManager {
       return { ok: false, error: 'DEVICE_NOT_FOUND' }
     }
 
+    const cfg = this.#deviceConfigById.get(id)
+    if (!cfg) {
+      return { ok: false, error: 'DEVICE_NOT_FOUND' }
+    }
+
+    const modes = Array.isArray(cfg?.modes) ? cfg.modes : []
+    if (!modes.includes(this.#mode)) {
+      this.#setRuntimeState(id, 'manualBlocked', { reason: 'mode_mismatch', mode: this.#mode })
+      return { ok: false, error: 'MODE_MISMATCH' }
+    }
+
     const d = this.#deviceById.get(id)
-    if (d) {
-      d.unblock?.()
+    if (d?.unblock) {
+      d.unblock()
       this.#setRuntimeState(id, 'active', { reason })
       return { ok: true }
     }
 
-    const legacy = this.#legacy?.driverBySensorId
-    const ld = legacy instanceof Map ? legacy.get(id) : null
-    if (ld?.setEnabled) {
-      ld.setEnabled(true)
-      this.#setRuntimeState(id, 'active', { reason, legacy: true })
-      return { ok: true }
-    }
-
-    return { ok: false, error: 'DEVICE_NOT_FOUND' }
+    this.#setRuntimeState(id, 'active', { reason, note: 'not_started_v1' })
+    return { ok: true }
   }
 
   inject(deviceId, command) {
@@ -280,29 +197,23 @@ export class DeviceManager {
     }
 
     const d = this.#deviceById.get(id)
-    if (d?.inject) {
-      try {
-        d.inject(command)
-        return { ok: true }
-      } catch (e) {
-        return { ok: false, error: 'INJECT_FAILED', message: e?.message || String(e) }
-      }
+    if (!d?.inject) {
+      return { ok: false, error: 'NOT_SUPPORTED' }
     }
 
-    return { ok: false, error: 'NOT_SUPPORTED' }
-  }
-
-  #registerDevice(deviceId, device, runtimeState, detail) {
-    if (device) {
-      this.#devices.push(device)
-      this.#deviceById.set(deviceId, device)
+    try {
+      d.inject(command)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: 'INJECT_FAILED', message: e?.message || String(e) }
     }
-
-    this.#setRuntimeState(deviceId, runtimeState, detail)
   }
 
   #setRuntimeState(deviceId, state, detail = {}) {
     this.#runtimeStateById.set(deviceId, state)
+
+    const cfg = this.#deviceConfigById.get(deviceId)
+    const publishAs = cfg?.publishAs ?? deviceId
 
     this.#mainBus.publish({
       type: eventTypes.system.hardware,
@@ -310,37 +221,37 @@ export class DeviceManager {
       source: 'deviceManager',
       payload: {
         deviceId,
-        publishAs: this.#getPublishAs(deviceId),
+        publishAs,
         state,
         detail,
       },
     })
   }
 
-  #getPublishAs(deviceId) {
-    const sensors = Array.isArray(this.#config?.sensors) ? this.#config.sensors : []
-    const s = sensors.find((x) => x?.id === deviceId)
-    return s?.publishAs ?? deviceId
-  }
+  #makeDevice(cfg) {
+    const domain = String(cfg?.domain || '').trim()
+    if (!domain) {
+      throw new Error('device_requires_domain')
+    }
 
-  #getPublishAsLegacy(deviceId) {
-    return this.#getPublishAs(deviceId)
-  }
+    const domainBus = this.#buses?.[domain]
+    if (!domainBus?.publish) {
+      throw new Error(`unknown_domain_bus:${domain}`)
+    }
 
-  #makeNewDevice(device) {
-    if (device.kind === 'buttonEdge') {
-      const input = this.#makeBinaryInput(device)
+    if (cfg.kind === 'buttonEdge') {
+      const input = this.#makeBinaryInput(cfg)
 
       return new ButtonEdgeDevice({
         logger: this.#logger,
         clock: this.#clock,
-        buttonBus: this.#buses.button,
-        device,
+        domainBus,
+        device: cfg,
         input,
       })
     }
 
-    throw new Error(`unsupported_device_kind:${device.kind}`)
+    throw new Error(`unsupported_device_kind:${cfg.kind}`)
   }
 
   #makeBinaryInput(device) {

@@ -1,11 +1,55 @@
+/**
+ * Device kind: buttonEdge
+ *
+ * Input:
+ * - Binary input port producing boolean levels (true means "pressed" logically)
+ *
+ * Output (domain bus: button):
+ * - Publishes `buttonRaw:edge` on rising edge only:
+ *   { payload: { sensorId, edge: 'press' } }
+ *
+ * Commands (inject):
+ * - { type: 'press', ms?: number }
+ *   Simulates a press by driving the input high then low (virt protocol only).
+ *
+ * Notes:
+ * - No debounce/cooldown here. Domain controller is responsible.
+ *
+ * @example
+ * const dev = new ButtonEdgeDevice({ logger, clock, buttonBus, device, input })
+ * dev.start()
+ */
+
 // src/devices/kinds/buttonEdge/buttonEdgeDevice.js
 import BaseDevice from '../../base/baseDevice.js'
 import domainEventTypes from '../../../domains/domainEventTypes.js'
 
+/**
+ * Device kind: buttonEdge
+ *
+ * Domain wiring:
+ * - Publishes to the domain bus selected by device.domain (typically "button").
+ *
+ * Input:
+ * - Binary input port producing boolean levels.
+ *   Logical "pressed" must be true (protocol handles activeHigh inversion).
+ *
+ * Output (domain bus):
+ * - Publishes `buttonRaw:edge` on rising edge only:
+ *   payload: { deviceId, publishAs, edge: 'press' }
+ *
+ * Commands (inject):
+ * - { type: 'press', ms?: number }
+ *   Simulates a press by driving the input high then low (virt protocol only).
+ *
+ * @example
+ * const dev = new ButtonEdgeDevice({ logger, clock, domainBus, device, input })
+ * dev.start()
+ */
 export default class ButtonEdgeDevice extends BaseDevice {
   #logger
   #clock
-  #buttonBus
+  #domainBus
   #device
   #input
 
@@ -13,12 +57,12 @@ export default class ButtonEdgeDevice extends BaseDevice {
   #last
   #unsub
 
-  constructor({ logger, clock, buttonBus, device, input }) {
+  constructor({ logger, clock, domainBus, device, input }) {
     super(device)
 
     this.#logger = logger
     this.#clock = clock
-    this.#buttonBus = buttonBus
+    this.#domainBus = domainBus
     this.#device = device
     this.#input = input
 
@@ -87,14 +131,25 @@ export default class ButtonEdgeDevice extends BaseDevice {
   }
 
   #publishPress() {
-    this.#buttonBus.publish({
+    const deviceId = this.#device.id
+    const publishAs = this.#device.publishAs ?? deviceId
+
+    this.#domainBus.publish({
       type: domainEventTypes.button.edge,
       ts: this.#clock.nowMs(),
       source: 'buttonEdgeDevice',
       payload: {
-        sensorId: this.#device.publishAs ?? this.#device.id,
+        deviceId,
+        publishAs,
         edge: 'press',
       },
+    })
+
+    this.#logger?.debug?.('event_publish', {
+      bus: this.#device.domain,
+      type: domainEventTypes.button.edge,
+      deviceId,
+      publishAs,
     })
   }
 }

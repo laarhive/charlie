@@ -473,15 +473,12 @@ export class CliController {
   #publishPresence(zone, present) {
     const { clock, buses, config } = this.#getContext()
 
-    const sensors = Array.isArray(config?.sensors) ? config.sensors : []
-    const match = sensors.find((s) =>
-      s?.enabled !== false &&
-      s?.role === 'presence' &&
-      s?.zone === zone
-    )
+    const defaults = config?.core?.injectDefaults ?? {}
+    const key = zone === 'front' ? 'presenceFront' : 'presenceBack'
+    const coreRole = defaults?.[key] ?? null
 
-    if (!match) {
-      this.#logger.warning('inject_presence_no_sensor', { zone })
+    if (!coreRole) {
+      this.#logger.warning('inject_missing_coreRole', { kind: 'presence', zone })
       return
     }
 
@@ -489,7 +486,10 @@ export class CliController {
       type: present ? eventTypes.presence.enter : eventTypes.presence.exit,
       ts: clock.nowMs(),
       source: 'cliInject',
-      payload: { zone, sensorId: match.id },
+      payload: {
+        coreRole,
+        zone
+      },
     }
 
     this.#logger.debug('event_publish', { bus: 'main', event })
@@ -499,17 +499,12 @@ export class CliController {
   #publishVibration(level) {
     const { clock, buses, config } = this.#getContext()
 
-    const mapped = level === 'high' ? 'heavy' : 'light'
+    const defaults = config?.core?.injectDefaults ?? {}
+    const key = level === 'high' ? 'vibrationHigh' : 'vibrationLow'
+    const coreRole = defaults?.[key] ?? null
 
-    const sensors = Array.isArray(config?.sensors) ? config.sensors : []
-    const match = sensors.find((s) =>
-      s?.enabled !== false &&
-      s?.role === 'vibration' &&
-      (s?.level === mapped || s?.params?.level === mapped)
-    )
-
-    if (!match) {
-      this.#logger.warning('inject_vibration_no_sensor', { level, mapped })
+    if (!coreRole) {
+      this.#logger.warning('inject_missing_coreRole', { kind: 'vibration', level })
       return
     }
 
@@ -517,7 +512,10 @@ export class CliController {
       type: eventTypes.vibration.hit,
       ts: clock.nowMs(),
       source: 'cliInject',
-      payload: { level, mapped, sensorId: match.id },
+      payload: {
+        coreRole,
+        level
+      },
     }
 
     this.#logger.debug('event_publish', { bus: 'main', event })
@@ -527,14 +525,12 @@ export class CliController {
   #publishButton(pressType) {
     const { clock, buses, config } = this.#getContext()
 
-    const sensors = Array.isArray(config?.sensors) ? config.sensors : []
-    const match = sensors.find((s) =>
-      s?.enabled !== false &&
-      s?.role === 'button'
-    )
+    const defaults = config?.core?.injectDefaults ?? {}
+    const key = pressType === 'long' ? 'buttonLong' : 'buttonShort'
+    const coreRole = defaults?.[key] ?? null
 
-    if (!match) {
-      this.#logger.warning('inject_button_no_sensor', { pressType })
+    if (!coreRole) {
+      this.#logger.warning('inject_missing_coreRole', { kind: 'button', pressType })
       return
     }
 
@@ -542,13 +538,15 @@ export class CliController {
       type: eventTypes.button.press,
       ts: clock.nowMs(),
       source: 'cliInject',
-      payload: { kind: pressType, sensorId: match.id },
+      payload: {
+        coreRole,
+        kind: pressType
+      },
     }
 
     this.#logger.debug('event_publish', { bus: 'main', event })
     buses.main.publish(event)
   }
-
   #reloadConfig(filename) {
     try {
       const { config } = this.#loadConfig(filename)

@@ -8,7 +8,7 @@
     }
   },
 
-  sensors: [
+  devices: [
     {
       id: 'buttonVirt1',
       publishAs: 'button1',
@@ -89,7 +89,15 @@
   */
   core: {
     armingDelayMs: 1200,
-    cooldownMs: 60000
+    cooldownMs: 60000,
+    injectDefaults: {
+      presenceFront: 'presence.front',
+      presenceBack: 'presence.back',
+      vibrationLow: 'vibration.light',
+      vibrationHigh: 'vibration.heavy',
+      buttonShort: 'button1',
+      buttonLong: 'button1'
+    },
   },
 
   rules: [

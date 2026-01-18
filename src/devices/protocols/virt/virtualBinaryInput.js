@@ -1,4 +1,17 @@
 // src/devices/protocols/virt/virtualBinaryInput.js
+/**
+ * Protocol: virtual binary input
+ *
+ * Contract:
+ * - subscribe(handler) -> unsubscribe
+ * - set(value:boolean) drives a change and notifies subscribers (if changed)
+ *
+ * @example
+ * const inp = new VirtualBinaryInput(false)
+ * inp.subscribe((v) => console.log(v))
+ * inp.set(true)
+ */
+
 export default class VirtualBinaryInput {
   #value
   #handlers

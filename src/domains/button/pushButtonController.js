@@ -1,7 +1,22 @@
-// src/domain/button/pushButtonController.js
+/**
+ * Base class for button domain controllers.
+ *
+ * Domain controllers:
+ * - consume raw button events from the button domain bus
+ * - emit semantic button events on the main bus
+ *
+ * This base class only provides the semantic publish helper.
+ *
+ * @example
+ * class MyController extends PushButtonController {
+ *   start() {}
+ * }
+ */
+
+// src/domains/button/pushButtonController.js
 import eventTypes from '../../core/eventTypes.js'
 
-const PushButtonController = class PushButtonController {
+export default class PushButtonController {
   #logger
   #buttonBus
   #mainBus
@@ -13,15 +28,7 @@ const PushButtonController = class PushButtonController {
     this.#buttonBus = buttonBus
     this.#mainBus = mainBus
     this.#clock = clock
-    this.#controllerId = controllerId || 'pushButtonController'
-  }
-
-  start() {
-    throw new Error('not implemented')
-  }
-
-  dispose() {
-    throw new Error('not implemented')
+    this.#controllerId = controllerId
   }
 
   _logger() {
@@ -44,17 +51,24 @@ const PushButtonController = class PushButtonController {
     return this.#controllerId
   }
 
-  _publishPress({ sensorId }) {
+  _publishPress({ coreRole, deviceId, publishAs }) {
+    const payload = {
+      coreRole: coreRole ?? null,
+      deviceId: deviceId ?? null,
+      publishAs: publishAs ?? null,
+
+      /* Backward compatibility for any existing core logic */
+      sensorId: publishAs ?? deviceId ?? null,
+    }
+
     const event = {
       type: eventTypes.button.press,
       ts: this.#clock.nowMs(),
-      source: this.#controllerId,
-      payload: { sensorId },
+      source: 'buttonController',
+      payload,
     }
 
-    this.#logger.debug('event_publish', event)
+    this.#logger.debug('event_publish', { bus: 'main', event })
     this.#mainBus.publish(event)
   }
 }
-
-export default PushButtonController
