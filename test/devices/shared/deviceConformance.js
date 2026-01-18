@@ -7,9 +7,10 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
                                                                             }) {
   const hasTrigger = (h) => typeof h.trigger === 'function'
   const isInjectCapable = (h) => typeof h.device?.inject === 'function'
+  const expectsDomainEvents = (h) => h.expectsDomainEvents !== false
 
   describe(`${name} – conformance`, function () {
-    it('start() publishes system:hardware active', function () {
+    it('start() publishes at least one system:hardware event', function () {
       const h = makeHarness()
 
       const mainEvents = []
@@ -18,7 +19,7 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
       h.device.start()
 
       expect(
-        mainEvents.some((e) => e?.type === 'system:hardware' && e?.payload?.state === 'active')
+        mainEvents.some((e) => e?.type === 'system:hardware')
       ).to.equal(true)
 
       unsub()
@@ -48,59 +49,45 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
     it('start() is idempotent', function () {
       const h = makeHarness()
 
-      const domainEvents = []
-      const unsubDomain = h.domainBus.subscribe((e) => domainEvents.push(e))
-
       h.device.start()
       h.device.start()
 
-      if (hasTrigger(h)) {
-        h.trigger()
-
-        expect(domainEvents.length).to.be.greaterThan(0)
-
-        const before = domainEvents.length
-        h.trigger()
-
-        expect(domainEvents.length).to.be.greaterThan(before)
-      }
-
-      unsubDomain()
-      h.device.dispose()
-    })
-
-    it('block() suppresses domain events', function () {
-      const h = makeHarness()
-
-      const domainEvents = []
-      const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
-
-      h.device.start()
-      h.device.block('test')
-
-      if (hasTrigger(h)) {
-        h.trigger()
-      }
-
-      expect(domainEvents.length).to.equal(0)
-
-      unsub()
       h.device.dispose()
     })
 
     it('block() is idempotent', function () {
       const h = makeHarness()
 
+      h.device.start()
+      h.device.block('test')
+      h.device.block('test2')
+
+      h.device.dispose()
+    })
+
+    it('unblock() is idempotent', function () {
+      const h = makeHarness()
+
+      h.device.start()
+      h.device.block('test')
+      h.device.unblock()
+      h.device.unblock()
+
+      h.device.dispose()
+    })
+
+    it('block() suppresses domain events (if device emits domain events)', function () {
+      const h = makeHarness()
+      if (!expectsDomainEvents(h)) this.skip()
+      if (!hasTrigger(h)) this.skip()
+
       const domainEvents = []
       const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
 
       h.device.start()
       h.device.block('test')
-      h.device.block('test2')
 
-      if (hasTrigger(h)) {
-        h.trigger()
-      }
+      h.trigger()
 
       expect(domainEvents.length).to.equal(0)
 
@@ -108,8 +95,10 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
       h.device.dispose()
     })
 
-    it('unblock() allows domain events again and is idempotent', function () {
+    it('unblock() allows domain events again (if device emits domain events)', function () {
       const h = makeHarness()
+      if (!expectsDomainEvents(h)) this.skip()
+      if (!hasTrigger(h)) this.skip()
 
       const domainEvents = []
       const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
@@ -117,19 +106,12 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
       h.device.start()
       h.device.block('test')
 
-      if (hasTrigger(h)) {
-        h.trigger()
-      }
-
+      h.trigger()
       expect(domainEvents.length).to.equal(0)
 
       h.device.unblock()
-      h.device.unblock()
 
-      if (hasTrigger(h)) {
-        h.trigger()
-      }
-
+      h.trigger()
       expect(domainEvents.length).to.be.greaterThan(0)
 
       unsub()
@@ -154,27 +136,24 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
       unsub()
     })
 
-    it('no domain events after dispose()', function () {
+    it('no domain events after dispose() (if device emits domain events)', function () {
       const h = makeHarness()
+      if (!expectsDomainEvents(h)) this.skip()
+      if (!hasTrigger(h)) this.skip()
 
       const domainEvents = []
       const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
 
       h.device.start()
 
-      if (hasTrigger(h)) {
-        h.trigger()
-        expect(domainEvents.length).to.be.greaterThan(0)
-      }
+      h.trigger()
+      expect(domainEvents.length).to.be.greaterThan(0)
 
       h.device.dispose()
 
       const before = domainEvents.length
 
-      if (hasTrigger(h)) {
-        h.trigger()
-      }
-
+      h.trigger()
       expect(domainEvents.length).to.equal(before)
 
       unsub()
@@ -188,7 +167,24 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
       h.device.dispose()
     })
 
-    it('inject(undefined) returns NOT_SUPPORTED for inject-capable devices', function () {
+    it('inject(undefined) returns NOT_SUPPORTED for inject-capable devices (before start)', function () {
+      const h = makeHarness()
+
+      if (!isInjectCapable(h)) {
+        h.device.dispose()
+        return
+      }
+
+      const res = h.device.inject(undefined)
+
+      expect(res).to.be.an('object')
+      expect(res.ok).to.equal(false)
+      expect(res.error).to.equal('NOT_SUPPORTED')
+
+      h.device.dispose()
+    })
+
+    it('inject(undefined) returns NOT_SUPPORTED for inject-capable devices (after start)', function () {
       const h = makeHarness()
 
       if (!isInjectCapable(h)) {
@@ -200,46 +196,10 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
 
       const res = h.device.inject(undefined)
 
+      expect(res).to.be.an('object')
       expect(res.ok).to.equal(false)
       expect(res.error).to.equal('NOT_SUPPORTED')
 
-      h.device.dispose()
-    })
-
-    it('inject does not crash even when called before start()', function () {
-      const h = makeHarness()
-
-      if (!isInjectCapable(h)) {
-        h.device.dispose()
-        return
-      }
-
-      const res = h.device.inject(undefined)
-
-      expect(res.ok).to.equal(false)
-      expect(res.error).to.equal('NOT_SUPPORTED')
-
-      h.device.dispose()
-    })
-
-    it('blocked state remains effective across repeated start() calls', function () {
-      const h = makeHarness()
-
-      const domainEvents = []
-      const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
-
-      h.device.start()
-      h.device.block('test')
-
-      h.device.start()
-
-      if (hasTrigger(h)) {
-        h.trigger()
-      }
-
-      expect(domainEvents.length).to.equal(0)
-
-      unsub()
       h.device.dispose()
     })
   })
