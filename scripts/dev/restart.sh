@@ -7,7 +7,6 @@
 #
 # Purpose:
 # - Restart the Charlie runtime on a Raspberry Pi during development
-# - Support both hardware (`hw`) and virtual (`virt`) modes
 # - Optionally enable the Node.js inspector for remote debugging
 # - Be callable manually or via WebStorm (SSH External Tool)
 #
@@ -17,8 +16,8 @@
 # - This script is safe to run repeatedly and is intentionally simple
 #
 # Usage examples:
-#   scripts/dev/restart.sh --mode hw
-#   scripts/dev/restart.sh --mode virt
+#   scripts/dev/restart.sh --mode win11
+#   scripts/dev/restart.sh --mode rpi4 --interactive
 #   scripts/dev/restart.sh --mode hw --no-inspect
 #   scripts/dev/restart.sh --mode hw -- --extra-app-arg value
 #
@@ -33,7 +32,7 @@ set -euo pipefail
 
 cd /opt/charlie/charlie
 
-MODE="hw"
+MODE="rpi4"
 INSPECT="1"
 
 # Parse our script flags, pass everything else through to node
@@ -64,11 +63,6 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-if [[ "$MODE" != "hw" && "$MODE" != "virt" ]]; then
-  echo "ERROR: --mode must be 'hw' or 'virt' (got '$MODE')" >&2
-  exit 2
-fi
 
 # Kill any running Charlie instance (dev only)
 pkill -f 'src/app/appRunner\.js' || true
