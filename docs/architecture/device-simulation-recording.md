@@ -36,6 +36,7 @@ inject(payload) -> { ok: true } | { ok: false, error: string }
 
 - `payload` is device-native:
   - object, number, string, boolean, or null
+  - **`undefined` is considered malformed**
   - not a command string
 - the device does not parse commands
 - the device must not throw for expected cases
@@ -43,13 +44,25 @@ inject(payload) -> { ok: true } | { ok: false, error: string }
 #### State independence
 
 `inject(payload)`:
-- works regardless of device state:
+- works regardless of device runtime state:
   - `active`
   - `manualBlocked`
   - `degraded`
 - must not perform hardware IO when `manualBlocked`
+  - must not start protocol subprocesses
+  - must not open GPIO lines or device files
+  - must not write to hardware outputs
+  - must not attach real interrupt listeners
 - may update internal simulated state when `manualBlocked`
 - may emit domain events when `manualBlocked` (device-specific)
+
+#### Lifecycle interaction
+
+- `inject(payload)` **must not create or start a device instance**
+- device instances are created only via:
+  - `DeviceManager.start()`
+  - `DeviceManager.unblock(deviceId)`
+- if a device instance does not yet exist, injection must not implicitly initialize it
 
 #### Error handling
 
@@ -59,6 +72,10 @@ inject(payload) -> { ok: true } | { ok: false, error: string }
 - all other expected cases:
   - `{ ok: true }`
 
+Errors:
+- must use stable error codes
+- must not throw for expected failure modes
+
 ---
 
 ## 3. External input suppression rules
@@ -67,7 +84,8 @@ inject(payload) -> { ok: true } | { ok: false, error: string }
 
 When `manualBlocked`:
 - external protocol input must be suppressed
-- interrupts/callbacks must not emit domain events
+- interrupts, callbacks, or protocol listeners must not emit domain events
+- protocol subscriptions may be detached or ignored
 
 ### 3.2 Injection vs real input
 
@@ -76,6 +94,8 @@ When `manualBlocked`:
 | Real hardware | no | suppressed |
 | Virtual protocol input | no | suppressed |
 | `inject(payload)` | yes | always allowed |
+
+Injection is the **only supported simulation/control channel** guaranteed to remain active while blocked.
 
 ---
 
@@ -92,15 +112,32 @@ Injection tooling (CLI, tests, recorder/player) should call:
 deviceManager.inject(deviceId, payload)
 ```
 
+#### DeviceManager.inject resolution rules
+
+DeviceManager must resolve injection requests in the following order:
+
+1. **Device not present in configuration or filtered out by mode**  
+   → `{ ok: false, error: 'DEVICE_NOT_FOUND' }`
+
+2. **Device present but instance not yet created**  
+   (e.g. configured as `manualBlocked` at startup, or manager not started)  
+   → `{ ok: false, error: 'DEVICE_NOT_READY' }`
+
+3. **Device instance exists**  
+   → forward payload verbatim to `device.inject(payload)` and return its result
+
+#### Responsibilities
+
 DeviceManager must:
 - locate the device instance by id
 - forward the payload verbatim to `device.inject(payload)`
 - not interpret payload content
+- not implicitly create or start device instances during injection
 
 This keeps:
 - one registry (no duplicated lookup logic)
 - consistent mode filtering (devices outside mode are not injectable)
-- lifecycle ownership in one place
+- explicit lifecycle ownership in one place
 
 ---
 
