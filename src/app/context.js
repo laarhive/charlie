@@ -16,7 +16,7 @@ import DeviceManager from '../devices/deviceManager.js'
 
 export const makeContext = function makeContext({ logger, config, mode }) {
   const clock = new Clock()
-  clock.freeze()
+  //clock.freeze()
 
   const buses = makeBuses()
   const taps = makeTaps({ logger, buses })
