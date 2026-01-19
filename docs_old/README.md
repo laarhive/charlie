@@ -265,7 +265,7 @@ from high-level concepts to concrete implementation details.
 
 ### Development
 
-- [Development Setup (RPi Runtime)](dev-setup/README.md)
+- [Development Setup (RPi Runtime)](../docs/dev-setup/README.md)
   Development and remote runtime setup instructions
 
 ## 10. Future development
