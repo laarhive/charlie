@@ -1,3 +1,5 @@
+// src/clock/clock.js
+
 export class Clock {
   #tzOffsetMs
   #isFrozen
@@ -6,13 +8,19 @@ export class Clock {
   #realNow
   #changeListeners
 
-  constructor({ tzOffsetMinutes = 480, realNowMs } = {}) {
+  constructor({ tzOffsetMinutes = 480, realNowMs, startFrozen = false } = {}) {
     this.#tzOffsetMs = tzOffsetMinutes * 60 * 1000
-    this.#isFrozen = false
-    this.#frozenNowMs = 0
-    this.#offsetMs = 0
     this.#realNow = typeof realNowMs === 'function' ? realNowMs : () => Date.now()
     this.#changeListeners = new Set()
+
+    this.#offsetMs = 0
+    this.#isFrozen = false
+    this.#frozenNowMs = 0
+
+    if (startFrozen) {
+      this.#frozenNowMs = this.#realNow()
+      this.#isFrozen = true
+    }
   }
 
   nowMs() {
@@ -46,6 +54,12 @@ export class Clock {
       this.#isFrozen = false
       this.#emitChange({ reason: 'resume' })
     }
+  }
+
+  resync() {
+    this.#offsetMs = 0
+    this.#isFrozen = false
+    this.#emitChange({ reason: 'resync' })
   }
 
   setNowMs(nowMs) {
@@ -94,8 +108,6 @@ export class Clock {
     const utcMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0) - this.#tzOffsetMs
     this.setNowMs(utcMs)
   }
-
-// src/time/clock.js (additions)
 
   isFrozen() {
     return this.#isFrozen
