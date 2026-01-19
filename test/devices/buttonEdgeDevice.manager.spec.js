@@ -56,18 +56,20 @@ describe('ButtonEdgeDevice – DeviceManager integration', function () {
 
     dm.start()
 
-    const res = dm.inject('buttonVirt1', 'press 1')
+    const res = dm.inject('buttonVirt1', { edge: 'rising' })
     expect(res.ok).to.equal(true)
 
     await new Promise((resolve) => setTimeout(resolve, 5))
 
-    expect(domainEvents.some((e) => e.type === domainEventTypes.button.edge)).to.equal(true)
+    expect(domainEvents.some((e) =>
+      e.type === domainEventTypes.button.edge && e.payload?.edge === 'rising'
+    )).to.equal(true)
 
     unsub()
     dm.dispose()
   })
 
-  it('inject propagates device NOT_SUPPORTED (no override)', function () {
+  it('inject returns INVALID_INJECT_PAYLOAD for malformed payloads (instance exists)', function () {
     const clock = makeClock()
     const mainBus = new EventBus()
     const buttonBus = new EventBus()
@@ -104,7 +106,49 @@ describe('ButtonEdgeDevice – DeviceManager integration', function () {
 
     const res = dm.inject('buttonVirt1', undefined)
     expect(res.ok).to.equal(false)
-    expect(res.error).to.equal('NOT_SUPPORTED')
+    expect(res.error).to.equal('INVALID_INJECT_PAYLOAD')
+
+    dm.dispose()
+  })
+
+  it('inject returns DEVICE_NOT_READY when device is present but instance is not created', function () {
+    const clock = makeClock()
+    const mainBus = new EventBus()
+    const buttonBus = new EventBus()
+
+    const buses = {
+      main: mainBus,
+      button: buttonBus,
+    }
+
+    const config = {
+      devices: [
+        {
+          id: 'buttonVirt1',
+          publishAs: 'button1',
+          domain: 'button',
+          kind: 'buttonEdge',
+          protocol: { type: 'virt', initial: false },
+          modes: ['win11'],
+          state: 'manualBlocked',
+        }
+      ]
+    }
+
+    const dm = new DeviceManager({
+      logger: makeLogger(),
+      mainBus,
+      buses,
+      clock,
+      config,
+      mode: 'win11',
+    })
+
+    dm.start()
+
+    const res = dm.inject('buttonVirt1', { edge: 'rising' })
+    expect(res.ok).to.equal(false)
+    expect(res.error).to.equal('DEVICE_NOT_READY')
 
     dm.dispose()
   })

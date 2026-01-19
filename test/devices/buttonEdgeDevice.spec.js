@@ -62,7 +62,7 @@ runDeviceConformanceTests({
 })
 
 describe('ButtonEdgeDevice – device-specific', function () {
-  it('emits only on rising transitions', function () {
+  it('emits rising and falling edges on transitions (no duplicates while stable)', function () {
     const h = makeHarness()
 
     const domainEvents = []
@@ -70,35 +70,63 @@ describe('ButtonEdgeDevice – device-specific', function () {
 
     h.device.start()
 
-    h.input.set(false)
-    expect(domainEvents.length).to.equal(0)
-
-    h.clock.advance(1)
     h.input.set(true)
 
     expect(domainEvents.length).to.equal(1)
     expect(domainEvents[0].type).to.equal(domainEventTypes.button.edge)
+    expect(domainEvents[0].payload.edge).to.equal('rising')
 
-    h.clock.advance(1)
     h.input.set(true)
     expect(domainEvents.length).to.equal(1)
 
-    h.clock.advance(1)
     h.input.set(false)
-    expect(domainEvents.length).to.equal(1)
+
+    expect(domainEvents.length).to.equal(2)
+    expect(domainEvents[1].type).to.equal(domainEventTypes.button.edge)
+    expect(domainEvents[1].payload.edge).to.equal('falling')
+
+    h.input.set(false)
+    expect(domainEvents.length).to.equal(2)
 
     unsub()
     h.device.dispose()
   })
 
-  it('inject press returns ok', function () {
+  it('inject { edge: "rising" } returns ok and emits rising edge', function () {
     const h = makeHarness()
+
+    const domainEvents = []
+    const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
 
     h.device.start()
 
-    const res = h.device.inject('press 10')
+    const res = h.device.inject({ edge: 'rising' })
     expect(res.ok).to.equal(true)
 
+    expect(domainEvents.length).to.equal(1)
+    expect(domainEvents[0].type).to.equal(domainEventTypes.button.edge)
+    expect(domainEvents[0].payload.edge).to.equal('rising')
+
+    unsub()
+    h.device.dispose()
+  })
+
+  it('inject { edge: "falling" } returns ok and emits falling edge', function () {
+    const h = makeHarness()
+
+    const domainEvents = []
+    const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
+
+    h.device.start()
+
+    const res = h.device.inject({ edge: 'falling' })
+    expect(res.ok).to.equal(true)
+
+    expect(domainEvents.length).to.equal(1)
+    expect(domainEvents[0].type).to.equal(domainEventTypes.button.edge)
+    expect(domainEvents[0].payload.edge).to.equal('falling')
+
+    unsub()
     h.device.dispose()
   })
 })

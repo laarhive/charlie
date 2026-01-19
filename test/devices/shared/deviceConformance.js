@@ -167,10 +167,10 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
       h.device.dispose()
     })
 
-    it('inject(undefined) returns NOT_SUPPORTED for inject-capable devices (before start)', function () {
+    it('inject(undefined) returns INVALID_INJECT_PAYLOAD (before start) for inject-capable devices', function () {
       const h = makeHarness()
 
-      if (!isInjectCapable(h)) {
+      if (typeof h.device?.inject !== 'function') {
         h.device.dispose()
         return
       }
@@ -179,15 +179,15 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
 
       expect(res).to.be.an('object')
       expect(res.ok).to.equal(false)
-      expect(res.error).to.equal('NOT_SUPPORTED')
+      expect(res.error).to.equal('INVALID_INJECT_PAYLOAD')
 
       h.device.dispose()
     })
 
-    it('inject(undefined) returns NOT_SUPPORTED for inject-capable devices (after start)', function () {
+    it('inject(undefined) returns INVALID_INJECT_PAYLOAD (after start) for inject-capable devices', function () {
       const h = makeHarness()
 
-      if (!isInjectCapable(h)) {
+      if (typeof h.device?.inject !== 'function') {
         h.device.dispose()
         return
       }
@@ -198,7 +198,7 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
 
       expect(res).to.be.an('object')
       expect(res.ok).to.equal(false)
-      expect(res.error).to.equal('NOT_SUPPORTED')
+      expect(res.error).to.equal('INVALID_INJECT_PAYLOAD')
 
       h.device.dispose()
     })
