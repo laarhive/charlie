@@ -30,9 +30,68 @@ const bindProcessExitOnce = function bindProcessExitOnce() {
   })
 }
 
+/**
+ * @typedef {object} BackendClock
+ * @property {() => number} [nowMs] Returns a millisecond timestamp (number). If omitted, Date.now() is used.
+ */
+
+/**
+ * @typedef {object} BackendLogger
+ * @property {(eventName: string, data?: any) => void} [error] Optional structured logging hook for non-fatal backend issues.
+ */
+
+/**
+ * @typedef {object} GpioBackendOptions
+ * @property {BackendLogger} [logger] Logger used for internal errors (e.g. pkill failures).
+ * @property {BackendClock} [clock] Optional clock used for tick generation.
+ *
+ * @property {string} [chip='gpiochip0'] gpio chip name passed to libgpiod (`-c <chip>`).
+ * @property {string} [binDir='/usr/bin'] directory containing `gpiomon`, `gpioset`, `gpioinfo`.
+ * @property {string|null} [gpiomonPath=null] override full path to gpiomon.
+ * @property {string|null} [gpiosetPath=null] override full path to gpioset.
+ * @property {string|null} [gpioinfoPath=null] override full path to gpioinfo.
+ * @property {string|null} [pkillPath=null] override full path to pkill (required when reclaimOnBusy=true).
+ *
+ * @property {string|null} [consumerTag=null] tag used to generate `--consumer` values shown by `gpioinfo`.
+ * @property {boolean} [reclaimOnBusy=false] enable reclaim attempts when gpioset reports the line is busy.
+ */
+
+/**
+ * Backend wrapper around libgpiod CLI tools.
+ *
+ * Responsibilities:
+ * - Share per-line state across multiple {@link Gpio} instances (same line number).
+ * - Lazily start/stop monitors (gpiomon) based on listener counts.
+ * - Drive outputs using gpioset hog processes.
+ * - Optionally reclaim orphaned hog/monitor processes if the line is busy and the consumerTag matches.
+ *
+ * Notes:
+ * - This class exposes `getLine()` which returns a shared internal line state object (EventEmitter).
+ * - `dispose()` stops all active monitors and hogs started through this backend.
+ */
 export class GpioBackend {
   static #defaultInstance = null
 
+  /**
+   * Get (or create) the shared default backend instance.
+   *
+   * Inputs:
+   * - A configuration object that defines chip/tool paths/consumerTag.
+   *
+   * Output:
+   * - A singleton {@link GpioBackend} instance.
+   *
+   * @example
+   * import GpioBackend from './gpioBackend.js'
+   *
+   * const backend = GpioBackend.getDefault({
+   *   consumerTag: 'charlie',
+   *   reclaimOnBusy: true
+   * })
+   *
+   * @param {GpioBackendOptions} [opts]
+   * @returns {GpioBackend}
+   */
   static getDefault({
                       logger,
                       clock,
@@ -77,6 +136,26 @@ export class GpioBackend {
   #lines
   #disposed
 
+  /**
+   * Create a backend instance (usually you want {@link GpioBackend.getDefault}).
+   *
+   * Inputs:
+   * - tool paths and behavior flags
+   *
+   * Output:
+   * - a backend instance that can create/share per-line state objects
+   *
+   * @example
+   * import GpioBackend from './gpioBackend.js'
+   *
+   * const backend = new GpioBackend({
+   *   chip: 'gpiochip0',
+   *   binDir: '/usr/bin',
+   *   consumerTag: 'charlie'
+   * })
+   *
+   * @param {GpioBackendOptions} [opts]
+   */
   constructor({
                 logger,
                 clock,
@@ -122,10 +201,28 @@ export class GpioBackend {
     activeBackends.add(this)
   }
 
+  /**
+   * Get the configured gpio chip name.
+   *
+   * @example
+   * const backend = GpioBackend.getDefault()
+   * console.log(backend.getChip())
+   *
+   * @returns {string}
+   */
   getChip() {
     return this.#chip
   }
 
+  /**
+   * Get resolved binary paths used by this backend.
+   *
+   * @example
+   * const backend = GpioBackend.getDefault()
+   * console.log(backend.getBinaries())
+   *
+   * @returns {{gpiomonPath: string, gpiosetPath: string, gpioinfoPath: string, pkillPath: string}}
+   */
   getBinaries() {
     return {
       gpiomonPath: this.#gpiomonPath,
@@ -135,18 +232,58 @@ export class GpioBackend {
     }
   }
 
+  /**
+   * Get consumer tag used to generate `--consumer` values.
+   *
+   * @example
+   * const backend = GpioBackend.getDefault({ consumerTag: 'charlie' })
+   * console.log(backend.getConsumerTag())
+   *
+   * @returns {string|null}
+   */
   getConsumerTag() {
     return this.#consumerTag
   }
 
+  /**
+   * Whether busy-line reclaim is enabled.
+   *
+   * @example
+   * const backend = GpioBackend.getDefault({ consumerTag: 'charlie', reclaimOnBusy: true })
+   * console.log(backend.getReclaimOnBusy())
+   *
+   * @returns {boolean}
+   */
   getReclaimOnBusy() {
     return this.#reclaimOnBusy
   }
 
+  /**
+   * Whether this backend has been disposed.
+   *
+   * @example
+   * const backend = GpioBackend.getDefault()
+   * console.log(backend.isDisposed())
+   *
+   * @returns {boolean}
+   */
   isDisposed() {
     return this.#disposed
   }
 
+  /**
+   * Dispose this backend and all active line states created by it.
+   *
+   * Output:
+   * - Returns void
+   *
+   * Side effects:
+   * - Stops all gpiomon monitors and gpioset hogs started via this backend.
+   *
+   * @example
+   * const backend = GpioBackend.getDefault()
+   * backend.dispose()
+   */
   dispose() {
     if (this.#disposed) return
     this.#disposed = true
@@ -165,6 +302,28 @@ export class GpioBackend {
     }
   }
 
+  /**
+   * Get a shared line state object for a numeric line offset.
+   *
+   * Inputs:
+   * - `lineNumber`: numeric line offset (e.g. 17)
+   *
+   * Output:
+   * - Returns a shared EventEmitter-like line state instance for this backend+line.
+   *   - If called multiple times with the same line number, returns the same instance.
+   *
+   * Events emitted by the returned object:
+   * - 'edge' and 'interrupt' payload: { level: 0|1|2, tick: number, raw: string }
+   * - 'error' payload: { source: string, message: string }
+   *
+   * @example
+   * const backend = GpioBackend.getDefault({ consumerTag: 'charlie' })
+   * const line = backend.getLine(4)
+   * line.on('interrupt', (e) => console.log(e.level, e.tick))
+   *
+   * @param {number} lineNumber
+   * @returns {EventEmitter}
+   */
   getLine(lineNumber) {
     if (this.#disposed) {
       throw new Error('GpioBackend is disposed')
@@ -219,6 +378,18 @@ export class GpioBackend {
   }
 }
 
+/**
+ * Internal per-line state object.
+ *
+ * It emits:
+ * - 'edge' and 'interrupt' events with payload { level, tick, raw }
+ * - 'error' events with payload { source, message }
+ *
+ * Public surface used by {@link Gpio}:
+ * - configure({ mode, pull, edge })
+ * - digitalWrite(level)
+ * - (digitalRead is not implemented)
+ */
 class GpioLineState extends EventEmitter {
   #logger
   #clock
@@ -298,10 +469,26 @@ class GpioLineState extends EventEmitter {
     this.#onEmptyListeners = typeof onEmptyListeners === 'function' ? onEmptyListeners : null
   }
 
+  /**
+   * Whether this line state currently has no listeners and no active processes.
+   *
+   * @example
+   * const st = backend.getLine(17)
+   * console.log(st.isIdle())
+   *
+   * @returns {boolean}
+   */
   isIdle() {
     return this.#listenerCount === 0 && !this.#monitor && !this.#hogProc
   }
 
+  /**
+   * Dispose this line state. Stops monitor/hog and clears listeners.
+   *
+   * @example
+   * const st = backend.getLine(17)
+   * st.dispose()
+   */
   dispose() {
     if (this.#disposed) return
     this.#disposed = true
@@ -312,6 +499,22 @@ class GpioLineState extends EventEmitter {
     this.removeAllListeners()
   }
 
+  /**
+   * Apply configuration values for this line state.
+   *
+   * Inputs:
+   * - `mode`: stored for future expansion (currently not enforced by libgpiod calls in this implementation)
+   * - `pull`: used as `gpiomon --bias <pull>` when monitor starts
+   * - `edge`: used as JS-side filter for emitting events
+   *
+   * Output:
+   * - returns void
+   *
+   * @example
+   * st.configure({ pull: 'pull-down', edge: 'rising' })
+   *
+   * @param {{mode?: any, pull?: any, edge?: any}} [cfg]
+   */
   configure({ mode = null, pull = null, edge = null } = {}) {
     if (this.#disposed) return
 
@@ -324,10 +527,34 @@ class GpioLineState extends EventEmitter {
     }
   }
 
+  /**
+   * Read input level (not implemented).
+   *
+   * @example
+   * try { st.digitalRead() } catch (e) { console.error(e.message) }
+   *
+   * @throws {Error}
+   * @returns {0|1}
+   */
   digitalRead() {
     throw new Error('digitalRead is not implemented yet (use interrupts for now)')
   }
 
+  /**
+   * Write output level.
+   *
+   * Input:
+   * - `level`: must be 0 or 1.
+   *
+   * Output:
+   * - returns `this` for chaining.
+   *
+   * @example
+   * st.digitalWrite(1).digitalWrite(0)
+   *
+   * @param {0|1|number} level
+   * @returns {this}
+   */
   digitalWrite(level) {
     if (this.#disposed) return this
 
@@ -562,7 +789,6 @@ class GpioLineState extends EventEmitter {
           )
 
           if (ours) {
-            // Reclaim only this specific line, and only our known consumer forms
             this.#tryReclaimByPkillPattern(`${this.#consumerTag}:hog:${this.#line}`)
             this.#tryReclaimByPkillPattern(`${this.#consumerTag}:mon:${this.#line}`)
 
