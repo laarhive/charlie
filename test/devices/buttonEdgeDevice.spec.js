@@ -129,4 +129,79 @@ describe('ButtonEdgeDevice – device-specific', function () {
     unsub()
     h.device.dispose()
   })
+
+  it('inject works while manualBlocked and still emits domain events', function () {
+    const h = makeHarness()
+
+    const domainEvents = []
+    const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
+
+    h.device.start()
+    h.device.block('test')
+
+    const res = h.device.inject({ edge: 'rising' })
+    expect(res.ok).to.equal(true)
+
+    expect(domainEvents.length).to.equal(1)
+    expect(domainEvents[0].type).to.equal(domainEventTypes.button.edge)
+    expect(domainEvents[0].payload.edge).to.equal('rising')
+
+    unsub()
+    h.device.dispose()
+  })
+
+  it('inject works while degraded', function () {
+    const clock = makeClock()
+    const mainBus = new EventBus()
+    const domainBus = new EventBus()
+
+    const input = new VirtualBinaryInput(false)
+
+    let onErrorRef = null
+    const protocolFactory = {
+      makeBinaryInput: (protocol, opts) => {
+        void protocol
+        onErrorRef = opts?.onError || null
+        return input
+      },
+    }
+
+    const device = new ButtonEdgeDevice({
+      logger: { error: () => {} },
+      clock,
+      domainBus,
+      mainBus,
+      device: {
+        id: 'buttonVirt1',
+        publishAs: 'button1',
+        protocol: { type: 'virt', initial: false },
+      },
+      protocolFactory,
+    })
+
+    const mainEvents = []
+    const unsubMain = mainBus.subscribe((e) => mainEvents.push(e))
+
+    const domainEvents = []
+    const unsubDomain = domainBus.subscribe((e) => domainEvents.push(e))
+
+    device.start()
+
+    expect(typeof onErrorRef).to.equal('function')
+
+    onErrorRef({ source: 'virt', message: 'simulated_error' })
+
+    expect(
+      mainEvents.some((e) => e.type === 'system:hardware' && e.payload?.state === 'degraded')
+    ).to.equal(true)
+
+    const res = device.inject({ edge: 'rising' })
+    expect(res.ok).to.equal(true)
+
+    expect(domainEvents.some((e) => e.type === domainEventTypes.button.edge && e.payload?.edge === 'rising')).to.equal(true)
+
+    unsubMain()
+    unsubDomain()
+    device.dispose()
+  })
 })
