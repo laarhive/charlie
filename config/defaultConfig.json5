@@ -39,8 +39,8 @@
     },
 
     {
-      id: 'buttonGpio1',
-      publishAs: 'button1',
+      id: 'buttonLine26',
+      publishAs: 'buttonGpioLine26',
 
       domain: 'button',
       role: 'button',
