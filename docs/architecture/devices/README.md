@@ -8,7 +8,14 @@ Devices are low-level **signal adapters**. They translate real-world inputs (GPI
 
 ## Documents
 
+#### Device Manager:
+- [Device Manager — Specification](device-manager.spec.md)
+
+#### Devices:
 - [Device Contract](device.contract.md) — **mandatory rules** all devices must follow
-- [Device Manager — Specification](device-manager.spec.md) — DeviceManager responsibilities and injection routing
 - [ButtonEdgeDevice](button-edge.device.md) — reference device specification (should be used when documenting new devices)
 - [GpioWatchdogLoopbackDevice](gpio-watchdog-loopback.device.md)
+
+#### USB Inventory:
+- [UsbInventory — Specification](usb-inventory.spec.md)
+- [UsbRebind — Contract](usb-rebind.contract.md)
