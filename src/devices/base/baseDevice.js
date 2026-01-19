@@ -116,6 +116,11 @@ export default class BaseDevice {
     this._startImpl()
   }
 
+  inject(payload) {
+    void payload
+    return err('INVALID_INJECT_PAYLOAD')
+  }
+
   block(reason) {
     if (this.#disposed) {
       return

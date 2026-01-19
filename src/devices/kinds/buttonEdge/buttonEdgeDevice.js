@@ -3,17 +3,18 @@
  * Button edge device.
  *
  * Purpose:
- * - Converts a binary input protocol into semantic "button pressed" domain events
+ * - Converts a binary input protocol into raw button edge domain events
  *
  * Behavior:
- * - Emits a domain button edge only on rising transitions
- * - Suppresses duplicate presses while the input remains HIGH
+ * - Emits a domain button edge on every binary transition:
+ *   - rising  (LOW → HIGH)
+ *   - falling (HIGH → LOW)
+ * - Does not apply debounce, cooldown, long-press, or any other interpretation
  * - Reports hardware health via system:hardware events on the main bus
  *
  * Protocol requirements:
  * - Must provide a binary input with:
  *   - subscribe(callback)
- *   - optional set(value) for injection
  *   - optional dispose()
  *
  * Runtime states emitted:
@@ -21,30 +22,33 @@
  * - degraded        → protocol error occurred
  * - manualBlocked   → device was blocked by user or config
  *
- * Injection:
- * - Supported commands:
- *   - "press"
- *   - "press <ms>"
- *   - { type: "press", ms: number }
+ * External input suppression:
+ * - When manualBlocked, protocol input is suppressed and must not emit domain events
  *
- * Injection simulates a press by toggling the protocol input HIGH → LOW.
+ * Injection:
+ * - Device-native payload only (no command parsing):
+ *   - { edge: 'rising' } | { edge: 'falling' }
+ * - Injection is always allowed regardless of device state (active/manualBlocked/degraded)
+ * - Injection must not perform hardware IO when manualBlocked
+ * - Injection may emit domain events when manualBlocked (device-specific; this device does)
  *
  * Error handling:
+ * - Malformed payloads return { ok:false, error:'INVALID_INJECT_PAYLOAD' }
  * - Protocol errors are deduplicated in time
  * - Errors do not crash the device
  * - Degraded state is reported once per distinct failure
  *
  * Domain output:
- * - Emits domainEventTypes.button.edge
+ * - Emits domainEventTypes.button.edge with payload.edge = 'rising' | 'falling'
  *
  * System output:
  * - Emits eventTypes.system.hardware
  *
  * @example
- * device.inject('press 100')
+ * device.inject({ edge: 'rising' })
  *
  * @example
- * device.inject({ type: 'press', ms: 50 })
+ * device.inject({ edge: 'falling' })
  */
 
 import eventTypes from '../../../core/eventTypes.js'
@@ -123,13 +127,26 @@ export default class ButtonEdgeDevice extends BaseDevice {
       return
     }
 
-    this.#last = null
+    const initial = this._device()?.protocol?.initial
+    this.#last = (initial === true || initial === false) ? Boolean(initial) : null
 
     this.#unsub = this.#input.subscribe((value) => {
-      const v = Boolean(value)
+      if (this.isBlocked()) {
+        this.#last = Boolean(value)
+        return
+      }
 
-      if (!this.isBlocked() && v === true && this.#last !== true) {
-        this.#publishPress()
+      const v = Boolean(value)
+      const prev = this.#last
+
+      if (prev === null) {
+        this.#last = v
+        return
+      }
+
+      if (v !== prev) {
+        const edge = v ? 'rising' : 'falling'
+        this.#publishEdge(edge)
       }
 
       this.#last = v
@@ -152,7 +169,6 @@ export default class ButtonEdgeDevice extends BaseDevice {
 
     this.#input = null
 
-    // Only publish manualBlocked if it was a manual action (not dispose)
     if (reason !== 'dispose') {
       const msg = reason ? `blocked: ${String(reason)}` : 'blocked'
       this.#publishHardwareState('manualBlocked', msg)
@@ -160,55 +176,16 @@ export default class ButtonEdgeDevice extends BaseDevice {
   }
 
   inject(payload) {
-    let cmd = payload
-
-    if (typeof payload === 'string') {
-      const s = payload.trim()
-
-      if (s.startsWith('{') || s.startsWith('[')) {
-        try {
-          cmd = JSON.parse(s)
-        } catch {
-          cmd = s
-        }
-      } else {
-        cmd = s
-      }
+    if (!payload || typeof payload !== 'object') {
+      return err(deviceErrorCodes.invalidInjectPayload)
     }
 
-    let holdMs = 30
-
-    if (typeof cmd === 'string') {
-      const parts = cmd.split(/\s+/).filter(Boolean)
-      const name = parts[0]
-
-      if (name !== 'press') {
-        return err(deviceErrorCodes.notSupported, 'unsupported_command', { cmd: name })
-      }
-
-      const ms = Number(parts[1])
-      holdMs = Number.isNaN(ms) ? 30 : Math.max(1, ms)
-    } else if (cmd && typeof cmd === 'object') {
-      if (cmd.type !== 'press') {
-        return err(deviceErrorCodes.notSupported, 'unsupported_command', { cmd: cmd.type })
-      }
-
-      holdMs = Number(cmd.ms) > 0 ? Number(cmd.ms) : 30
-    } else {
-      return err(deviceErrorCodes.notSupported, 'unsupported_command')
+    const edge = payload.edge
+    if (edge !== 'rising' && edge !== 'falling') {
+      return err(deviceErrorCodes.invalidInjectPayload)
     }
 
-    this.start()
-
-    if (typeof this.#input?.set !== 'function') {
-      return err(deviceErrorCodes.notSupported, 'inject_requires_settable_input')
-    }
-
-    this.#input.set(true)
-
-    setTimeout(() => {
-      this.#input.set(false)
-    }, holdMs)
+    this.#publishEdge(edge)
 
     return ok()
   }
@@ -227,7 +204,7 @@ export default class ButtonEdgeDevice extends BaseDevice {
     })
   }
 
-  #publishPress() {
+  #publishEdge(edge) {
     this.#domainBus.publish({
       type: domainEventTypes.button.edge,
       ts: this.#clock.nowMs(),
@@ -235,7 +212,7 @@ export default class ButtonEdgeDevice extends BaseDevice {
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),
-        edge: 'press',
+        edge,
       },
     })
   }

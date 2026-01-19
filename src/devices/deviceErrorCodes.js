@@ -4,6 +4,7 @@ export const deviceErrorCodes = Object.freeze({
   notSupported: 'NOT_SUPPORTED',
   injectFailed: 'INJECT_FAILED',
   startFailed: 'START_FAILED',
+  invalidInjectPayload: 'INVALID_INJECT_PAYLOAD',
 })
 
 export default deviceErrorCodes

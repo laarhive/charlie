@@ -173,34 +173,19 @@ export class DeviceManager {
     if (!cfg) return { ok: false, error: 'DEVICE_NOT_FOUND' }
 
     const inst = this.#deviceById.get(id)
-    if (!inst?.inject) {
-      return { ok: false, error: 'NOT_SUPPORTED' }
-    }
+    if (!inst) return { ok: false, error: 'DEVICE_NOT_READY' }
 
     try {
       const res = inst.inject(payload)
-
       if (res && res.ok === false) {
         return res
       }
 
       return { ok: true }
     } catch (e) {
-      if (e && typeof e === 'object') {
-        if (e.error) {
-          return { ok: false, error: e.error, message: e.message, detail: e.detail }
-        }
-
-        if (e.code) {
-          return { ok: false, error: String(e.code), message: e.message, detail: e.detail }
-        }
-
-        if (e.message) {
-          return { ok: false, error: 'INJECT_FAILED', message: e.message }
-        }
-      }
-
-      return { ok: false, error: 'INJECT_FAILED', message: String(e) }
+      // Per contract, devices should not throw for expected cases.
+      // If something throws, treat it as a hard failure.
+      return { ok: false, error: 'INJECT_FAILED', message: e?.message || String(e) }
     }
   }
 
