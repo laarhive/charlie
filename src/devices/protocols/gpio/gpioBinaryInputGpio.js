@@ -135,7 +135,7 @@ export default class GpioBinaryInputGpio {
       }
     }
 
-    this.#gpio.on('interrupt', this.#interruptBridge)
+    this.#gpio.on('edge', this.#interruptBridge)
   }
 
   #detach() {
