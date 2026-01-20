@@ -6,6 +6,8 @@ PicoResetPixel is an **RP2040-based hardware + firmware device** that provides:
 - **LED control** for a single WS2812 LED, driven by a Raspberry Pi 4 over UART
 - **Reset control** for a Raspberry Pi 4, capable of performing a hard reset
 
+(Alternative reset mechanisms such as full power-cycle are considered later and are not part of the core scope here.)
+
 ---
 
 ## Conceptual system placement
@@ -54,32 +56,27 @@ This section defines **intent and topology only**. Electrical and protection det
 graph TD
     Host[Raspberry Pi 4]
 
-    Button[Push Button GPIO]
+    Button[Push Button]
     WS2812[Single WS2812 LED]
 
     subgraph Pico[PicoResetPixel (RP2040)]
-      LEDController[LED Controller]
-      ResetController[Reset Controller]
-      LEDDriver[LED Driver]
+        LEDController[LED Controller]
+        ResetController[Reset Controller]
+        LEDDriver[LED Driver]
 
-      LEDController --> LEDDriver
+        LEDController --> LEDDriver
     end
 
     Host -->|USB CDC UART| LEDController
-    Button --> ResetController
-
     ResetController -->|Pi RUN / Enable Line| Host
+
+    Button --> ResetController
     LEDDriver --> WS2812
 
     classDef optional stroke-dasharray: 5 5
     class LEDDriver optional
     class WS2812 optional
 ```
-
-This diagram illustrates:
-- Reset control is a direct hardware path to the Raspberry Pi
-- LED control is downstream
-- Reset functionality has no dependency on LED-related modules
 
 ---
 
