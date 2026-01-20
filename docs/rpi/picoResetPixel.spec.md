@@ -59,7 +59,7 @@ graph TD
     Button[Push Button]
     WS2812[Single WS2812 LED]
 
-    subgraph Pico[PicoResetPixel (RP2040)]
+    subgraph Pico[PicoResetPixel - RP2040]
         LEDController[LED Controller]
         ResetController[Reset Controller]
         LEDDriver[LED Driver]
@@ -68,9 +68,9 @@ graph TD
     end
 
     Host -->|USB CDC UART| LEDController
-    ResetController -->|Pi RUN / Enable Line| Host
-
     Button --> ResetController
+
+    ResetController -->|Pi RUN / Enable Line| Host
     LEDDriver --> WS2812
 
     classDef optional stroke-dasharray: 5 5
