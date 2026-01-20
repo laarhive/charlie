@@ -1,4 +1,4 @@
-// test/devices/buttonEdgeDevice.manager.spec.js
+// test/devices/buttonEdge-deviceManager.spec.js
 import { expect } from 'chai'
 import EventBus from '../../src/core/eventBus.js'
 import { DeviceManager } from '../../src/devices/deviceManager.js'
