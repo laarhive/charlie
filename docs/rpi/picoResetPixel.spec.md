@@ -52,16 +52,24 @@ This section defines **intent and topology only**. Electrical and protection det
 
 ```mermaid
 graph TD
-    Host[Raspberry Pi 4] -->|USB CDC UART| LEDController
+    Host[Raspberry Pi 4]
 
-    Button[Push Button GPIO] --> ResetController
+    Button[Push Button GPIO]
+    WS2812[Single WS2812 LED]
 
-    LEDController --> LEDDriver
-    ResetController --> LEDDriver
+    subgraph Pico[PicoResetPixel (RP2040)]
+      LEDController[LED Controller]
+      ResetController[Reset Controller]
+      LEDDriver[LED Driver]
 
-    ResetController --> PiReset[Pi RUN / Enable Line]
+      LEDController --> LEDDriver
+    end
 
-    LEDDriver --> WS2812[Single WS2812 LED]
+    Host -->|USB CDC UART| LEDController
+    Button --> ResetController
+
+    ResetController -->|Pi RUN / Enable Line| Host
+    LEDDriver --> WS2812
 
     classDef optional stroke-dasharray: 5 5
     class LEDDriver optional
@@ -69,9 +77,9 @@ graph TD
 ```
 
 This diagram illustrates:
-- Reset control has a direct path to the Raspberry Pi reset line
-- LED functionality is downstream and optional
-- Reset logic does not depend on LED availability
+- Reset control is a direct hardware path to the Raspberry Pi
+- LED control is downstream
+- Reset functionality has no dependency on LED-related modules
 
 ---
 
@@ -118,8 +126,8 @@ The reset functionality must be designed, built, and tested correctly when:
 
 In these cases:
 - reset detection and reset signaling must function normally
-- LED feedback is treated as optional and best-effort
-- absence or failure of any LED-related component must not block, delay, or alter reset behavior
+- LED feedback is treated as best-effort
+  - absence or failure of any LED-related component must not block, delay, or alter reset behavior
 
 ---
 
@@ -186,7 +194,7 @@ The Reset Controller must:
 - Detect press sequences composed of S and L
 - Enforce a **sequence timeout**
 - Trigger a reset action when a configured sequence matches
-- Optionally provide LED feedback during interaction and confirmation
+- Issue LED feedback signals (when LED driver module is available)
 
 ---
 
@@ -199,18 +207,27 @@ The Reset Controller must:
 
 ---
 
-## LED override behavior (optional)
+## LED override behavior
+
+LED override behavior defines how reset interaction affects LED output.
 
 - While a reset sequence is being entered:
-  - LED output may be controlled by the Reset Controller
-  - UART LED commands are temporarily ignored
+  - LED output is overridden to reflect reset interaction state
+  - UART LED commands are accepted but do not affect visible output
 - On successful sequence detection:
-  - A **pre-defined LED confirmation sequence** may be displayed
+  - A **pre-defined LED confirmation sequence** is displayed
 - After confirmation completes **or if the sequence times out**:
   - LED control returns to the LED Controller
   - The last UART-driven LED state is restored
 
-This behavior is optional and must not affect reset correctness.
+This behavior must function correctly even when:
+- the LED driver module is absent
+- the LED Controller module is absent
+- the LED hardware is not connected
+
+In these cases:
+- reset behavior must remain fully correct
+- LED override behavior is skipped without error
 
 ---
 
