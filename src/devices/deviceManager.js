@@ -2,6 +2,7 @@
 import eventTypes from '../core/eventTypes.js'
 import ProtocolFactory from './protocols/protocolFactory.js'
 import makeDeviceInstance from './kinds/index.js'
+import UsbInventory from './usbInventory.js'
 
 export class DeviceManager {
   #logger
@@ -12,6 +13,8 @@ export class DeviceManager {
   #mode
 
   #protocolFactory
+  #usbInventory
+  #usbEventSeq
 
   #deviceConfigById
   #deviceById
@@ -28,6 +31,8 @@ export class DeviceManager {
     this.#mode = mode
 
     this.#protocolFactory = new ProtocolFactory({ logger, clock, config })
+    this.#usbInventory = new UsbInventory({ logger, clock, config })
+    this.#usbEventSeq = 0
 
     this.#deviceConfigById = new Map()
     this.#deviceById = new Map()
@@ -48,11 +53,26 @@ export class DeviceManager {
       this.#deviceConfigById.set(cfg.id, cfg)
     }
 
+    this.#usbInventory.start()
+
+    this.#usbInventory.on('attached', ({ usbId, endpoints }) => {
+      this.#handleUsbAttached({ usbId, endpoints })
+    })
+
+    this.#usbInventory.on('detached', ({ usbId }) => {
+      this.#handleUsbDetached({ usbId })
+    })
+
     if (!this.#unsubMain) {
       this.#unsubMain = this.#mainBus.subscribe((evt) => {
         if (evt?.type !== eventTypes.system.hardware) return
 
         const p = evt?.payload || {}
+
+        if (p?.subsystem === 'usb') {
+          return
+        }
+
         const id = p.deviceId
         const state = p.state
 
@@ -81,6 +101,8 @@ export class DeviceManager {
       this.#unsubMain()
       this.#unsubMain = null
     }
+
+    this.#usbInventory.dispose()
 
     for (const [id, d] of this.#deviceById.entries()) {
       try {
@@ -183,8 +205,6 @@ export class DeviceManager {
 
       return { ok: true }
     } catch (e) {
-      // Per contract, devices should not throw for expected cases.
-      // If something throws, treat it as a hard failure.
       return { ok: false, error: 'INJECT_FAILED', message: e?.message || String(e) }
     }
   }
@@ -257,6 +277,169 @@ export class DeviceManager {
         publishAs,
         state,
         detail,
+      },
+    })
+  }
+
+  #handleUsbAttached({ usbId, endpoints }) {
+    const relatedDevices = this.#findRelatedUsbDevices(usbId)
+
+    this.#publishUsbHardwareEvent({
+      action: 'attached',
+      usbId,
+      endpoints,
+      relatedDevices,
+    })
+
+    for (const deviceId of relatedDevices) {
+      const cfg = this.#deviceConfigById.get(deviceId)
+      if (!cfg) continue
+
+      const configuredState = cfg?.state ?? 'active'
+      if (configuredState === 'manualBlocked') continue
+
+      const inst = this.#deviceById.get(deviceId)
+      if (!inst?.rebind) continue
+
+      const res = this.#usbInventory.resolveSerialPath(cfg.protocol.usbId)
+      if (!res.ok) {
+        this.#publishUsbHardwareEvent({
+          action: 'rebind_failed',
+          usbId: cfg.protocol.usbId,
+          relatedDevices: [deviceId],
+          detail: { error: res.error },
+        })
+
+        continue
+      }
+
+      this.#publishUsbHardwareEvent({
+        action: 'rebind_attempted',
+        usbId: cfg.protocol.usbId,
+        relatedDevices: [deviceId],
+        detail: { serialPath: res.serialPath },
+      })
+
+      try {
+        inst.rebind({ serialPath: res.serialPath })
+
+        this.#publishUsbHardwareEvent({
+          action: 'rebind_succeeded',
+          usbId: cfg.protocol.usbId,
+          relatedDevices: [deviceId],
+          detail: { serialPath: res.serialPath },
+        })
+      } catch (e) {
+        this.#publishUsbHardwareEvent({
+          action: 'rebind_failed',
+          usbId: cfg.protocol.usbId,
+          relatedDevices: [deviceId],
+          detail: { error: e?.message || String(e) },
+        })
+      }
+    }
+  }
+
+  #handleUsbDetached({ usbId }) {
+    const relatedDevices = this.#findRelatedUsbDevices(usbId)
+
+    this.#publishUsbHardwareEvent({
+      action: 'detached',
+      usbId,
+      relatedDevices,
+    })
+
+    for (const deviceId of relatedDevices) {
+      const cfg = this.#deviceConfigById.get(deviceId)
+      if (!cfg) continue
+
+      const configuredState = cfg?.state ?? 'active'
+      if (configuredState === 'manualBlocked') continue
+
+      const inst = this.#deviceById.get(deviceId)
+      if (!inst?.rebind) continue
+
+      this.#publishUsbHardwareEvent({
+        action: 'rebind_attempted',
+        usbId: cfg.protocol.usbId,
+        relatedDevices: [deviceId],
+        detail: { serialPath: null },
+      })
+
+      try {
+        inst.rebind({ serialPath: null })
+
+        this.#publishUsbHardwareEvent({
+          action: 'rebind_succeeded',
+          usbId: cfg.protocol.usbId,
+          relatedDevices: [deviceId],
+          detail: { serialPath: null },
+        })
+      } catch (e) {
+        this.#publishUsbHardwareEvent({
+          action: 'rebind_failed',
+          usbId: cfg.protocol.usbId,
+          relatedDevices: [deviceId],
+          detail: { error: e?.message || String(e) },
+        })
+      }
+    }
+  }
+
+  #findRelatedUsbDevices(usbId) {
+    const related = []
+
+    for (const cfg of this.#deviceConfigById.values()) {
+      const cfgUsbId = cfg?.protocol?.usbId
+      if (!cfgUsbId) continue
+
+      if (this.#usbIdMatches(cfgUsbId, usbId)) {
+        related.push(cfg.id)
+      }
+    }
+
+    return related
+  }
+
+  #usbIdMatches(cfgUsbId, runtimeUsbId) {
+    const aVid = String(cfgUsbId?.vid || '').trim().toLowerCase().replace(/^0x/, '')
+    const aPid = String(cfgUsbId?.pid || '').trim().toLowerCase().replace(/^0x/, '')
+    const aSerial = (cfgUsbId?.serial !== undefined && cfgUsbId?.serial !== null)
+      ? String(cfgUsbId.serial).trim()
+      : null
+
+    const bVid = String(runtimeUsbId?.vid || '').trim().toLowerCase().replace(/^0x/, '')
+    const bPid = String(runtimeUsbId?.pid || '').trim().toLowerCase().replace(/^0x/, '')
+    const bSerial = (runtimeUsbId?.serial !== undefined && runtimeUsbId?.serial !== null)
+      ? String(runtimeUsbId.serial).trim()
+      : null
+
+    if (!aVid || !aPid || !bVid || !bPid) return false
+    if (aVid !== bVid || aPid !== bPid) return false
+
+    if (aSerial) {
+      return aSerial === bSerial
+    }
+
+    return true
+  }
+
+  #publishUsbHardwareEvent({ action, usbId, endpoints, relatedDevices, detail }) {
+    this.#usbEventSeq += 1
+
+    this.#mainBus.publish({
+      type: eventTypes.system.hardware,
+      ts: this.#clock.nowMs(),
+      source: 'deviceManager',
+      payload: {
+        subsystem: 'usb',
+        action,
+        seq: this.#usbEventSeq,
+        source: 'deviceManager',
+        usbId: usbId ? { ...usbId } : undefined,
+        endpoints: Array.isArray(endpoints) ? endpoints : undefined,
+        relatedDevices: Array.isArray(relatedDevices) ? relatedDevices : [],
+        detail: detail && typeof detail === 'object' ? detail : undefined,
       },
     })
   }
