@@ -65,6 +65,7 @@ graph TD
         LEDDriver[LED Driver]
 
         LEDController --> LEDDriver
+        ResetController -.-> LEDDriver
     end
 
     Host -->|USB CDC UART| LEDController
@@ -74,8 +75,6 @@ graph TD
     LEDDriver --> WS2812
 
     classDef optional stroke-dasharray: 5 5
-    class LEDDriver optional
-    class WS2812 optional
 ```
 
 ---
