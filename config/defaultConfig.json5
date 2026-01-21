@@ -48,10 +48,28 @@
       kind: 'buttonEdge',
       protocol: { type: 'gpio', chip: 'gpiochip0', line: 26, activeHigh: false },
 
-      modes: ['win11', 'rpi4'],
+      modes: ['rpi4'],
       state: 'active',
       params: { cooldownMs: 250 }
-    }
+    },
+
+    {
+      id: 'ld2450_1',
+      publishAs: 'radar1',
+      domain: 'presence',
+      kind: 'ld2450Radar',
+      protocol: {
+        type: 'serial',
+        usbId: { vid: '10c4', pid: 'ea60', serial: 'LD2450-9F3A72C1' },
+        baudRate: 256000,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+      },
+      modes: ['rpi4', 'win11'],
+      state: 'active'
+    },
+
   ],
   core: {
     armingDelayMs: 1200,

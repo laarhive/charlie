@@ -1,6 +1,7 @@
 // src/devices/protocols/protocolFactory.js
 import VirtualBinaryInput from './virt/virtualBinaryInput.js'
 import GpioBinaryInputGpio from './gpio/gpioBinaryInputGpio.js'
+import UsbSerialDuplex from './usbSerial/usbSerialDuplex.js'
 
 export default class ProtocolFactory {
   #logger
@@ -47,5 +48,32 @@ export default class ProtocolFactory {
     }
 
     throw new Error(`unsupported_protocol_type:${t || 'missing'}`)
+  }
+
+  makeUsbSerialDuplex(protocol, { onError } = {}) {
+    const p = protocol || {}
+    const t = String(p?.type || '').trim()
+
+    if (t !== 'serial') {
+      throw new Error(`unsupported_protocol_type:${t || 'missing'}`)
+    }
+
+    const serialPath = String(p?.serialPath || '').trim()
+    if (!serialPath) {
+      throw new Error('serial protocol requires protocol.serialPath')
+    }
+
+    const baudRate = Number(p?.baudRate) || 256000
+
+    return new UsbSerialDuplex({
+      path: serialPath,
+      options: {
+        baudRate,
+        dataBits: p?.dataBits ?? 8,
+        stopBits: p?.stopBits ?? 1,
+        parity: p?.parity ?? 'none',
+      },
+      onError,
+    })
   }
 }

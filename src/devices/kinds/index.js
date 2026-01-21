@@ -1,6 +1,7 @@
 // src/devices/kinds/index.js
 import ButtonEdgeDevice from './buttonEdge/buttonEdgeDevice.js'
 import GpioWatchdogLoopbackDevice from './gpioWatchdogLoopback/gpioWatchdogLoopbackDevice.js'
+import Ld2450RadarDevice from './ld2450Radar/ld2450RadarDevice.js'
 import { deviceError } from '../deviceError.js'
 
 export const makeDeviceInstance = function makeDeviceInstance({ logger, clock, buses, device, protocolFactory }) {
@@ -38,6 +39,17 @@ export const makeDeviceInstance = function makeDeviceInstance({ logger, clock, b
       clock,
       buses,
       device,
+    })
+  }
+
+  if (kind === 'ld2450Radar') {
+    return new Ld2450RadarDevice({
+      logger,
+      clock,
+      domainBus,
+      mainBus,
+      device,
+      protocolFactory,
     })
   }
 

@@ -3,6 +3,7 @@ export const domainEventTypes = Object.freeze({
   presence: Object.freeze({
     binary: 'presenceRaw:binary',
     targets: 'presenceRaw:targets',
+    ld2450: 'presenceRaw:ld2450',
   }),
 
   vibration: Object.freeze({

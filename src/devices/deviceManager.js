@@ -214,12 +214,30 @@ export class DeviceManager {
 
     let inst = this.#deviceById.get(id)
     if (!inst) {
+      const cfgProtocol = cfg?.protocol || {}
+      const usbId = cfgProtocol?.usbId
+
+      let serialPath = cfgProtocol?.serialPath ?? null
+
+      if (usbId && this.#usbInventory?.resolveSerialPath) {
+        const res = this.#usbInventory.resolveSerialPath(usbId)
+        serialPath = res.ok ? res.serialPath : null
+      }
+
+      const effectiveCfg = {
+        ...cfg,
+        protocol: {
+          ...cfgProtocol,
+          serialPath,
+        },
+      }
+
       try {
         inst = makeDeviceInstance({
           logger: this.#logger,
           clock: this.#clock,
           buses: this.#buses,
-          device: cfg,
+          device: effectiveCfg,
           protocolFactory: this.#protocolFactory,
         })
 
