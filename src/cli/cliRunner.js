@@ -1,9 +1,10 @@
+// src/cli/cliRunner.js
 import process from 'node:process'
 
 import Logger from '../logging/logger.js'
-import CliParser from '../cli/cliParser.js'
-import CliWsController from '../cli/cliWsController.js'
-import parseArgs from './args.js'
+import CliParser from './cliParser.js'
+import CliWsController from './cliWsController.js'
+import parseArgs from '../app/args.js'
 
 export class CliRunner {
   #logger

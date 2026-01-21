@@ -67,31 +67,6 @@ describe('Integration: appRunner (virt daemon) WS API', function () {
     ws.close()
   })
 
-  it('bus.tap.start streams bus.event', async function () {
-    const ws = await connectWs({ port })
-
-    const tap = await wsRequest(ws, 'bus.tap.start', { bus: 'main' })
-    assert.equal(tap.ok, true)
-    assert.ok(tap.payload.subId)
-
-    await wsRequest(ws, 'inject.enable')
-
-    await wsRequest(ws, 'inject.event', {
-      bus: 'main',
-      type: 'presence:enter',
-      source: 'test',
-      payload: { zone: 'front', sensorId: 'presence_front' }
-    })
-
-    const evt = await waitFor(async () => {
-      return ws.__msgs.find((m) => m?.type === 'bus.event' && m?.payload?.event?.type === 'presence:enter') ?? null
-    }, 3000)
-
-    assert.equal(evt.payload.bus, 'main')
-
-    ws.close()
-  })
-
   it('daemon stays alive during tests', async function () {
     assert.doesNotThrow(() => assertDaemonAlive(child))
   })

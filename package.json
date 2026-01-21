@@ -7,7 +7,7 @@
   "scripts": {
     "start:daemon": "node src/app/appRunner.js --mode hw",
     "start:virt": "node src/app/appRunner.js --mode virt",
-    "cli": "node src/app/cliRunner.js --host 127.0.0.1 --port 8787",
+    "cli": "node src/cli/cliRunner.js --host 127.0.0.1 --port 8787",
     "test": "mocha \"test/**/*.spec.js\""
   },
   "devDependencies": {

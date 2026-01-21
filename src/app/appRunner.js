@@ -2,7 +2,7 @@
 import process from 'node:process'
 
 import Logger from '../logging/logger.js'
-import formatError from './errorFormat.js'
+import formatError from '../core/errorFormat.js'
 import CliParser from '../cli/cliParser.js'
 import CliController from '../cli/cliController.js'
 import CliWsController from '../cli/cliWsController.js'

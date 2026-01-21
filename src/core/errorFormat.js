@@ -1,4 +1,4 @@
-// src/app/errorFormat.js
+// src/core/errorFormat.js
 export const formatError = function formatError(err) {
   if (!err) {
     return { message: 'Unknown error', stack: null }

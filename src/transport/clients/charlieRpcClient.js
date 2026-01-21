@@ -1,20 +1,50 @@
+// src/app/charlieRpcClient.js
 import WebSocket from 'ws'
 
-export class CharlieWsClient {
+/**
+ * Charlie RPC WebSocket client.
+ *
+ * Connects to the daemon's RPC endpoint and provides a simple request/response API.
+ *
+ * Endpoint:
+ * - ws://<host>:<port>/rpc
+ *
+ * Protocol:
+ * - Request:  { id, type, payload }
+ * - Success:  { id, ok: true,  type, payload }
+ * - Error:    { id, ok: false, type, error: { message, code } }
+ *
+ * Notes:
+ * - This client is RPC-only. It does not handle bus streaming events.
+ * - For bus streaming, use `CharlieStreamClient` on `/ws?...`.
+ *
+ * @example
+ * const rpc = new CharlieRpcClient({ logger, url: 'ws://127.0.0.1:8787/rpc' })
+ * await rpc.connect()
+ * const snap = await rpc.request('state.get')
+ * console.log(snap)
+ */
+export class CharlieRpcClient {
   #logger
   #url
   #ws
   #pending
-  #busHandlers
 
   constructor({ logger, url }) {
     this.#logger = logger
     this.#url = url
     this.#ws = null
     this.#pending = new Map()
-    this.#busHandlers = new Set()
   }
 
+  /**
+   * Establish the WebSocket connection (idempotent).
+   *
+   * @returns {Promise<void>}
+   *
+   * @example
+   * await rpc.connect()
+   */
   async connect() {
     if (this.#ws) {
       return
@@ -66,14 +96,19 @@ export class CharlieWsClient {
     })
   }
 
-  onBusEvent(fn) {
-    this.#busHandlers.add(fn)
-
-    return () => {
-      this.#busHandlers.delete(fn)
-    }
-  }
-
+  /**
+   * Send an RPC request and await its response.
+   *
+   * @param {string} type RPC method name (e.g. "state.get", "inject.enable")
+   * @param {object} [payload={}] RPC payload object
+   *
+   * @returns {Promise<object>} The `payload` of the RPC response on success.
+   * @throws {Error} On transport errors, disconnect, or RPC error response.
+   *
+   * @example
+   * const res = await rpc.request('inject.event', { bus: 'main', type: 'presence:enter', payload: { zone: 'front' } })
+   * console.log(res)
+   */
   async request(type, payload = {}) {
     if (!this.#ws) {
       throw new Error('ws_not_connected')
@@ -94,24 +129,14 @@ export class CharlieWsClient {
     })
   }
 
+  /* concise private bits */
+
   #onMessage(raw) {
     let msg = null
 
     try {
       msg = JSON.parse(raw.toString())
     } catch (e) {
-      return
-    }
-
-    if (msg?.type === 'bus.event') {
-      for (const fn of this.#busHandlers) {
-        try {
-          fn(msg.payload)
-        } catch (e) {
-          // ignore handler errors
-        }
-      }
-
       return
     }
 
@@ -138,4 +163,4 @@ export class CharlieWsClient {
   }
 }
 
-export default CharlieWsClient
+export default CharlieRpcClient

@@ -2,31 +2,65 @@
 import readline from 'node:readline'
 import eventTypes from '../core/eventTypes.js'
 import makeCliCompleter from './cliCompleter.js'
-import CharlieWsClient from './charlieWsClient.js'
+import CharlieRpcClient from '../transport/clients/charlieRpcClient.js'
+import CharlieStreamClient from '../transport/clients/charlieStreamClient.js'
 import { printHelp } from './cliHelp.js'
 
+/**
+ * Remote CLI controller over WebSockets.
+ *
+ * Uses two sockets:
+ * - /rpc for request/response commands
+ * - /ws for bus streaming (server-pushed bus.event)
+ *
+ * Bus streaming selection is configured by the wsUrl you pass in, e.g:
+ * - ws://host:8787/ws?all
+ * - ws://host:8787/ws?main&button
+ */
 export class CliWsController {
   #logger
   #parser
-  #wsUrl
+  #rpcUrl
+  #streamUrl
   #rl
-  #client
+
+  #rpc
+  #stream
 
   #injectEnabled
-  #tapSubs
 
   #cache
 
-  constructor({ logger, parser, wsUrl, client }) {
+  constructor({ logger, parser, wsUrl, rpcUrl, streamUrl, rpcClient, streamClient }) {
     this.#logger = logger
     this.#parser = parser
-    this.#wsUrl = wsUrl
+
+    /*
+      Backward-compatible constructor:
+      - previously: wsUrl pointed to a single /ws endpoint
+      - now: prefer explicit rpcUrl + streamUrl
+    */
+    const base = (() => {
+      const u = String(wsUrl || '').trim()
+      if (!u) {
+        return ''
+      }
+
+      // best-effort: strip any /ws or /rpc suffix
+      return u
+        .replace(/\/ws(\?.*)?$/i, '')
+        .replace(/\/rpc(\?.*)?$/i, '')
+    })()
+
+    this.#rpcUrl = String(rpcUrl || '').trim() || (base ? `${base}/rpc` : '')
+    this.#streamUrl = String(streamUrl || '').trim() || (base ? `${base}/ws?main` : '')
 
     this.#rl = null
-    this.#client = client ?? new CharlieWsClient({ logger, url: wsUrl })
+
+    this.#rpc = rpcClient ?? new CharlieRpcClient({ logger, url: this.#rpcUrl })
+    this.#stream = streamClient ?? new CharlieStreamClient({ logger, url: this.#streamUrl })
 
     this.#injectEnabled = false
-    this.#tapSubs = new Map()
 
     this.#cache = {
       config: null,
@@ -39,7 +73,13 @@ export class CliWsController {
   }
 
   async init() {
-    await this.#client.connect()
+    await this.#rpc.connect()
+    await this.#stream.connect()
+
+    this.#stream.onBusEvent((payload) => {
+      this.#printBusEvent(payload)
+    })
+
     await this.#refreshCache()
 
     if (!this.#cache?.config) {
@@ -53,10 +93,6 @@ export class CliWsController {
     }
 
     await this.init()
-
-    this.#client.onBusEvent((payload) => {
-      this.#printBusEvent(payload)
-    })
 
     this.#rl = readline.createInterface({
       input: process.stdin,
@@ -83,7 +119,6 @@ export class CliWsController {
       process.exit(0)
     })
 
-    // WS CLI is still a CLI, just remote. We print the same help.
     printHelp({ mode: 'ws' })
     this.#updatePrompt()
     this.#rl.prompt()
@@ -118,21 +153,21 @@ export class CliWsController {
     }
 
     if (cmd.kind === 'injectOn') {
-      const res = await this.#client.request('inject.enable')
+      const res = await this.#rpc.request('inject.enable')
       this.#injectEnabled = Boolean(res?.injectEnabled)
       this.#logger.notice('inject_enabled', {})
       return
     }
 
     if (cmd.kind === 'injectOff') {
-      const res = await this.#client.request('inject.disable')
+      const res = await this.#rpc.request('inject.disable')
       this.#injectEnabled = Boolean(res?.injectEnabled)
       this.#logger.notice('inject_disabled', {})
       return
     }
 
     if (cmd.kind === 'injectStatus') {
-      const snap = await this.#client.request('state.get')
+      const snap = await this.#rpc.request('state.get')
 
       if (typeof snap?.injectEnabled === 'boolean') {
         this.#injectEnabled = snap.injectEnabled
@@ -142,29 +177,28 @@ export class CliWsController {
       return
     }
 
-    if (cmd.kind === 'tapOn') {
-      await this.#tapSet(cmd.bus, true)
-      return
-    }
-
-    if (cmd.kind === 'tapOff') {
-      await this.#tapSet(cmd.bus, false)
+    /*
+      Taps are deprecated. Streaming selection is chosen by streamUrl query params.
+      Keep commands but explain the new model.
+    */
+    if (cmd.kind === 'tapOn' || cmd.kind === 'tapOff') {
+      console.log('tap commands are deprecated. Select buses via stream URL query params (e.g. /ws?all or /ws?main&button).')
       return
     }
 
     if (cmd.kind === 'tapStatus') {
-      this.#tapStatus(cmd.bus)
+      console.log('tap status is deprecated. Current streaming selection is controlled by streamUrl query params.')
       return
     }
 
     if (cmd.kind === 'coreState') {
-      const snap = await this.#client.request('state.get')
+      const snap = await this.#rpc.request('state.get')
       this.#logger.info('snapshot', snap)
       return
     }
 
     if (cmd.kind === 'configPrint') {
-      const cfg = await this.#client.request('config.get')
+      const cfg = await this.#rpc.request('config.get')
       this.#logger.info('config_print', cfg)
       return
     }
@@ -207,28 +241,28 @@ export class CliWsController {
     }
 
     if (cmd.kind === 'deviceList') {
-      const res = await this.#client.request('device.list')
+      const res = await this.#rpc.request('device.list')
       this.#cache.devices = Array.isArray(res?.devices) ? res.devices : []
       this.#logger.info('device_list', { devices: this.#cache.devices })
       return
     }
 
     if (cmd.kind === 'deviceBlock') {
-      await this.#client.request('device.block', { deviceId: cmd.deviceId })
+      await this.#rpc.request('device.block', { deviceId: cmd.deviceId })
       await this.#refreshDevicesOnly()
       this.#logger.notice('device_blocked', { deviceId: cmd.deviceId })
       return
     }
 
     if (cmd.kind === 'deviceUnblock') {
-      await this.#client.request('device.unblock', { deviceId: cmd.deviceId })
+      await this.#rpc.request('device.unblock', { deviceId: cmd.deviceId })
       await this.#refreshDevicesOnly()
       this.#logger.notice('device_unblocked', { deviceId: cmd.deviceId })
       return
     }
 
     if (cmd.kind === 'deviceInject') {
-      await this.#client.request('device.inject', { deviceId: cmd.deviceId, payload: cmd.payload })
+      await this.#rpc.request('device.inject', { deviceId: cmd.deviceId, payload: cmd.payload })
       this.#logger.notice('device_injected', { deviceId: cmd.deviceId })
       return
     }
@@ -240,14 +274,14 @@ export class CliWsController {
     await this.#refreshDevicesOnly()
 
     try {
-      const cfg = await this.#client.request('config.get')
+      const cfg = await this.#rpc.request('config.get')
       this.#cache.config = cfg
     } catch {
       this.#cache.config = null
     }
 
     try {
-      const st = await this.#client.request('state.get')
+      const st = await this.#rpc.request('state.get')
       if (typeof st?.injectEnabled === 'boolean') {
         this.#injectEnabled = st.injectEnabled
       }
@@ -258,7 +292,7 @@ export class CliWsController {
 
   async #refreshDevicesOnly() {
     try {
-      const res = await this.#client.request('device.list')
+      const res = await this.#rpc.request('device.list')
       this.#cache.devices = Array.isArray(res?.devices) ? res.devices : []
     } catch {
       this.#cache.devices = []
@@ -278,10 +312,9 @@ export class CliWsController {
       // For completer: it expects buses in some cases
       buses: {},
 
-      // Taps are handled on the server; completer can live without them
+      // Taps are deprecated; completer can live without them
       taps: {},
 
-      // Present but unused by completer
       core: {},
       clock: {},
     }
@@ -296,69 +329,6 @@ export class CliWsController {
     await fn()
   }
 
-  async #tapSet(bus, enabled) {
-    const buses = ['main', 'presence', 'vibration', 'button', 'tasker']
-
-    if (bus === 'all') {
-      for (const b of buses) {
-        await this.#tapSet(b, enabled)
-      }
-
-      return
-    }
-
-    if (!buses.includes(bus)) {
-      this.#logger.warning('tap_unknown_bus', { bus })
-      return
-    }
-
-    if (enabled) {
-      if (this.#tapSubs.has(bus)) {
-        return
-      }
-
-      const res = await this.#client.request('bus.tap.start', { bus })
-      const subId = res?.subId
-
-      if (!subId) {
-        this.#logger.warning('tap_start_failed', { bus })
-        return
-      }
-
-      this.#tapSubs.set(bus, subId)
-      return
-    }
-
-    const subId = this.#tapSubs.get(bus)
-    if (!subId) {
-      return
-    }
-
-    await this.#client.request('bus.tap.stop', { subId })
-    this.#tapSubs.delete(bus)
-  }
-
-  #tapStatus(bus) {
-    const buses = ['main', 'presence', 'vibration', 'button', 'tasker']
-
-    if (bus === 'all') {
-      const status = {}
-      for (const b of buses) {
-        status[b] = this.#tapSubs.has(b)
-      }
-
-      this.#logger.info('tap_status', status)
-      return
-    }
-
-    if (!buses.includes(bus)) {
-      this.#logger.warning('tap_unknown_bus', { bus })
-      return
-    }
-
-    this.#logger.info('tap_status', { [bus]: this.#tapSubs.has(bus) })
-  }
-
   async #injectPresence(zone, present) {
     const cfg = this.#cache.config ?? {}
     const defaults = cfg?.core?.injectDefaults ?? {}
@@ -371,7 +341,7 @@ export class CliWsController {
       return
     }
 
-    await this.#client.request('inject.event', {
+    await this.#rpc.request('inject.event', {
       bus: 'main',
       type: present ? eventTypes.presence.enter : eventTypes.presence.exit,
       payload: { coreRole, zone },
@@ -391,7 +361,7 @@ export class CliWsController {
       return
     }
 
-    await this.#client.request('inject.event', {
+    await this.#rpc.request('inject.event', {
       bus: 'main',
       type: eventTypes.vibration.hit,
       payload: { coreRole, level },
@@ -411,7 +381,7 @@ export class CliWsController {
       return
     }
 
-    await this.#client.request('inject.event', {
+    await this.#rpc.request('inject.event', {
       bus: 'main',
       type: eventTypes.button.press,
       payload: { coreRole, kind: pressType },
@@ -422,13 +392,12 @@ export class CliWsController {
   #printBusEvent(payload) {
     const bus = payload?.bus
     const evt = payload?.event
-    const subId = payload?.subId
 
     if (!evt?.type) {
       return
     }
 
-    console.log(`[tap ${bus} ${subId}] ${evt.type}`)
+    console.log(`[stream ${bus}] ${evt.type}`)
   }
 
   #updatePrompt() {

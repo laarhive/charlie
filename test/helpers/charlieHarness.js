@@ -1,18 +1,20 @@
+// test/helpers/charlieHarness.js
 /**
  * Charlie integration test harness.
  *
- * This module provides reusable helpers for process-level integration tests
- * that exercise the full Charlie application exactly as it runs in production.
+ * Provides reusable helpers for *process-level* integration tests that
+ * exercise the full Charlie application exactly as it runs in production.
  *
  * Core idea:
  * - Spawn the real `appRunner` in a separate Node.js process
- * - Communicate only via public interfaces (WebSocket / HTTP)
+ * - Communicate only via public WebSocket interfaces
  * - Treat Charlie as a black box
  *
  * What this harness abstracts:
  * - Selecting a free TCP port
  * - Spawning and stopping the Charlie daemon
  * - Waiting for WebSocket readiness
+ * - Connecting to specific WS endpoints (`/rpc`, `/ws`)
  * - Sending WS RPC requests and awaiting responses
  * - Capturing stdout/stderr for crash diagnostics
  *
@@ -24,7 +26,7 @@
  *
  * Design rules:
  * - Never import internal Charlie modules here
- * - Never mock buses, drivers, or controllers
+ * - Never mock buses, devices, or controllers
  * - All assertions belong in spec files, not in this harness
  *
  * Intended usage:
@@ -39,6 +41,7 @@
  *
  * If a test using this harness fails, it indicates a real runtime regression.
  */
+
 
 import { spawn } from 'node:child_process'
 import net from 'node:net'
@@ -115,8 +118,20 @@ export const stopCharlie = async (child, timeoutMs = 2000) => {
   }
 }
 
-export const connectWs = async ({ port }) => {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+/**
+ * Connect to a Charlie WS endpoint.
+ *
+ * @param {object} args
+ * @param {number} args.port
+ * @param {string} [args.path='/rpc'] Endpoint path, e.g. '/rpc' or '/ws?all'
+ *
+ * @example
+ * const rpc = await connectWs({ port, path: '/rpc' })
+ * const stream = await connectWs({ port, path: '/ws?main&button' })
+ */
+export const connectWs = async ({ port, path: p = '/rpc' }) => {
+  const pathStr = String(p || '/rpc')
+  const ws = new WebSocket(`ws://127.0.0.1:${port}${pathStr}`)
   ws.__msgs = []
 
   ws.on('message', (raw) => {
@@ -135,11 +150,21 @@ export const connectWs = async ({ port }) => {
   return ws
 }
 
+/**
+ * Wait until both RPC and streaming endpoints accept connections.
+ *
+ * @example
+ * await waitForWsReady({ port, timeoutMs: 12000 })
+ */
 export const waitForWsReady = async ({ port, timeoutMs = 12000 }) => {
   await waitFor(async () => {
     try {
-      const ws = await connectWs({ port })
-      ws.close()
+      const rpc = await connectWs({ port, path: '/rpc' })
+      rpc.close()
+
+      const stream = await connectWs({ port, path: '/ws' })
+      stream.close()
+
       return true
     } catch (e) {
       return false

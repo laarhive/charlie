@@ -8,15 +8,17 @@ import makeBuses from './buses.js'
 import makeTaps from './taps.js'
 import makeDomainControllers, { startAll, disposeAll } from './domainControllers.js'
 
-import WebServer from './webServer.js'
+import WebServer from '../transport/webServer.js'
 import TaskerConversationAdapter from '../conversation/taskerConversationAdapter.js'
 import ControlService from './controlService.js'
 
 import DeviceManager from '../devices/deviceManager.js'
+import BusStream from '../transport/ws/busStream.js'
+import makeWsRpcHandlers from '../transport/ws/wsRpcHandlers.js'
+import WsRpcRouter from '../transport/ws/wsRpcRouter.js'
 
 export const makeContext = function makeContext({ logger, config, mode }) {
   const clock = new Clock()
-  //clock.freeze()
 
   const buses = makeBuses()
   const taps = makeTaps({ logger, buses })
@@ -52,7 +54,6 @@ export const makeContext = function makeContext({ logger, config, mode }) {
 
   const serverPort = Number(config?.server?.port ?? 8787)
 
-  // Device manager owns device lifecycle and publishes system:hardware
   const deviceManager = new DeviceManager({
     logger,
     mainBus: buses.main,
@@ -70,14 +71,24 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     logger,
   })
 
+  const busStream = new BusStream({ logger, buses })
+
+  const rpcRouter = new WsRpcRouter({ logger })
+  const ok = rpcRouter.makeOk()
+  const err = rpcRouter.makeErr()
+
+  for (const h of makeWsRpcHandlers({ getStatus: () => core.getSnapshot(), getConfig: () => config, control, ok, err })) {
+    rpcRouter.use(h)
+  }
+
   const webServer = new WebServer({
     logger,
     buses,
-    getStatus: () => core.getSnapshot(),
-    getConfig: () => config,
-    control,
+    busStream,
+    rpcRouter,
     port: serverPort,
   })
+
 
   webServer.start()
 
@@ -91,6 +102,8 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     if (webServer) {
       webServer.dispose()
     }
+
+    busStream.dispose()
 
     deviceManager.dispose()
 
@@ -111,6 +124,7 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     config,
 
     deviceManager,
+    busStream,
     webServer,
     control,
 

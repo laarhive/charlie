@@ -1,21 +1,30 @@
 <!-- docs/api/ws.md -->
-# WebSocket RPC API
+# WebSocket API
 
-Charlie exposes a WebSocket-based RPC API used by:
+Charlie exposes two WebSocket endpoints:
+
+- **RPC** (`/rpc`) for request/response control
+- **Stream** (`/ws`) for server-pushed bus events
+
+Used by:
 - remote CLI
-- future UI
+- future Web UI
 - external debugging tools
 
-## Endpoint
+---
+
+## Endpoints
+
 ```text
+ws://<host>:<port>/rpc
 ws://<host>:<port>/ws
 ```
 
-## Message types
-- RPC request/response
-- server-pushed `bus.event` for taps
+---
 
-## RPC protocol
+## RPC (`/rpc`)
+
+### Protocol
 
 Request:
 ```json
@@ -49,55 +58,62 @@ Error:
 }
 ```
 
-## Core state & config
+### Core
 
-### `state.get`
+#### `state.get`
 Returns a runtime snapshot.
 
-Request:
 ```json
 { "id": "1", "type": "state.get" }
 ```
 
-### `config.get`
+#### `config.get`
 Returns the active config object.
 
-Request:
 ```json
 { "id": "2", "type": "config.get" }
 ```
 
-Notes:
-- config includes `devices[]` (not sensors).
+### Injection
 
-## Injection
-
-### `inject.enable`
+#### `inject.enable`
 Enables semantic injection.
 
-### `inject.disable`
+#### `inject.disable`
 Disables semantic injection.
 
-### `inject.event`
+#### `inject.event`
 Publishes a semantic event to a bus (usually `main`).
 
-Payload fields:
+Payload:
 - `bus`
 - `type`
 - `payload`
 - `source` (optional)
 
-## Devices
-
-### `device.list`
-Lists devices active in the current mode.
-
-Request:
 ```json
-{ "id": "3", "type": "device.list" }
+{
+  "id": "3",
+  "type": "inject.event",
+  "payload": {
+    "bus": "main",
+    "type": "presence:enter",
+    "payload": { "zone": "front" },
+    "source": "cli"
+  }
+}
 ```
 
-Response payload:
+### Devices
+
+#### `device.list`
+Lists devices active in the current mode.
+
+```json
+{ "id": "4", "type": "device.list" }
+```
+
+Example response payload:
 ```json
 {
   "devices": [
@@ -113,27 +129,24 @@ Response payload:
 }
 ```
 
-### `device.block`
-Request:
+#### `device.block`
 ```json
-{ "id": "4", "type": "device.block", "payload": { "deviceId": "buttonGpio1" } }
+{ "id": "5", "type": "device.block", "payload": { "deviceId": "buttonGpio1" } }
 ```
 
-### `device.unblock`
-Request:
-```json
-{ "id": "5", "type": "device.unblock", "payload": { "deviceId": "buttonGpio1" } }
-```
-
+#### `device.unblock`
 Unblock is idempotent.
 
-### `device.inject`
+```json
+{ "id": "6", "type": "device.unblock", "payload": { "deviceId": "buttonGpio1" } }
+```
+
+#### `device.inject`
 Routes a generic payload to the device kind.
 
-Request:
 ```json
 {
-  "id": "6",
+  "id": "7",
   "type": "device.inject",
   "payload": {
     "deviceId": "buttonVirt1",
@@ -142,26 +155,30 @@ Request:
 }
 ```
 
-## Bus taps
+---
 
-### `bus.tap.start`
-Request:
-```json
-{ "id": "7", "type": "bus.tap.start", "payload": { "bus": "main" } }
+## Stream (`/ws`)
+
+### Bus selection (query params)
+
+Select buses at connect time:
+
+```text
+/ws               -> default: main
+/ws?main&button   -> selected buses
+/ws?all           -> all buses
 ```
 
-### `bus.tap.stop`
-Request:
-```json
-{ "id": "8", "type": "bus.tap.stop", "payload": { "subId": "..." } }
-```
+Rules:
+- Unknown params are ignored
+- If no valid bus is selected, defaults to `main` (if available)
 
 ### `bus.event` (server-pushed)
+
 ```json
 {
   "type": "bus.event",
   "payload": {
-    "subId": "main:...",
     "bus": "main",
     "event": {
       "type": "system:hardware",
@@ -176,12 +193,13 @@ Request:
 }
 ```
 
+---
+
 ## Error codes (non-exhaustive)
+
 - `BAD_JSON`
 - `BAD_REQUEST`
 - `UNKNOWN_TYPE`
-- `BUS_NOT_FOUND`
-- `SUB_NOT_FOUND`
 - `INJECT_DISABLED`
 - `DEVICE_NOT_FOUND`
 - `NOT_SUPPORTED`
