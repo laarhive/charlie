@@ -272,3 +272,171 @@ Including:
 - Test and validation plan
 
 ---
+
+
+## v2 — Delta Extension (append-only)
+
+This section extends the existing scope with **v2 functionality**.  
+All v1 requirements remain unchanged unless explicitly stated here.
+
+---
+
+## UART usage extension (v2)
+
+In v2, the single USB CDC UART interface is used bidirectionally:
+
+1. **Host → PicoResetPixel**
+  - LED control commands (unchanged from v1)
+
+2. **PicoResetPixel → Host**
+  - Button events derived from physical button interaction
+  - Reset-related notifications (best-effort)
+
+UART remains **non-authoritative**:
+- reset behavior must not depend on UART availability
+- UART messages are telemetry only
+
+---
+
+## UARTTransport module (v2)
+
+v2 introduces a shared internal firmware module named **UARTTransport**.
+
+UARTTransport is the **sole owner** of the RP2040 USB CDC UART interface.
+
+### Responsibilities
+
+UARTTransport must:
+
+- own USB CDC initialization and lifetime
+- provide a single RX path for host-to-device messages
+- provide a single TX path for device-to-host messages
+- serialize TX writes to prevent interleaving
+- deliver complete messages to consumers
+
+UARTTransport must not:
+- interpret messages
+- contain LED or button logic
+- block or delay reset behavior
+
+---
+
+## Reset Controller — button event emission (v2)
+
+In v2, the Reset Controller also acts as a **button event source**.
+
+### Behavior
+
+- For each classified press:
+  - Short press → emit `S` over UART
+  - Long press → emit `L` over UART
+- These events are emitted **only if UARTTransport is available**
+- These events are **telemetry only**
+
+Reset logic:
+- remains fully local to the RP2040
+- does not wait for, require, or depend on UART transmission
+- behaves identically whether UART is present or not
+
+---
+
+## Reset sequence confirmation and countdown (v2)
+
+v2 allows an optional **reset scheduling phase** after a reset sequence matches.
+
+### Sequence match behavior
+
+When a configured reset sequence is detected:
+
+1. Reset Controller may emit a best-effort UART notification indicating reset is scheduled
+2. Reset Controller enters one of two modes:
+  - **Immediate reset** (v1 behavior, default)
+  - **Countdown reset** (v2)
+
+### Countdown reset mode
+
+- A fixed countdown duration is started
+- At countdown expiry, reset is triggered unconditionally
+- No host acknowledgment is required
+- No reset cancellation is permitted
+
+If UART messages are lost:
+- reset still occurs correctly
+
+---
+
+## Dependency clarification (v2)
+
+- **UARTTransport**
+  - is required for UART communication only
+  - is optional for correct reset behavior
+
+- **LEDController**
+  - depends on UARTTransport (RX)
+  - depends on LEDDriver
+
+- **ResetController**
+  - does not depend on UARTTransport
+  - may emit UART events via UARTTransport when available
+  - does not depend on LEDController or LEDDriver
+
+---
+
+## Updated module relationship overview (v2)
+
+```mermaid
+graph 
+    Host[Raspberry Pi 4]
+    Button[Push Button]
+    WS2812[Single WS2812 LED]
+
+    subgraph Pico[PicoResetPixel - RP2040]
+        UARTTransport[UARTTransport]
+        LEDController[LED Controller]
+        ResetController[Reset Controller]
+        LEDDriver[LED Driver]
+
+        UARTTransport --> LEDController
+        LEDController --> LEDDriver
+        ResetController -.-> UARTTransport
+        ResetController -.-> LEDDriver
+    end
+
+%% UART (bidirectional, semantic only)
+    Host <-->|USB CDC UART| UARTTransport
+
+%% Reset path
+    Button --> ResetController
+    ResetController -->|Pi RUN / Enable Line| Host
+
+%% LED output
+    LEDDriver --> WS2812
+
+%% Styling
+%% 0 UARTTransport -> LEDController (LED domain)
+%% 1 LEDController -> LEDDriver (LED domain)
+%% 2 ResetController -.-> UARTTransport (reset domain, optional)
+%% 3 ResetController -.-> LEDDriver (reset domain, optional)
+%% 4 Host <--> UARTTransport (UART)
+%% 5 Button -> ResetController (reset domain)
+%% 6 ResetController -> Host (RUN)
+%% 7 LEDDriver -> WS2812 (LED domain)
+
+    linkStyle 0 stroke:#27ae60,stroke-width:2px
+    linkStyle 1 stroke:#27ae60,stroke-width:2px
+    linkStyle 2 stroke:#2980b9,stroke-dasharray:5 5
+    linkStyle 3 stroke:#2980b9,stroke-dasharray:5 5
+    linkStyle 5 stroke:#2980b9,stroke-width:2.5px
+    linkStyle 6 stroke:#2980b9,stroke-width:2.5px
+    linkStyle 7 stroke:#27ae60,stroke-width:2.5px
+```
+
+
+Diagram notes:
+- UARTTransport is the only module connected to USB CDC
+- LEDController consumes UART RX via UARTTransport
+- ResetController may emit UART TX events via UARTTransport (best-effort)
+- ResetController always has a direct hardware reset path to the Raspberry Pi
+- LED-related modules remain optional and non-blocking for reset
+
+---
