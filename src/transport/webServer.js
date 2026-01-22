@@ -1,6 +1,8 @@
 // src/transport/webServer.js
-import eventTypes from '../core/eventTypes.js'
 import uWS from 'uWebSockets.js'
+import { fileURLToPath } from 'node:url'
+import serveStaticFiles from './serveStaticFiles.js'
+import eventTypes from '../core/eventTypes.js'
 
 /**
  * Web server hosting:
@@ -19,6 +21,7 @@ export class WebServer {
   #listeningToken
   #wsStreamClients
   #wsRpcClients
+  #publicRoot
 
   constructor({ logger, buses, busStream, rpcRouter, port }) {
     this.#logger = logger
@@ -31,6 +34,7 @@ export class WebServer {
     this.#listeningToken = null
     this.#wsStreamClients = new Set()
     this.#wsRpcClients = new Set()
+    this.#publicRoot = fileURLToPath(new URL('../../public', import.meta.url))
 
     this.#registerRoutes()
   }
@@ -74,10 +78,21 @@ export class WebServer {
   }
 
   #registerRoutes() {
+    this.#registerStatic()
     this.#registerWsStream()
     this.#registerWsRpc()
     this.#registerTaskerSim()
     this.#registerApi()
+  }
+
+  #registerStatic() {
+    this.#app.get('/*', (res, req) => {
+      serveStaticFiles(res, req, {
+        publicRoot: this.#publicRoot,
+        log: this.#logger,
+        me: 'charlie',
+      })
+    })
   }
 
   #registerWsStream() {
