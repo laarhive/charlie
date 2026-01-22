@@ -146,9 +146,8 @@ export default class Ld2450RadarDevice extends BaseDevice {
     if (this.isBlocked()) return
 
     const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf)
-    //this.#publishRaw(b)
-
     this.#decoder.push(b)
+    //this.#publishRaw(b)
   }
 
 

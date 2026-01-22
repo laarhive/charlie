@@ -114,7 +114,7 @@ export const createLd2450StreamDecoder = function (opts = {}) {
   const includeRaw = opts.includeRaw === true
   const maxFramesPerPush = Number.isFinite(opts.maxFramesPerPush) ? opts.maxFramesPerPush : Infinity
   const maxBufferBytes = Number.isFinite(opts.maxBufferBytes) ? opts.maxBufferBytes : 4096
-
+  const noiseLogThreshold = Number.isFinite(opts.noiseLogThreshold) ? opts.noiseLogThreshold : 32
   const nowMs = typeof opts.nowMs === 'function' ? opts.nowMs : () => Date.now()
 
   const reset = function () {
@@ -155,15 +155,22 @@ export const createLd2450StreamDecoder = function (opts = {}) {
       }
     }
 
+    if (carry.length < FRAME_LEN) {
+      return
+    }
+
     const res = decodeLd2450TrackingFrames(carry, {
       maxFrames: maxFramesPerPush,
       validRule,
       includeRaw,
     })
 
-    if (res.droppedBytes > 0) {
+    if (res.frames.length > 0) {
       totalDropped += res.droppedBytes
-      emitter.emit('error', { code: 'DROPPED_NOISE', droppedBytes: res.droppedBytes })
+
+      if (res.droppedBytes >= noiseLogThreshold) {
+        emitter.emit('error', { code: 'DROPPED_NOISE', droppedBytes: res.droppedBytes })
+      }
     }
 
     if (res.stats.badFooters > 0) {
@@ -200,3 +207,8 @@ export const createLd2450StreamDecoder = function (opts = {}) {
 
   return emitter
 }
+
+
+
+
+

@@ -31,6 +31,7 @@ const RAW_RUNTIME_STATE =
           ["chai", "npm:6.2.2"],\
           ["charlie", "workspace:."],\
           ["json5", "npm:2.2.3"],\
+          ["mime-types", "npm:3.0.2"],\
           ["mocha", "npm:11.7.5"],\
           ["serialport", "npm:13.0.0"],\
           ["uWebSockets.js", "https://github.com/uNetworking/uWebSockets.js.git#commit=d04e707a1292928d50163ff7545e45c3e84c5ec3"],\
@@ -472,6 +473,7 @@ const RAW_RUNTIME_STATE =
           ["chai", "npm:6.2.2"],\
           ["charlie", "workspace:."],\
           ["json5", "npm:2.2.3"],\
+          ["mime-types", "npm:3.0.2"],\
           ["mocha", "npm:11.7.5"],\
           ["serialport", "npm:13.0.0"],\
           ["uWebSockets.js", "https://github.com/uNetworking/uWebSockets.js.git#commit=d04e707a1292928d50163ff7545e45c3e84c5ec3"],\
@@ -1122,6 +1124,25 @@ const RAW_RUNTIME_STATE =
           ["proc-log", "npm:6.1.0"],\
           ["promise-retry", "npm:2.0.1"],\
           ["ssri", "npm:13.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["mime-db", [\
+      ["npm:1.54.0", {\
+        "packageLocation": "./.yarn/cache/mime-db-npm-1.54.0-82cccb9d70-8d907917bc.zip/node_modules/mime-db/",\
+        "packageDependencies": [\
+          ["mime-db", "npm:1.54.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["mime-types", [\
+      ["npm:3.0.2", {\
+        "packageLocation": "./.yarn/cache/mime-types-npm-3.0.2-d6d24e27e8-35a0dd1035.zip/node_modules/mime-types/",\
+        "packageDependencies": [\
+          ["mime-db", "npm:1.54.0"],\
+          ["mime-types", "npm:3.0.2"]\
         ],\
         "linkType": "HARD"\
       }]\

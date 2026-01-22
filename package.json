@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "json5": "^2.2.3",
+    "mime-types": "^3.0.2",
     "serialport": "^13.0.0",
     "uWebSockets.js": "uNetworking/uWebSockets.js#v20.56.0",
     "winston": "^3.19.0",

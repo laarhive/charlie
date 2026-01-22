@@ -70,6 +70,24 @@
       state: 'active'
     },
 
+    {
+      id: 'ld2450_2',
+      publishAs: 'radar2',
+      domain: 'presence',
+      kind: 'ld2450Radar',
+      protocol: {
+        type: 'serial',
+        usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-93-LD2450A' },
+        baudRate: 256000,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        highWaterMark: 2400,
+      },
+      modes: ['rpi4', 'win11'],
+      state: 'active'
+    },
+
   ],
   core: {
     armingDelayMs: 1200,
