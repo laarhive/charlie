@@ -1,4 +1,9 @@
-const WS_URL = 'ws://127.0.0.1:8787/ws?presence'
+// radar/radar.js
+const DEFAULT_WS_URL = (() => {
+  const isHttps = location.protocol === 'https:'
+  const wsProto = isHttps ? 'wss:' : 'ws:'
+  return `${wsProto}//${location.host}/ws?presence`
+})()
 
 const COLORS = {
   1: '#58d1ff',
@@ -42,6 +47,11 @@ const withAlpha = function (hex, a) {
 const createState = function () {
   return {
     ws: null,
+    wsUrl: DEFAULT_WS_URL,
+
+    closedByUser: false,
+    reconnectAttempt: 0,
+    reconnectTimer: null,
 
     lastMsgTs: 0,
 
@@ -58,21 +68,20 @@ const createState = function () {
 
     // Trail config
     trailEnabled: true,
-    trailTimeoutMs: 1500,
+    trailTimeoutMs: 2000,
 
     // Debug counters
     rxFrames: 0,
     rxJsonOk: 0,
     rxBusOk: 0,
     rxTargetsOk: 0,
-    rxValidTargets: 0,
-    rxFirstFramesLogged: 0
+    rxValidTargets: 0
   }
 }
 
 const readControls = function (state, els) {
   const trailEnabled = !!els.trailEnabled.checked
-  const trailTimeoutMs = clamp(parseInt(els.trailTimeoutMs.value || '1500', 10), 50, 600000)
+  const trailTimeoutMs = clamp(parseInt(els.trailTimeoutMs.value || '2000', 10), 50, 600000)
   const fanAngleDeg = clamp(parseInt(els.fanAngleDeg.value || '120', 10), 30, 180)
   const maxDistanceMm = clamp(parseInt(els.maxDistanceMm.value || '6000', 10), 500, 50000)
 
@@ -169,11 +178,7 @@ const mmToPx = function (xMm, yMm, view) {
   return { px, py }
 }
 
-
 const fanEdgeAnglesCanvas = function (view) {
-  // Our fan is defined around "forward/up" (y+), with half-angle +/- fanAngleRad/2.
-  // Canvas arc angles are measured from +x axis, increasing clockwise.
-  // "Up" is -90deg (or 3π/2). The two edges are rotated around up.
   const up = -Math.PI / 2
   const half = view.fanAngleRad / 2
 
@@ -184,13 +189,8 @@ const fanEdgeAnglesCanvas = function (view) {
 }
 
 const arcBetween = function (ctx, cx, cy, r, a0, a1) {
-  // Ensure we always draw the short arc from a0 -> a1 clockwise
-  // (for our fan this is what we want)
   ctx.arc(cx, cy, r, a0, a1, false)
 }
-
-
-
 
 const pointInFan = function (xMm, yMm, view) {
   if (yMm < 0) {
@@ -226,7 +226,6 @@ const drawGrid = function (ctx, view) {
 
   const rays = 8
   for (let i = 0; i <= rays; i += 1) {
-    // i=0..rays spans -half..+half around "up"
     const t = (i / rays) - 0.5
     const a = (-Math.PI / 2) + t * view.fanAngleRad
 
@@ -241,7 +240,6 @@ const drawGrid = function (ctx, view) {
     ctx.stroke()
   }
 
-  // Fan edge rays (slightly stronger)
   const leftEndX = view.cx + Math.cos(aLeft) * (view.maxDistanceMm * view.scalePxPerMm)
   const leftEndY = view.cy + Math.sin(aLeft) * (view.maxDistanceMm * view.scalePxPerMm)
 
@@ -257,7 +255,6 @@ const drawGrid = function (ctx, view) {
   ctx.lineTo(rightEndX, rightEndY)
   ctx.stroke()
 
-  // Origin dot
   ctx.beginPath()
   ctx.fillStyle = 'rgba(231, 238, 252, 0.85)'
   ctx.arc(view.cx, view.cy, 3, 0, Math.PI * 2)
@@ -308,13 +305,13 @@ const drawCurrentDots = function (ctx, state, view) {
 
     ctx.beginPath()
     ctx.fillStyle = withAlpha(color, 1)
-    ctx.arc(px, py, 6, 0, Math.PI * 2)
+    ctx.arc(px, py, 8, 0, Math.PI * 2)
     ctx.fill()
 
     ctx.beginPath()
     ctx.strokeStyle = withAlpha('#000000', 0.35)
     ctx.lineWidth = 2
-    ctx.arc(px, py, 6, 0, Math.PI * 2)
+    ctx.arc(px, py, 8, 0, Math.PI * 2)
     ctx.stroke()
   }
 }
@@ -322,7 +319,6 @@ const drawCurrentDots = function (ctx, state, view) {
 const updateStatus = function (els, state) {
   const now = nowMs()
 
-  // Only recompute the status text once per second
   if (state.uiLastStatusRenderMs && (now - state.uiLastStatusRenderMs) < 1000) {
     els.status.textContent = state.uiCachedStatusText
     return
@@ -330,12 +326,16 @@ const updateStatus = function (els, state) {
 
   state.uiLastStatusRenderMs = now
 
-  const age = state.lastMsgTs ? (now - state.lastMsgTs) : null
+  const ageMs = state.lastMsgTs ? (now - state.lastMsgTs) : null
+  const ageSec = ageMs === null ? null : Math.floor(ageMs / 1000)
+
   const linkState = state.ws && state.ws.readyState === WebSocket.OPEN ? 'open' : 'closed'
-  const ageText = age === null ? 'n/a' : `${age}ms`
+  const ageText = ageSec === null ? 'n/a' : `${ageSec}s`
+
+  const url = (state.wsUrl || DEFAULT_WS_URL).trim()
 
   state.uiCachedStatusText =
-    `WS: ${linkState} | last msg age: ${ageText} | rxFrames: ${state.rxFrames} | jsonOk: ${state.rxJsonOk} | busOk: ${state.rxBusOk} | targetsOk: ${state.rxTargetsOk} | validTargets: ${state.rxValidTargets}`
+    `WS: ${linkState} | last msg age: ${ageText} | rxFrames: ${state.rxFrames} | jsonOk: ${state.rxJsonOk} | busOk: ${state.rxBusOk} | targetsOk: ${state.rxTargetsOk} | validTargets: ${state.rxValidTargets} | ${url}`
 
   els.status.textContent = state.uiCachedStatusText
 }
@@ -368,7 +368,6 @@ const handleWsFrame = function (state, ev) {
     return
   }
 
-  // Keep this strict, but now you can SEE if jsonOk increments but busOk doesn't
   if (msg.payload?.bus !== 'presence' || msg.payload?.event?.type !== 'presenceRaw:ld2450') {
     return
   }
@@ -399,28 +398,79 @@ const handleWsFrame = function (state, ev) {
   }
 }
 
-const connectWs = function (state, els) {
-  if (state.ws) {
-    try {
-      state.ws.close()
-    } catch (e) {}
+const clearReconnectTimer = function (state) {
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer)
+    state.reconnectTimer = null
+  }
+}
+
+const backoffMs = function (attempt) {
+  const min = 250
+  const max = 10_000
+  const exp = Math.min(max, min * Math.pow(2, attempt))
+  const jitter = exp * 0.25 * (Math.random() * 2 - 1)
+  return Math.max(min, Math.floor(exp + jitter))
+}
+
+const scheduleReconnect = function (state, els) {
+  if (state.closedByUser) {
+    return
   }
 
-  els.status.textContent = `Connecting: ${WS_URL}`
+  clearReconnectTimer(state)
+  const ms = backoffMs(state.reconnectAttempt)
 
-  const ws = new WebSocket(WS_URL)
+  els.status.textContent = `WS: reconnecting in ${ms}ms`
+
+  state.reconnectTimer = setTimeout(() => {
+    state.reconnectAttempt += 1
+    connectWs(state, els)
+  }, ms)
+}
+
+const disconnectWs = function (state) {
+  state.closedByUser = true
+  clearReconnectTimer(state)
+
+  if (!state.ws) {
+    return
+  }
+
+  try { state.ws.close() } catch (e) {}
+  state.ws = null
+}
+
+const connectWs = function (state, els) {
+  const url = (state.wsUrl || DEFAULT_WS_URL).trim()
+  if (!url) {
+    return
+  }
+
+  state.closedByUser = false
+  clearReconnectTimer(state)
+
+  if (state.ws) {
+    try { state.ws.close() } catch (e) {}
+    state.ws = null
+  }
+
+  els.status.textContent = 'WS: connecting'
+
+  const ws = new WebSocket(url)
   state.ws = ws
 
   ws.addEventListener('open', () => {
-    console.log('[radar] ws open')
+    state.reconnectAttempt = 0
   })
 
   ws.addEventListener('close', () => {
-    console.log('[radar] ws close')
+    state.ws = null
+    scheduleReconnect(state, els)
   })
 
-  ws.addEventListener('error', (e) => {
-    console.log('[radar] ws error', e)
+  ws.addEventListener('error', () => {
+    // close usually follows
   })
 
   ws.addEventListener('message', (ev) => {
@@ -434,6 +484,11 @@ const wireUi = function (state, els) {
   })
 
   els.reconnect.addEventListener('click', () => {
+    if (state.ws) {
+      disconnectWs(state)
+      return
+    }
+
     connectWs(state, els)
   })
 }
