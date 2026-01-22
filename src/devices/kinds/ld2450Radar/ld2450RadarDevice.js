@@ -56,7 +56,7 @@ export default class Ld2450RadarDevice extends BaseDevice {
     this.#decoder.on('frame', (frame) => {
       // frame.targets: 3 targets, each has xMm/yMm/speedCms/resolutionMm/valid
       // frame.present: boolean
-      console.log(frame.present, frame.targets[0])
+      this.#publishFrame(frame)
     })
 
     this.#decoder.on('error', (e) => {
@@ -162,6 +162,19 @@ export default class Ld2450RadarDevice extends BaseDevice {
         publishAs: this.getPublishAs(),
         base64: buf.toString('base64'),
         bytes: buf.length,
+      },
+    })
+  }
+
+  #publishFrame(frame) {
+    this.#domainBus.publish({
+      type: domainEventTypes.presence.ld2450,
+      ts: this.#clock.nowMs(),
+      source: 'ld2450RadarDevice',
+      payload: {
+        deviceId: this.getId(),
+        publishAs: this.getPublishAs(),
+        frames: frame,
       },
     })
   }
