@@ -54,13 +54,13 @@
     },
 
     {
-      id: 'ld2450_1',
-      publishAs: 'radar1',
+      id: 'LD2410A',
+      publishAs: 'LD2410A',
       domain: 'presence',
-      kind: 'ld2450Radar',
+      kind: 'ld2410Radar',
       protocol: {
         type: 'serial',
-        usbId: { vid: '10c4', pid: 'ea60', serial: 'LD2450-9F3A72C1' },
+        usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-76-LD2410A' },
         baudRate: 256000,
         dataBits: 8,
         stopBits: 1,
@@ -71,8 +71,8 @@
     },
 
     {
-      id: 'ld2450_2',
-      publishAs: 'radar2',
+      id: 'LD2450A',
+      publishAs: 'LD2450A',
       domain: 'presence',
       kind: 'ld2450Radar',
       protocol: {
