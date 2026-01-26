@@ -1,3 +1,4 @@
+// src/devices/kinds/ld2450Radar/ld2450Decode.js
 import { EventEmitter } from 'node:events'
 
 const REPORT_HEADER = Buffer.from([0xaa, 0xff, 0x03, 0x00])
