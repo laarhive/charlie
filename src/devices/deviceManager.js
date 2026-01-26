@@ -261,7 +261,7 @@ export class DeviceManager {
 
     try {
       inst.start?.()
-      this.#setState(id, 'active', { phase: 'start', ...detail })
+//      this.#setState(id, 'active', { phase: 'start', ...detail })
       return true
     } catch (e) {
       const msg = e?.message || String(e)

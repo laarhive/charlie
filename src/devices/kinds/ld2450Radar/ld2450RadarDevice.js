@@ -19,7 +19,15 @@ export default class Ld2450RadarDevice extends BaseDevice {
 
   #lastProtocolErrorMsg
   #lastProtocolErrorTs
+
   #decoder
+  #decoderOnFrame
+  #decoderOnError
+
+  #watchdogTimer
+  #lastDataTs
+  #dataTimeoutMs
+  #runtimeState
 
   constructor({ logger, clock, domainBus, mainBus, device, protocolFactory }) {
     super(device)
@@ -37,13 +45,13 @@ export default class Ld2450RadarDevice extends BaseDevice {
     this.#lastProtocolErrorMsg = null
     this.#lastProtocolErrorTs = 0
 
+    this.#watchdogTimer = null
+    this.#lastDataTs = 0
+    this.#dataTimeoutMs = Number(this._device()?.protocol?.dataTimeoutMs) || 1500
+    this.#runtimeState = 'unknown'
+
     if (!this.#mainBus?.publish) {
       throw new Error('ld2450Radar requires main bus for system:hardware reporting')
-    }
-
-    const initialPath = String(this._device()?.protocol?.serialPath || '').trim()
-    if (initialPath) {
-      this.rebind({ serialPath: initialPath })
     }
 
     this.#decoder = createLd2450StreamDecoder({
@@ -51,18 +59,31 @@ export default class Ld2450RadarDevice extends BaseDevice {
       includeRaw: false,
       maxBufferBytes: 8192,
       emitStats: false,
+      nowMs: () => this.#clock.nowMs(),
     })
 
-    this.#decoder.on('frame', (frame) => {
-      // frame.targets: 3 targets, each has xMm/yMm/speedCms/resolutionMm/valid
-      // frame.present: boolean
+    this.#decoderOnFrame = (frame) => {
+      if (this.isBlocked()) return
       this.#publishFrame(frame)
-    })
+    }
 
-    this.#decoder.on('error', (e) => {
-      console.warn('ld2450 decode:', e)
-    })
+    this.#decoderOnError = (e) => {
+      this.#logger?.error?.('ld2450_decode_error', {
+        deviceId: this.getId(),
+        code: e?.code,
+        message: e?.message,
+        droppedBytes: e?.droppedBytes,
+        count: e?.count,
+      })
+    }
 
+    this.#decoder.on('frame', this.#decoderOnFrame)
+    this.#decoder.on('error', this.#decoderOnError)
+
+    const initialPath = String(this._device()?.protocol?.serialPath || '').trim()
+    if (initialPath) {
+      this.rebind({ serialPath: initialPath })
+    }
   }
 
   rebind({ serialPath }) {
@@ -72,8 +93,7 @@ export default class Ld2450RadarDevice extends BaseDevice {
     this.#teardown()
 
     if (this.#serialPath === null) {
-      this._setLastError('usb_missing')
-      this.#publishHardwareState('degraded', this.getLastError())
+      this.#setRuntimeState('degraded', 'usb_missing')
       return
     }
 
@@ -87,8 +107,7 @@ export default class Ld2450RadarDevice extends BaseDevice {
     if (this.#duplex) return
 
     if (!this.#serialPath) {
-      this._setLastError('usb_missing')
-      this.#publishHardwareState('degraded', this.getLastError())
+      this.#setRuntimeState('degraded', 'usb_missing')
       return
     }
 
@@ -106,7 +125,10 @@ export default class Ld2450RadarDevice extends BaseDevice {
 
     this.#unsub = this.#duplex.subscribe((buf) => this.#onData(buf))
 
-    this.#publishHardwareState('active', null)
+    this.#lastDataTs = this.#clock.nowMs()
+    this.#startWatchdog()
+
+    this.#setRuntimeState('active', null)
   }
 
   _stopImpl(reason) {
@@ -114,6 +136,8 @@ export default class Ld2450RadarDevice extends BaseDevice {
 
     if (reason !== 'dispose') {
       const msg = reason ? `blocked: ${String(reason)}` : 'blocked'
+      this.#runtimeState = 'manualBlocked'
+      this._setLastError(msg)
       this.#publishHardwareState('manualBlocked', msg)
     }
   }
@@ -145,12 +169,15 @@ export default class Ld2450RadarDevice extends BaseDevice {
   #onData(buf) {
     if (this.isBlocked()) return
 
+    this.#lastDataTs = this.#clock.nowMs()
+
+    if (this.#runtimeState !== 'active') {
+      this.#setRuntimeState('active', null)
+    }
+
     const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf)
     this.#decoder.push(b)
-    //this.#publishRaw(b)
   }
-
-
 
   #publishRaw(buf) {
     this.#domainBus.publish({
@@ -174,7 +201,7 @@ export default class Ld2450RadarDevice extends BaseDevice {
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),
-        frames: frame,
+        frame,
       },
     })
   }
@@ -190,7 +217,8 @@ export default class Ld2450RadarDevice extends BaseDevice {
     this.#lastProtocolErrorMsg = msg
     this.#lastProtocolErrorTs = now
 
-    this._setLastError(msg || 'usb_serial_error')
+    const errMsg = msg || 'usb_serial_error'
+    this._setLastError(errMsg)
 
     if (!duplicate) {
       this.#logger?.error?.('device_protocol_error', {
@@ -200,10 +228,51 @@ export default class Ld2450RadarDevice extends BaseDevice {
       })
     }
 
-    this.#publishHardwareState('degraded', this.getLastError())
+    if (!this.isBlocked() && !this.isDisposed()) {
+      this.#setRuntimeState('degraded', this.getLastError())
+    }
+  }
+
+  #startWatchdog() {
+    if (this.#watchdogTimer) return
+
+    const interval = Math.min(250, Math.max(100, Math.floor(this.#dataTimeoutMs / 4)))
+
+    this.#watchdogTimer = setInterval(() => {
+      this.#tickWatchdog()
+    }, interval)
+  }
+
+  #stopWatchdog() {
+    if (!this.#watchdogTimer) return
+
+    clearInterval(this.#watchdogTimer)
+    this.#watchdogTimer = null
+  }
+
+  #tickWatchdog() {
+    if (this.isBlocked() || this.isDisposed()) return
+    if (!this.#duplex) return
+
+    const now = this.#clock.nowMs()
+    const age = now - this.#lastDataTs
+
+    if (age > this.#dataTimeoutMs) {
+      if (this.#runtimeState !== 'degraded') {
+        this.#setRuntimeState('degraded', `no_data_${this.#dataTimeoutMs}ms`)
+      }
+    }
+  }
+
+  #setRuntimeState(state, error) {
+    this.#runtimeState = state
+    this._setLastError(error || null)
+    this.#publishHardwareState(state, this.getLastError())
   }
 
   #teardown() {
+    this.#stopWatchdog()
+
     if (this.#unsub) {
       this.#unsub()
       this.#unsub = null
@@ -214,6 +283,14 @@ export default class Ld2450RadarDevice extends BaseDevice {
     }
 
     this.#duplex = null
+
+    if (this.#decoder?.reset) {
+      this.#decoder.reset()
+    }
+
+    this.#lastDataTs = 0
+    this.#lastProtocolErrorMsg = null
+    this.#lastProtocolErrorTs = 0
   }
 
   #publishHardwareState(state, error) {
