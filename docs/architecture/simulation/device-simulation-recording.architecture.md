@@ -1,369 +1,329 @@
-<!-- docs/architecture/device-simulation-recording.md -->
-# Device Simulation, Recording, and Playback Architecture
+<!-- docs/architecture/simulation/device-simulation-recording.md -->
+# Device Simulation Recording and Playback (Recorder / Player)
 
-This document defines the **device injection**, **recording**, and **playback** model in Charlie Core.
-It formalizes responsibilities, contracts, storage formats, and validation rules.
+This document defines the **recording and playback system** used for device-level
+simulation in Charlie Core.
+
+This document focuses on:
+- Recorder behavior
+- Player behavior
+- interaction points with **domain buses** and **DeviceManager.inject**
+
+It intentionally does **not** define:
+- device internal behavior
+- device lifecycle or blocking semantics
+- DeviceManager responsibilities beyond injection
 
 ---
 
-## 1. Design scope
+## 1. Scope and intent
 
 This system enables:
 
-- injecting inputs directly into devices (simulation / testing)
-- recording real device outputs with timing information
-- replaying recorded device behavior into one or more devices
-- composing and merging multiple recordings deterministically
+- recording device-originated events from **domain buses**
+- preserving relative timing between events
+- replaying recorded behavior by injecting payloads back into devices
+- controlling playback (speed, pause, resume)
 
-This system is device-level:
-- it operates below domain controllers
-- it records device outputs from domain buses
-- it replays by calling device injection
+The system operates **below domain controllers** and **above devices**.
 
 ---
 
-## 2. Device injection contract
+## 2. Interaction surfaces (owned dependencies)
 
-### 2.1 `Device.inject(payload)`
+Recorder and Player rely on the following existing surfaces.
 
-All devices must implement:
+### 2.1 Domain buses
+
+- Recorder subscribes to domain buses (`presence`, `vibration`, `button`, etc.)
+- The `main` bus is **explicitly excluded**
+- Buses are enumerated at session start; no dynamic bus discovery
+
+Observed event shape (as observed, not enforced):
 
 ```js
-inject(payload) -> { ok: true } | { ok: false, error: string }
+{
+  type: string,
+  ts: number,
+  source: string,
+  payload: {
+    deviceId: string,
+    publishAs?: string,
+    ...deviceNativeFields
+  }
+}
 ```
 
-#### Rules
-
-- `payload` is device-native:
-  - object, number, string, boolean, or null
-  - **`undefined` is considered malformed**
-  - not a command string
-- the device does not parse commands
-- the device must not throw for expected cases
-
-#### State independence
-
-`inject(payload)`:
-- works regardless of device runtime state:
-  - `active`
-  - `manualBlocked`
-  - `degraded`
-- must not perform hardware IO when `manualBlocked`
-  - must not start protocol subprocesses
-  - must not open GPIO lines or device files
-  - must not write to hardware outputs
-  - must not attach real interrupt listeners
-- may update internal simulated state when `manualBlocked`
-- may emit domain events when `manualBlocked` (device-specific)
-
-#### Lifecycle interaction
-
-- `inject(payload)` **must not create or start a device instance**
-- device instances are created only via:
-  - `DeviceManager.start()`
-  - `DeviceManager.unblock(deviceId)`
-- if a device instance does not yet exist, injection must not implicitly initialize it
-
-#### Error handling
-
-- malformed payloads:
-  - optional validation
-  - recommended error: `{ ok: false, error: 'INVALID_INJECT_PAYLOAD' }`
-- all other expected cases:
-  - `{ ok: true }`
-
-Errors:
-- must use stable error codes
-- must not throw for expected failure modes
+Recorder does not interpret event semantics.
 
 ---
 
-## 3. External input suppression rules
+### 2.2 DeviceManager injection
 
-### 3.1 Real protocol input (hardware / virt)
-
-When `manualBlocked`:
-- external protocol input must be suppressed
-- interrupts, callbacks, or protocol listeners must not emit domain events
-- protocol subscriptions may be detached or ignored
-
-### 3.2 Injection vs real input
-
-| Input source | Allowed when blocked | Notes |
-|-------------|---------------------|------|
-| Real hardware | no | suppressed |
-| Virtual protocol input | no | suppressed |
-| `inject(payload)` | yes | always allowed |
-
-Injection is the **only supported simulation/control channel** guaranteed to remain active while blocked.
-
----
-
-## 4. Injection routing responsibility
-
-### Decision
-
-- DeviceManager is involved in injection routing.
-- DeviceManager owns the device registry and routes injection to the correct device instance.
-
-Injection tooling (CLI, tests, recorder/player) should call:
+Player injects events exclusively via:
 
 ```js
 deviceManager.inject(deviceId, payload)
 ```
 
-#### DeviceManager.inject resolution rules
+- `deviceId` is resolved from recorded data
+- `payload` is the recorded payload (verbatim)
 
-DeviceManager must resolve injection requests in the following order:
-
-1. **Device not present in configuration or filtered out by mode**  
-   → `{ ok: false, error: 'DEVICE_NOT_FOUND' }`
-
-2. **Device present but instance not yet created**  
-   (e.g. configured as `manualBlocked` at startup, or manager not started)  
-   → `{ ok: false, error: 'DEVICE_NOT_READY' }`
-
-3. **Device instance exists**  
-   → forward payload verbatim to `device.inject(payload)` and return its result
-
-#### Responsibilities
-
-DeviceManager must:
-- locate the device instance by id
-- forward the payload verbatim to `device.inject(payload)`
-- not interpret payload content
-- not implicitly create or start device instances during injection
-
-This keeps:
-- one registry (no duplicated lookup logic)
-- consistent mode filtering (devices outside mode are not injectable)
-- explicit lifecycle ownership in one place
+Recorder and Player do not start, stop, block, or unblock devices.
 
 ---
 
-## 5. Simulation controllers
+## 3. Session model
 
-Two components are defined:
+Recorder and Player are **session-scoped**:
 
-- Recorder
-- Player
+- one Recorder instance per recording session
+- one Player instance per playback session
+- no global always-on recorder or player
 
-They share a storage format but have separate responsibilities.
-
-Suggested location:
-```text
-src/sim/recording/
-  recorder.js
-  player.js
-```
+Each session owns:
+- its subscriptions
+- its timing state
+- its selection filters
+- its lifecycle (`start`, `stop`, etc.)
 
 ---
 
-## 6. Recorder
+## 4. Recorder
 
-### 6.1 Responsibilities
+### 4.1 Responsibilities
 
 Recorder:
-- subscribes to domain buses
-- records device output events
-- records relative timing (`dtMs`)
-- supports one or multiple devices simultaneously
 
-Recorder does not:
-- normalize events
+- subscribes to all configured **domain buses**
+- records events emitted by **selected devices only**
+- records relative timing per device (`dtMs`)
+- produces a single recording artifact per session
+
+Recorder does **not**:
+
+- record main-bus events
+- record non-device events
+- normalize, reinterpret, or mutate payloads
 - publish events
 
-### 6.2 What is recorded
-
-Recorder captures device-level outputs as close as possible to device behavior:
-- bus name
-- raw event object (type/source/payload)
-- relative timing (`dtMs`)
-
 ---
 
-## 7. Player
+### 4.2 Device selection
 
-### 7.1 Responsibilities
-
-Player:
-- loads recordings
-- merges tracks at runtime
-- reconstructs timestamps during playback
-- injects payloads into devices via `deviceManager.inject(deviceId, payload)`
-
-Player does not:
-- assume devices are active
-- interpret payload semantics
-
-### 7.2 Timestamp reconstruction
-
-For each recorded event:
-- playback scheduling uses `dtMs` (optionally scaled by speed)
-- injected timestamp is computed as:
+Recorder is instantiated with an explicit allowlist:
 
 ```text
-injectTsMs = startTimeMs + dtMs
+recordedDeviceIds: string[]
 ```
 
-`startTimeMs` can be:
-- current time
-- recorded time
-- arbitrary caller-supplied time
+Only events where:
+
+```text
+event.payload.deviceId ∈ recordedDeviceIds
+```
+
+are recorded.
 
 ---
 
-## 8. Recording storage format
+### 4.3 Empty tracks
 
-This format is designed to:
-- preserve raw device outputs
-- support multiple device tracks
-- support future merging
+For every requested `deviceId`:
 
-### 8.1 Top-level structure
+- a device track **must exist**
+- if no events were observed, the track’s `events[]` array is empty
+
+This guarantees structural consistency across recordings.
+
+---
+
+### 4.4 Timing model
+
+- Timing is computed using the recorder’s clock at observation time
+- `dtMs` is relative to the **first recorded event of that device**
+- `dtMs` is monotonic per device track
+
+No global ordering across devices is assumed at record time.
+
+---
+
+### 4.5 Recorded data
+
+For each event, Recorder stores:
+
+- the bus name
+- the raw event object as observed
+- relative timing (`dtMs`)
+
+Payloads are stored verbatim and must be JSON-serializable.
+
+---
+
+## 5. Player
+
+### 5.1 Responsibilities
+
+Player:
+
+- loads a recording
+- selects which device tracks to play
+- reconstructs timing during playback
+- injects recorded payloads into devices
+- supports speed scaling and pause/resume
+
+Player does **not**:
+
+- publish events directly to buses
+- interpret payload semantics
+- manage device lifecycle or state
+
+---
+
+### 5.2 Playback injection mapping
+
+For each recorded event:
+
+- `deviceId` is taken from the track key
+- injected payload is exactly:
+
+```text
+recordedEvent.raw.payload
+```
+
+Injection call:
+
+```js
+deviceManager.inject(deviceId, recordedEvent.raw.payload)
+```
+
+No transformation or normalization is performed.
+
+> Note: Devices participating in recording/playback are expected to accept,
+> via `inject(payload)`, the same payload shapes they emit on domain buses.
+
+> Dependency note:
+> Recorder and Player rely on the **inject/emit parity rule** defined in:
+>
+> `docs/architecture/devices/device-inject-parity.md`
+>
+> Devices participating in recording/playback are expected to accept, via
+> `inject(payload)`, the same payload shapes they emit on domain buses.
+
+---
+
+### 5.3 Timing reconstruction
+
+Playback time is computed as:
+
+```text
+injectTimeMs = playbackStartMs + (dtMs / speed)
+```
+
+Where:
+- `speed = 1` → real-time
+- `speed > 1` → accelerated playback
+- `speed < 1` → slowed playback
+
+---
+
+### 5.4 Pause and resume
+
+- `pause()` stops scheduling future injections
+- `resume()` continues from the same logical playback position
+- `stop()` aborts playback and clears all pending timers
+
+Playback order is deterministic:
+- ordered by scheduled injection time
+- ties are broken lexicographically by `deviceId`
+
+---
+
+## 6. Recording format (canonical)
 
 ```json
 {
   "format": "charlie.recording",
   "version": 1,
-  "meta": { ... },
-  "schema": { ... },
-  "devices": { ... }
-}
-```
 
-### 8.2 Meta section
+  "meta": {
+    "recordedAtMs": 1700000000000,
+    "mode": "rpi4",
+    "source": "hw",
+    "requestedDeviceIds": ["LD2450A", "LD2410A"]
+  },
 
-```json
-"meta": {
-  "recordedAtMs": 1700000000000,
-  "mode": "rpi4",
-  "source": "hw",
-  "deviceSnapshot": [
-    { "id": "buttonGpio1", "kind": "buttonEdge", "domain": "button", "state": "active" },
-    { "id": "gpioWatchdog1", "kind": "gpioWatchdogLoopback", "domain": "main", "state": "active" }
-  ]
-}
-```
+  "schema": {
+    "eventFormat": "domain-bus-raw",
+    "payloadFormat": "device-native"
+  },
 
-Fields:
-- `recordedAtMs`: absolute timestamp at start of recording
-- `mode`: activation profile used
-- `source`: label such as `hw`, `virt`, `replay`, `synthetic`
-- `deviceSnapshot`: device manager listing at record start (active profile)
-
-### 8.3 Schema section (canonical definition)
-
-```json
-"schema": {
-  "eventFormat": "domain-bus-raw",
-  "payloadFormat": "device-native",
-  "canon": {
-    "enabled": true
-  }
-}
-```
-
-This section exists so the format can evolve without guessing.
-
-### 8.4 Per-device tracks
-
-Events are stored per device, strictly ordered by time.
-
-```json
-"devices": {
-  "buttonGpio1": {
-    "bus": "button",
-    "source": {
-      "deviceId": "buttonGpio1",
-      "publishAs": "button1",
-      "kind": "buttonEdge"
+  "devices": {
+    "LD2450A": {
+      "bus": "presence",
+      "events": [
+        {
+          "dtMs": 0,
+          "raw": {
+            "bus": "presence",
+            "ts": 1769802919860,
+            "source": "ld2450RadarDevice",
+            "payload": {
+              "deviceId": "LD2450A",
+              "publishAs": "LD2450A",
+              "frame": { "...": "..." }
+            }
+          }
+        }
+      ]
     },
-    "canonSchema": "button.edge.v1",
-    "events": [
-      {
-        "dtMs": 0,
-        "raw": {
-          "type": "buttonRaw:edge",
-          "source": "buttonEdgeDevice",
-          "payload": { "deviceId": "buttonGpio1", "publishAs": "button1", "edge": "press" }
-        },
-        "canon": { "edge": "press" }
-      }
-    ]
+
+    "LD2410A": {
+      "bus": "presence",
+      "events": []
+    }
   }
 }
 ```
 
 Rules:
-- `events[]` must be monotonic by `dtMs` within a track
-- `raw` must be recorded as observed (no normalization)
-- `canon` is optional; if present it must match `canonSchema`
+- one track per requested device
+- tracks may have empty `events[]`
+- per-device `dtMs` is strictly monotonic
+- injected payloads are exactly what was recorded
 
 ---
 
-## 9. Playback and merging semantics
+## 7. Validation rules
 
-### 9.1 Multi-device playback
-
-Player maintains a cursor per track and always selects the next earliest event.
-
-Assumption:
-- each track is strictly ordered by `dtMs`
-
-### 9.2 Merging recordings (future)
-
-Merging is supported by treating each device track as an independent stream.
-
-Future extension:
-- allow per-track `offsetMs` to shift a recording relative to another
-- combine by concatenating tracks and applying offsets at playback time
-
----
-
-## 10. Validation rules
-
-### 10.1 Recording validation
+### 7.1 Recorder validation
 
 Recorder must ensure:
-- per-device `dtMs` is monotonic
-- `raw` events are JSON-serializable
-- track identity fields are present (`deviceId`, `publishAs`, `kind`, `bus`)
 
-### 10.2 Playback validation
+- only selected devices are recorded
+- all requested device tracks exist
+- per-device `dtMs` is monotonic
+- raw events are JSON-serializable
+
+---
+
+### 7.2 Player validation
 
 Player must ensure:
-- target devices exist in the current mode (or return `DEVICE_NOT_FOUND`)
-- injection is routed through DeviceManager
-- devices do not crash playback loop (devices must not throw for expected inject payloads)
 
-Invalid inject payload handling:
-- device returns `{ ok: false, error: 'INVALID_INJECT_PAYLOAD' }` (recommended)
+- target devices exist in the current runtime configuration
+- injection is routed via `DeviceManager.inject`
+- injection errors do not crash the playback loop
 
 ---
 
-## 11. Device requirements summary
+## 8. Non-goals
 
-Every device must:
-- implement `inject(payload)`
-- accept inject regardless of runtime state
-- suppress real input when `manualBlocked`
-- not throw for expected inject payloads
-- avoid hardware IO when `manualBlocked`
+This system does **not** define:
 
-Every device may:
-- validate inject payloads (light structural validation recommended)
-- simulate internal state when blocked
-- emit domain events on inject (device-specific)
-
----
-
-## 12. Non-goals
-
-Out of scope:
-- semantic normalization recording
-- core rule recording
-- compression/binary formats
-- persistence beyond JSON
-
----
+- device behavior
+- device blocking semantics
+- DeviceManager lifecycle rules
+- controller-level or rule-level recording
+- semantic normalization
+- binary or compressed formats
