@@ -3,7 +3,7 @@ import { deviceError } from '../deviceError.js'
 import ButtonEdgeDevice from './buttonEdge/buttonEdgeDevice.js'
 import GpioWatchdogLoopbackDevice from './gpioWatchdogLoopback/gpioWatchdogLoopbackDevice.js'
 import Ld2450RadarDevice from './ld2450Radar/ld2450RadarDevice.js'
-import Ld2410RadarDevice from './ld2410/ld2410RadarDevice.js'
+import Ld2410RadarDevice from './ld2410Radar/ld2410RadarDevice.js'
 
 export const makeDeviceInstance = function makeDeviceInstance({ logger, clock, buses, device, protocolFactory }) {
   const domain = String(device?.domain || '').trim()
