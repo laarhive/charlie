@@ -6,8 +6,8 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
                                                                               makeHarness,
                                                                             }) {
   const hasTrigger = (h) => typeof h.trigger === 'function'
-  const isInjectCapable = (h) => typeof h.device?.inject === 'function'
   const expectsDomainEvents = (h) => h.expectsDomainEvents !== false
+  const participatesInRecording = (h) => h.participatesInRecording !== false
 
   describe(`${name} – conformance`, function () {
     it('start() publishes at least one system:hardware event', function () {
@@ -167,13 +167,8 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
       h.device.dispose()
     })
 
-    it('inject(undefined) returns INVALID_INJECT_PAYLOAD (before start) for inject-capable devices', function () {
+    it('inject(undefined) returns INVALID_INJECT_PAYLOAD (before start)', function () {
       const h = makeHarness()
-
-      if (typeof h.device?.inject !== 'function') {
-        h.device.dispose()
-        return
-      }
 
       const res = h.device.inject(undefined)
 
@@ -184,13 +179,8 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
       h.device.dispose()
     })
 
-    it('inject(undefined) returns INVALID_INJECT_PAYLOAD (after start) for inject-capable devices', function () {
+    it('inject(undefined) returns INVALID_INJECT_PAYLOAD (after start)', function () {
       const h = makeHarness()
-
-      if (typeof h.device?.inject !== 'function') {
-        h.device.dispose()
-        return
-      }
 
       h.device.start()
 
@@ -200,6 +190,31 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
       expect(res.ok).to.equal(false)
       expect(res.error).to.equal('INVALID_INJECT_PAYLOAD')
 
+      h.device.dispose()
+    })
+
+    it('inject accepts emitted payload (inject–emit parity)', function () {
+      const h = makeHarness()
+      if (!expectsDomainEvents(h)) this.skip()
+      if (!participatesInRecording(h)) this.skip()
+      if (!hasTrigger(h)) this.skip()
+
+      const domainEvents = []
+      const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
+
+      h.device.start()
+
+      h.trigger()
+
+      expect(domainEvents.length).to.be.greaterThan(0)
+
+      const emitted = domainEvents[0].payload
+      const res = h.device.inject(emitted)
+
+      expect(res).to.be.an('object')
+      expect(res.ok).to.equal(true)
+
+      unsub()
       h.device.dispose()
     })
   })
