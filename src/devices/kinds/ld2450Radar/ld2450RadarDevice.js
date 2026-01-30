@@ -143,24 +143,44 @@ export default class Ld2450RadarDevice extends BaseDevice {
   }
 
   inject(payload) {
-    if (!payload) return err(deviceErrorCodes.invalidInjectPayload)
+    if (payload === undefined || payload === null) {
+      return err(deviceErrorCodes.invalidInjectPayload)
+    }
 
+    // Allow raw bytes injection (handy for tests and replay)
     if (Buffer.isBuffer(payload)) {
       this.#publishRaw(payload)
       return ok()
     }
 
+    // Accept emitted payload shapes (inject–emit parity):
+    // - { deviceId, publishAs, frame }
+    // - { deviceId, publishAs, base64, bytes }
+    // plus tolerate extra fields.
     if (typeof payload === 'object') {
+      // 1) Frame payload
+      if (payload.frame && typeof payload.frame === 'object') {
+        this.#publishFrame(payload.frame)
+        return ok()
+      }
+
+      // 2) Raw/base64 payload
       const b64 = payload.base64
       if (typeof b64 === 'string' && b64.length > 0) {
         try {
           const buf = Buffer.from(b64, 'base64')
+          if (buf.length === 0) {
+            return err(deviceErrorCodes.invalidInjectPayload)
+          }
+
           this.#publishRaw(buf)
           return ok()
         } catch {
           return err(deviceErrorCodes.invalidInjectPayload)
         }
       }
+
+      return err(deviceErrorCodes.invalidInjectPayload)
     }
 
     return err(deviceErrorCodes.invalidInjectPayload)
