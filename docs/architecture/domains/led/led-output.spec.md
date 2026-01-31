@@ -3,8 +3,7 @@
 This document defines the **LED output architecture** for Charlie Core,
 incorporating effect factories, scheduling, and priority-based arbitration.
 
-It builds on the existing **Device Contract** and **inject/emit parity** rules
-and applies semantic control via buses with device-level execution.
+It builds on the existing [Device Contract](../../devices/device.contract.md) and applies semantic control via buses with device-level execution.
 
 ---
 
