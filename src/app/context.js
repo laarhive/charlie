@@ -14,8 +14,6 @@ import ControlService from './controlService.js'
 
 import DeviceManager from '../devices/deviceManager.js'
 import BusStream from '../transport/ws/busStream.js'
-import makeWsRpcHandlers from '../transport/ws/wsRpcHandlers.js'
-import WsRpcRouter from '../transport/ws/wsRpcRouter.js'
 
 export const makeContext = function makeContext({ logger, config, mode }) {
   const clock = new Clock()
@@ -73,22 +71,12 @@ export const makeContext = function makeContext({ logger, config, mode }) {
 
   const busStream = new BusStream({ logger, buses })
 
-  const rpcRouter = new WsRpcRouter({ logger })
-  const ok = rpcRouter.makeOk()
-  const err = rpcRouter.makeErr()
-
-  for (const h of makeWsRpcHandlers({ getStatus: () => core.getSnapshot(), getConfig: () => config, control, ok, err })) {
-    rpcRouter.use(h)
-  }
-
   const webServer = new WebServer({
     logger,
     buses,
     busStream,
-    rpcRouter,
     port: serverPort,
   })
-
 
   webServer.start()
 

@@ -1,86 +1,167 @@
 <!-- docs/cli.md -->
 # CLI
 
-The CLI can run locally (interactive) or remotely (WebSocket).
+Charlie provides a **local interactive CLI** that runs **inside the daemon process**.
 
-## Process roles
+Remote usage is done via **SSH + tmux**, preserving the exact same CLI behavior.
 
-### `--run daemon`
-Starts the runtime:
+---
+
+## Modes of operation
+
+Charlie always runs as a daemon.  
+The CLI is **optional** and enabled with `--interactive`.
+
+---
+
+### 1. Daemon only (no CLI)
+
+Use this for:
+- systemd services
+- headless production runs
+- unattended operation
+
+```bash
+node src/app/appRunner.js --mode rpi4
+```
+
+The process:
 - loads config
-- activates devices for `--mode`
-- starts core
-- exposes WebSocket API
+- starts devices and core
+- starts web server (bus streaming, APIs)
+- **does not attach stdin/stdout**
 
-### `--run cli`
-Starts a WS CLI client that connects to a running daemon.
+---
 
-## Local vs remote
+### 2. Interactive daemon (CLI enabled)
 
-### Local CLI (`--interactive`)
-Example:
+Use this for:
+- local development
+- Windows usage
+- debugging on Linux
+
 ```bash
-node src/app/appRunner.js --run daemon --mode win11 --interactive
+node src/app/appRunner.js --mode rpi4 --interactive
 ```
 
-Local-only features:
-- clock control (`clock ...`)
-- config reload (`config load ...`)
+This starts:
+- the full daemon
+- **plus an interactive CLI on stdin/stdout**
 
-### Remote CLI (`--run cli`)
-Example:
+You get:
+- readline UX
+- tab completion
+- prompt state (inject on/off)
+- local-only commands (clock, config reload)
+
+---
+
+## Remote usage (Linux / Raspberry Pi)
+
+There is **no remote CLI protocol**.
+
+Remote control is done by running the daemon **inside an SSH session**.
+
+### Recommended: SSH + tmux
+
+This provides:
+- a persistent interactive CLI
+- reconnection after SSH drops
+- identical behavior to local usage
+
+#### Example workflow
+
 ```bash
-node src/app/appRunner.js --run cli --host 127.0.0.1 --port 8787
+ssh pi@rpi4
+tmux new -s charlie
+node src/app/appRunner.js --mode rpi4 --interactive
 ```
 
-Remote limitations:
-- no config load from disk
-- no local clock manipulation
-
-## Activation profile (`--mode`)
-
-`--mode` selects an activation profile (e.g. `rpi4`, `win11`).
-
-A device is loaded only if `device.modes` includes the current mode.
-
-## Command categories
-
-### 1) Observability
-Examples:
+Detach:
 ```
-tap main on
-tap all status
+Ctrl-b d
+```
+
+Reattach later:
+```bash
+tmux attach -t charlie
+```
+
+The CLI state (prompt, history, completion) is preserved.
+
+---
+
+## Windows usage
+
+On Windows:
+- always run interactively
+- typically from CMD, PowerShell, or WebStorm
+
+```bash
+node src/app/appRunner.js --mode virt --interactive
+```
+
+---
+
+## CLI usage
+
+The CLI is **self-documenting**.
+
+### Getting help
+```
+help
+```
+
+Always shows the current, authoritative command list.
+
+---
+
+### Example commands
+
+Inspect state:
+```
 core state
 device list
 ```
 
-### 2) Semantic injection (core testing)
-Publishes semantic events directly to main bus. Gated by `inject on|off`.
-
-Examples:
+Enable semantic injection:
 ```
 inject on
+inject status
+```
+
+Simulate events:
+```
 presence front on
 vibration high
 button short
 ```
 
-Semantic injection uses `coreRole` from `config.core.injectDefaults`.
-
-### 3) Device injection (device testing / virtual control)
-Routes a generic payload to a device kind.
-
-Examples:
+Device testing:
 ```
 device inject buttonVirt1 press 200
-device inject buttonVirt1 {"type":"press","ms":200}
 ```
 
-Devices decide how to interpret the payload.
+Local-only (when interactive):
+```
+clock now
+config load defaultConfig.json5
+```
 
-## Device commands
+For the full and up-to-date command list, **use `help` inside the CLI**.
 
-- `device list`
-- `device block <deviceId>`
-- `device unblock <deviceId>`
-- `device inject <deviceId> <payload...>`
+---
+
+## Design notes
+
+- The CLI runs **in-process**
+- stdin/stdout is the only control surface
+- No network transport is involved
+- SSH + tmux provides remote access without duplication
+
+This guarantees:
+- identical local and remote behavior
+- minimal architecture
+- no drift between documentation and implementation
+
+WebSocket RPC (for Web UI) is a **separate concern** and does not affect the CLI.

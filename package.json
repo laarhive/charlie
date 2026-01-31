@@ -5,9 +5,8 @@
   "packageManager": "yarn@4.12.0",
   "private": true,
   "scripts": {
-    "start:daemon": "node src/app/appRunner.js --mode hw",
-    "start:virt": "node src/app/appRunner.js --mode virt",
-    "cli": "node src/cli/cliRunner.js --host 127.0.0.1 --port 8787",
+    "start:daemon": "node src/app/appRunner.js --mode rpi4 --port 8787",
+    "start:win11:interactive": "node src/app/appRunner.js --mode win11 --port 8787 --interactive",
     "test": "mocha \"test/**/*.spec.js\""
   },
   "devDependencies": {

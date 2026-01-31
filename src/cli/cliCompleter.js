@@ -51,18 +51,6 @@ const listDeviceIds = function listDeviceIds(getContext, prefix) {
   }
 }
 
-const listBuses = function listBuses(getContext, prefix) {
-  try {
-    const ctx = getContext()
-    const keys = ctx?.buses ? Object.keys(ctx.buses) : []
-    const buses = uniq([...keys, 'all'])
-
-    return filterPrefix(buses, prefix)
-  } catch {
-    return filterPrefix(['all'], prefix)
-  }
-}
-
 const listZones = function listZones(getContext, prefix) {
   try {
     const ctx = getContext()
@@ -81,7 +69,7 @@ const listZones = function listZones(getContext, prefix) {
   - { options: string[] }               -> suggests options
   - { dynamic: (ctx, prefix) => [] }    -> suggests dynamic options
   - { children: { [token]: node }, options?: string[] } -> nested routing
-  - { sequence: [node, node, ...] }     -> fixed positions by depth (e.g. presence <zone> <on|off>)
+  - { sequence: [node, node, ...] }     -> fixed positions by depth
 */
 const optionsNode = function optionsNode(options) {
   return { options: options || [] }
@@ -110,11 +98,6 @@ const commandTree = childrenNode({
   exit: optionsNode([]),
 
   inject: optionsNode(['on', 'off', 'status']),
-
-  tap: sequenceNode([
-    dynamicNode((getContext, prefix) => listBuses(getContext, prefix)),
-    optionsNode(['on', 'off', 'status']),
-  ]),
 
   presence: sequenceNode([
     dynamicNode((getContext, prefix) => listZones(getContext, prefix)),
@@ -145,16 +128,6 @@ const commandTree = childrenNode({
       ]),
     ]),
   }, ['list', 'block', 'unblock', 'inject']),
-
-  driver: childrenNode({
-    list: optionsNode([]),
-    enable: sequenceNode([
-      dynamicNode((getContext, prefix) => listDeviceIds(getContext, prefix)),
-    ]),
-    disable: sequenceNode([
-      dynamicNode((getContext, prefix) => listDeviceIds(getContext, prefix)),
-    ]),
-  }, ['list', 'enable', 'disable']),
 
   clock: childrenNode({
     now: optionsNode([]),

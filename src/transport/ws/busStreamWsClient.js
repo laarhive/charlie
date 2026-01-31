@@ -1,4 +1,4 @@
-// src/app/charlieStreamClient.js
+// src/transport/ws/busStreamWsClient.js
 import WebSocket from 'ws'
 
 /**
@@ -24,14 +24,13 @@ import WebSocket from 'ws'
  *
  * Notes:
  * - This client is streaming-only. It does not support RPC requests.
- * - For RPC, use `CharlieRpcClient` on `/rpc`.
  *
  * @example
  * const stream = new CharlieStreamClient({ logger, url: 'ws://127.0.0.1:8787/ws?all' })
  * stream.onBusEvent(({ bus, event }) => console.log(bus, event.type))
  * await stream.connect()
  */
-export class CharlieStreamClient {
+export class BusStreamWsClient {
   #logger
   #url
   #ws
@@ -148,4 +147,4 @@ export class CharlieStreamClient {
   }
 }
 
-export default CharlieStreamClient
+export default BusStreamWsClient

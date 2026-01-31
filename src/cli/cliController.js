@@ -1,9 +1,15 @@
 // src/cli/cliController.js
 import readline from 'node:readline'
-import eventTypes from '../core/eventTypes.js'
 import makeCliCompleter from './cliCompleter.js'
 import { printHelp } from './cliHelp.js'
+import eventTypes from '../core/eventTypes.js'
 
+/**
+ * Local terminal CLI controller (readline UX).
+ *
+ * Enabled only when the daemon is started with `--interactive`.
+ * This CLI runs in-process and calls runtime services via `getContext()`.
+ */
 export class CliController {
   #logger
   #parser
@@ -13,16 +19,22 @@ export class CliController {
   #rl
 
   #injectEnabled
+  #cache
 
-  constructor({ logger, parser, loadConfig, getContext, setContext, mode }) {
+  constructor({ logger, parser, loadConfig, getContext, setContext }) {
     this.#logger = logger
     this.#parser = parser
-    this.#loadConfig = loadConfig
+    this.#loadConfig = loadConfig ?? null
     this.#getContext = getContext
-    this.#setContext = setContext
-    this.#rl = null
+    this.#setContext = setContext ?? null
 
+    this.#rl = null
     this.#injectEnabled = false
+
+    this.#cache = {
+      config: null,
+      devices: [],
+    }
   }
 
   start() {
@@ -30,36 +42,24 @@ export class CliController {
       return
     }
 
+    this.#refreshCache()
+
     this.#rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
       terminal: true,
-      completer: makeCliCompleter({ getContext: this.#getContext }),
+      completer: makeCliCompleter({ getContext: () => this.#getCompletionContext() }),
     })
-
-    const { taps } = this.#getContext()
-    const tapLogger = this.#logger.child({ label: 'tap' })
-
-    for (const tap of Object.values(taps || {})) {
-      if (tap && typeof tap.setSink === 'function') {
-        tap.setSink(({ bus, event }) => {
-          if (!event?.type) {
-            return
-          }
-
-          tapLogger.info(event.type, {
-            bus,
-            payload: event.payload,
-            source: event.source,
-            ts: event.ts,
-          })
-        })
-      }
-    }
 
     this.#rl.on('line', (line) => {
       const cmd = this.#parser.parse(line)
-      this.#handleCommand(cmd)
+
+      try {
+        this.#handleCommand(cmd)
+      } catch (e) {
+        console.log(String(e?.message || e))
+      }
+
       this.#updatePrompt()
       this.#rl.prompt()
     })
@@ -83,6 +83,45 @@ export class CliController {
     this.#rl = null
   }
 
+  #ctx() {
+    const ctx = this.#getContext?.()
+    if (!ctx) {
+      const err = new Error('context_missing')
+      err.code = 'INTERNAL_ERROR'
+      throw err
+    }
+
+    return ctx
+  }
+
+  #refreshCache() {
+    const ctx = this.#ctx()
+
+    this.#cache.config = ctx?.config ?? {}
+
+    if (ctx?.deviceManager?.list) {
+      const out = ctx.deviceManager.list()
+      this.#cache.devices = Array.isArray(out?.devices) ? out.devices : []
+    } else {
+      this.#cache.devices = []
+    }
+
+    const snap = ctx?.control?.getSnapshot ? ctx.control.getSnapshot() : {}
+    if (typeof snap?.injectEnabled === 'boolean') {
+      this.#injectEnabled = snap.injectEnabled
+    }
+  }
+
+  #getCompletionContext() {
+    return {
+      config: this.#cache.config ?? {},
+      buses: {},
+      taps: {},
+      core: {},
+      clock: {},
+    }
+  }
+
   #handleCommand(cmd) {
     if (cmd.kind === 'empty') return
 
@@ -101,128 +140,78 @@ export class CliController {
     }
 
     if (cmd.kind === 'injectOn') {
-      this.#injectEnabled = true
-      this.#logger.notice('inject_enabled', {})
+      this.#injectOn()
       return
     }
 
     if (cmd.kind === 'injectOff') {
-      this.#injectEnabled = false
-      this.#logger.notice('inject_disabled', {})
+      this.#injectOff()
       return
     }
 
     if (cmd.kind === 'injectStatus') {
-      this.#logger.info('inject_status', { enabled: this.#injectEnabled })
-      return
-    }
-
-    if (cmd.kind === 'tapOn') {
-      this.#setTap(cmd.bus, true)
-      return
-    }
-
-    if (cmd.kind === 'tapOff') {
-      this.#setTap(cmd.bus, false)
-      return
-    }
-
-    if (cmd.kind === 'tapStatus') {
-      this.#tapStatus(cmd.bus)
+      this.#injectStatus()
       return
     }
 
     if (cmd.kind === 'coreState') {
-      const { core } = this.#getContext()
-      this.#logger.info('snapshot', core.getSnapshot())
+      this.#coreState()
       return
     }
 
-    if (cmd.kind === 'presence') {
-      this.#guardInject(() => this.#publishPresence(cmd.zone, cmd.present))
-      return
-    }
-
-    if (cmd.kind === 'vibration') {
-      this.#guardInject(() => this.#publishVibration(cmd.level))
-      return
-    }
-
-    if (cmd.kind === 'button') {
-      this.#guardInject(() => this.#publishButton(cmd.pressType))
-      return
-    }
-
-    if (cmd.kind === 'clockNow') {
-      const { clock, core } = this.#getContext()
-      const parts = clock.toLocalParts()
-      const snap = core.getSnapshot()
-
-      this.#logger.info('clock_now', {
-        ...parts,
-        isFrozen: clock.isFrozen(),
-        nowMs: clock.nowMs(),
-        state: snap.state,
-      })
-
-      return
-    }
-
-    if (cmd.kind === 'clockStatus') {
-      const { clock } = this.#getContext()
-      const parts = clock.toLocalParts()
-
-      this.#logger.info('clock_status', {
-        ...parts,
-        isFrozen: clock.isFrozen(),
-        nowMs: clock.nowMs(),
-      })
-
-      return
-    }
-
-    if (cmd.kind === 'clockFreeze') {
-      const { clock } = this.#getContext()
-      clock.freeze()
-      this.#logger.notice('clock_frozen', { nowMs: clock.nowMs() })
-      return
-    }
-
-    if (cmd.kind === 'clockResume') {
-      const { clock } = this.#getContext()
-      clock.resume()
-      this.#logger.notice('clock_resumed', { nowMs: clock.nowMs() })
-      return
-    }
-
-    if (cmd.kind === 'clockAdvance') {
-      const { clock } = this.#getContext()
-      clock.advance(cmd.ms)
-      this.#logger.info('clock_advanced', { deltaMs: cmd.ms, nowMs: clock.nowMs(), isFrozen: clock.isFrozen() })
-      return
-    }
-
-    if (cmd.kind === 'clockSet') {
-      const dt = this.#parseDateTime(cmd.dateStr, cmd.timeStr)
-      if (!dt) {
-        console.log('invalid datetime, usage: clock set YYYY-MM-DD HH:MM')
-        return
-      }
-
-      const { clock } = this.#getContext()
-      clock.setLocalDateTime(dt)
-      this.#logger.notice('clock_set', { ...dt, nowMs: clock.nowMs(), isFrozen: clock.isFrozen() })
+    if (cmd.kind === 'configPrint') {
+      this.#configPrint()
       return
     }
 
     if (cmd.kind === 'configLoad') {
       this.#reloadConfig(cmd.filename)
+      this.#refreshCache()
       return
     }
 
-    if (cmd.kind === 'configPrint') {
-      const { config } = this.#getContext()
-      this.#logger.info('config_print', config)
+    if (cmd.kind === 'presence') {
+      this.#guardInject(() => this.#injectPresence(cmd.zone, cmd.present))
+      return
+    }
+
+    if (cmd.kind === 'vibration') {
+      this.#guardInject(() => this.#injectVibration(cmd.level))
+      return
+    }
+
+    if (cmd.kind === 'button') {
+      this.#guardInject(() => this.#injectButton(cmd.pressType))
+      return
+    }
+
+    if (cmd.kind === 'clockNow') {
+      this.#clockNow()
+      return
+    }
+
+    if (cmd.kind === 'clockStatus') {
+      this.#clockStatus()
+      return
+    }
+
+    if (cmd.kind === 'clockFreeze') {
+      this.#clockFreeze()
+      return
+    }
+
+    if (cmd.kind === 'clockResume') {
+      this.#clockResume()
+      return
+    }
+
+    if (cmd.kind === 'clockAdvance') {
+      this.#clockAdvance(cmd.ms)
+      return
+    }
+
+    if (cmd.kind === 'clockSet') {
+      this.#clockSet(cmd.dateStr, cmd.timeStr)
       return
     }
 
@@ -249,69 +238,51 @@ export class CliController {
     console.log('unknown command, type: help')
   }
 
-  #deviceList() {
-    const { deviceManager } = this.#getContext()
+  #injectOn() {
+    const ctx = this.#ctx()
 
-    if (!deviceManager?.list) {
-      this.#logger.warning('device_manager_missing', {})
+    if (!ctx?.control?.injectEnable) {
+      console.log('inject is not supported')
       return
     }
 
-    this.#logger.info('device_list', deviceManager.list())
+    const out = ctx.control.injectEnable()
+    this.#injectEnabled = Boolean(out?.injectEnabled)
+    this.#logger.notice('inject_enabled', {})
   }
 
-  #deviceBlock(deviceId) {
-    const { deviceManager } = this.#getContext()
+  #injectOff() {
+    const ctx = this.#ctx()
 
-    if (!deviceManager?.block) {
-      this.#logger.warning('device_manager_missing', { deviceId })
+    if (!ctx?.control?.injectDisable) {
+      console.log('inject is not supported')
       return
     }
 
-    const out = deviceManager.block(deviceId)
-    if (!out?.ok) {
-      this.#logger.warning('device_block_failed', { deviceId, error: out?.error })
-      return
-    }
-
-    this.#logger.notice('device_blocked', { deviceId })
+    const out = ctx.control.injectDisable()
+    this.#injectEnabled = Boolean(out?.injectEnabled)
+    this.#logger.notice('inject_disabled', {})
   }
 
-  #deviceUnblock(deviceId) {
-    const { deviceManager } = this.#getContext()
+  #injectStatus() {
+    const ctx = this.#ctx()
+    const snap = ctx?.control?.getSnapshot ? ctx.control.getSnapshot() : {}
 
-    if (!deviceManager?.unblock) {
-      this.#logger.warning('device_manager_missing', { deviceId })
-      return
+    if (typeof snap?.injectEnabled === 'boolean') {
+      this.#injectEnabled = snap.injectEnabled
     }
 
-    const out = deviceManager.unblock(deviceId)
-    if (!out?.ok) {
-      this.#logger.warning('device_unblock_failed', { deviceId, error: out?.error })
-      return
-    }
-
-    this.#logger.notice('device_unblocked', { deviceId })
-  }
-
-  #deviceInject(deviceId, payload) {
-    const { deviceManager } = this.#getContext()
-
-    if (!deviceManager?.inject) {
-      this.#logger.warning('device_manager_missing', { deviceId })
-      return
-    }
-
-    const out = deviceManager.inject(deviceId, payload)
-    if (!out?.ok) {
-      this.#logger.warning('device_inject_failed', { deviceId, error: out?.error, message: out?.message })
-      return
-    }
-
-    this.#logger.notice('device_injected', { deviceId })
+    this.#logger.info('inject_status', { enabled: this.#injectEnabled })
   }
 
   #guardInject(fn) {
+    const ctx = this.#ctx()
+    const snap = ctx?.control?.getSnapshot ? ctx.control.getSnapshot() : {}
+
+    if (typeof snap?.injectEnabled === 'boolean') {
+      this.#injectEnabled = snap.injectEnabled
+    }
+
     if (!this.#injectEnabled) {
       this.#logger.warning('inject_blocked', { reason: 'inject_disabled' })
       return
@@ -320,52 +291,15 @@ export class CliController {
     fn()
   }
 
-  #setTap(bus, enabled) {
-    const { taps } = this.#getContext()
-
-    if (bus === 'all') {
-      for (const t of Object.values(taps)) {
-        t.setEnabled(enabled)
-      }
-
-      return
-    }
-
-    const tap = taps?.[bus]
-    if (!tap) {
-      this.#logger.warning('tap_unknown_bus', { bus })
-      return
-    }
-
-    tap.setEnabled(enabled)
+  #defaults() {
+    const cfg = this.#cache.config ?? {}
+    return cfg?.core?.injectDefaults ?? {}
   }
 
-  #tapStatus(bus) {
-    const { taps } = this.#getContext()
+  #injectPresence(zone, present) {
+    const ctx = this.#ctx()
+    const defaults = this.#defaults()
 
-    if (bus === 'all') {
-      const status = {}
-      for (const [k, t] of Object.entries(taps)) {
-        status[k] = t.isEnabled()
-      }
-
-      this.#logger.info('tap_status', status)
-      return
-    }
-
-    const tap = taps?.[bus]
-    if (!tap) {
-      this.#logger.warning('tap_unknown_bus', { bus })
-      return
-    }
-
-    this.#logger.info('tap_status', { [bus]: tap.isEnabled() })
-  }
-
-  #publishPresence(zone, present) {
-    const { clock, buses, config } = this.#getContext()
-
-    const defaults = config?.core?.injectDefaults ?? {}
     const key = zone === 'front' ? 'presenceFront' : 'presenceBack'
     const coreRole = defaults?.[key] ?? null
 
@@ -374,24 +308,23 @@ export class CliController {
       return
     }
 
-    const event = {
-      type: present ? eventTypes.presence.enter : eventTypes.presence.exit,
-      ts: clock.nowMs(),
-      source: 'cliInject',
-      payload: {
-        coreRole,
-        zone
-      },
+    if (!ctx?.control?.injectEvent) {
+      console.log('inject is not supported')
+      return
     }
 
-    this.#logger.debug('event_publish', { bus: 'main', event })
-    buses.main.publish(event)
+    ctx.control.injectEvent({
+      bus: 'main',
+      type: present ? eventTypes.presence.enter : eventTypes.presence.exit,
+      payload: { coreRole, zone },
+      source: 'cli',
+    })
   }
 
-  #publishVibration(level) {
-    const { clock, buses, config } = this.#getContext()
+  #injectVibration(level) {
+    const ctx = this.#ctx()
+    const defaults = this.#defaults()
 
-    const defaults = config?.core?.injectDefaults ?? {}
     const key = level === 'high' ? 'vibrationHigh' : 'vibrationLow'
     const coreRole = defaults?.[key] ?? null
 
@@ -400,24 +333,23 @@ export class CliController {
       return
     }
 
-    const event = {
-      type: eventTypes.vibration.hit,
-      ts: clock.nowMs(),
-      source: 'cliInject',
-      payload: {
-        coreRole,
-        level
-      },
+    if (!ctx?.control?.injectEvent) {
+      console.log('inject is not supported')
+      return
     }
 
-    this.#logger.debug('event_publish', { bus: 'main', event })
-    buses.main.publish(event)
+    ctx.control.injectEvent({
+      bus: 'main',
+      type: eventTypes.vibration.hit,
+      payload: { coreRole, level },
+      source: 'cli',
+    })
   }
 
-  #publishButton(pressType) {
-    const { clock, buses, config } = this.#getContext()
+  #injectButton(pressType) {
+    const ctx = this.#ctx()
+    const defaults = this.#defaults()
 
-    const defaults = config?.core?.injectDefaults ?? {}
     const key = pressType === 'long' ? 'buttonLong' : 'buttonShort'
     const coreRole = defaults?.[key] ?? null
 
@@ -426,28 +358,220 @@ export class CliController {
       return
     }
 
-    const event = {
-      type: eventTypes.button.press,
-      ts: clock.nowMs(),
-      source: 'cliInject',
-      payload: {
-        coreRole,
-        kind: pressType
-      },
+    if (!ctx?.control?.injectEvent) {
+      console.log('inject is not supported')
+      return
     }
 
-    this.#logger.debug('event_publish', { bus: 'main', event })
-    buses.main.publish(event)
+    ctx.control.injectEvent({
+      bus: 'main',
+      type: eventTypes.button.press,
+      payload: { coreRole, kind: pressType },
+      source: 'cli',
+    })
+  }
+
+  #coreState() {
+    const ctx = this.#ctx()
+
+    if (!ctx?.core?.getSnapshot) {
+      console.log('core snapshot not available')
+      return
+    }
+
+    this.#logger.info('snapshot', ctx.core.getSnapshot())
+  }
+
+  #configPrint() {
+    const ctx = this.#ctx()
+    this.#logger.info('config_print', ctx?.config ?? {})
   }
 
   #reloadConfig(filename) {
+    if (!this.#loadConfig || !this.#setContext) {
+      console.log('config load is not available')
+      return
+    }
+
     try {
-      const { config } = this.#loadConfig(filename)
+      const loaded = this.#loadConfig(filename)
+      const config = loaded?.config ?? null
+      if (!config) {
+        console.log('config load failed')
+        return
+      }
+
       this.#setContext({ config })
       this.#logger.notice('config_loaded', { configFile: filename })
     } catch (e) {
       this.#logger.error('config_load_failed', { configFile: filename, error: String(e?.message || e) })
     }
+  }
+
+  #deviceList() {
+    const ctx = this.#ctx()
+    const dm = ctx?.deviceManager
+
+    if (!dm?.list) {
+      this.#logger.warning('device_manager_missing', {})
+      return
+    }
+
+    const out = dm.list()
+    this.#cache.devices = Array.isArray(out?.devices) ? out.devices : []
+    this.#logger.info('device_list', { devices: this.#cache.devices })
+  }
+
+  #deviceBlock(deviceId) {
+    const ctx = this.#ctx()
+    const dm = ctx?.deviceManager
+
+    if (!dm?.block) {
+      this.#logger.warning('device_manager_missing', { deviceId })
+      return
+    }
+
+    const out = dm.block(deviceId)
+    if (!out?.ok) {
+      this.#logger.warning('device_block_failed', { deviceId, error: out?.error })
+      return
+    }
+
+    this.#logger.notice('device_blocked', { deviceId })
+    this.#deviceList()
+  }
+
+  #deviceUnblock(deviceId) {
+    const ctx = this.#ctx()
+    const dm = ctx?.deviceManager
+
+    if (!dm?.unblock) {
+      this.#logger.warning('device_manager_missing', { deviceId })
+      return
+    }
+
+    const out = dm.unblock(deviceId)
+    if (!out?.ok) {
+      this.#logger.warning('device_unblock_failed', { deviceId, error: out?.error })
+      return
+    }
+
+    this.#logger.notice('device_unblocked', { deviceId })
+    this.#deviceList()
+  }
+
+  #deviceInject(deviceId, payload) {
+    const ctx = this.#ctx()
+    const dm = ctx?.deviceManager
+
+    if (!dm?.inject) {
+      this.#logger.warning('device_manager_missing', { deviceId })
+      return
+    }
+
+    const out = dm.inject(deviceId, payload)
+    if (!out?.ok) {
+      this.#logger.warning('device_inject_failed', { deviceId, error: out?.error, message: out?.message })
+      return
+    }
+
+    this.#logger.notice('device_injected', { deviceId })
+  }
+
+  #clockNow() {
+    const ctx = this.#ctx()
+    const { clock, core } = ctx
+
+    if (!clock) {
+      console.log('clock not available')
+      return
+    }
+
+    const parts = clock.toLocalParts()
+    const snap = core?.getSnapshot ? core.getSnapshot() : {}
+
+    this.#logger.info('clock_now', {
+      ...parts,
+      isFrozen: clock.isFrozen(),
+      nowMs: clock.nowMs(),
+      state: snap.state,
+    })
+  }
+
+  #clockStatus() {
+    const ctx = this.#ctx()
+    const { clock } = ctx
+
+    if (!clock) {
+      console.log('clock not available')
+      return
+    }
+
+    const parts = clock.toLocalParts()
+
+    this.#logger.info('clock_status', {
+      ...parts,
+      isFrozen: clock.isFrozen(),
+      nowMs: clock.nowMs(),
+    })
+  }
+
+  #clockFreeze() {
+    const ctx = this.#ctx()
+    const { clock } = ctx
+
+    if (!clock) {
+      console.log('clock not available')
+      return
+    }
+
+    clock.freeze()
+    this.#logger.notice('clock_frozen', { nowMs: clock.nowMs() })
+  }
+
+  #clockResume() {
+    const ctx = this.#ctx()
+    const { clock } = ctx
+
+    if (!clock) {
+      console.log('clock not available')
+      return
+    }
+
+    clock.resume()
+    this.#logger.notice('clock_resumed', { nowMs: clock.nowMs() })
+  }
+
+  #clockAdvance(ms) {
+    const ctx = this.#ctx()
+    const { clock } = ctx
+
+    if (!clock) {
+      console.log('clock not available')
+      return
+    }
+
+    clock.advance(ms)
+    this.#logger.info('clock_advanced', { deltaMs: ms, nowMs: clock.nowMs(), isFrozen: clock.isFrozen() })
+  }
+
+  #clockSet(dateStr, timeStr) {
+    const dt = this.#parseDateTime(dateStr, timeStr)
+    if (!dt) {
+      console.log('invalid datetime, usage: clock set YYYY-MM-DD HH:MM')
+      return
+    }
+
+    const ctx = this.#ctx()
+    const { clock } = ctx
+
+    if (!clock) {
+      console.log('clock not available')
+      return
+    }
+
+    clock.setLocalDateTime(dt)
+    this.#logger.notice('clock_set', { ...dt, nowMs: clock.nowMs(), isFrozen: clock.isFrozen() })
   }
 
   #parseDateTime(dateStr, timeStr) {

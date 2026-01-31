@@ -6,34 +6,35 @@ import eventTypes from '../core/eventTypes.js'
 
 /**
  * Web server hosting:
+ * - static files (/*)
  * - simulated Tasker endpoints (/tasker/start, /tasker/stop)
  * - REST API endpoints (/api/*)
- * - websocket streaming endpoint (/ws) for bus streaming (server-push only)
- * - websocket RPC endpoint (/rpc) for remote control (request/response)
+ * - websocket endpoint (/ws) for bus streaming (server-push only)
+ *
+ * Notes:
+ * - This server exposes streaming only (observability).
+ * - Control is performed locally via the interactive CLI (`--interactive`).
+ * - A separate WS RPC endpoint may be added later for a Web UI.
  */
 export class WebServer {
   #logger
   #buses
   #busStream
-  #rpcRouter
   #port
   #app
   #listeningToken
   #wsStreamClients
-  #wsRpcClients
   #publicRoot
 
-  constructor({ logger, buses, busStream, rpcRouter, port }) {
+  constructor({ logger, buses, busStream, port }) {
     this.#logger = logger
     this.#buses = buses
     this.#busStream = busStream
-    this.#rpcRouter = rpcRouter
     this.#port = port
 
     this.#app = uWS.App()
     this.#listeningToken = null
     this.#wsStreamClients = new Set()
-    this.#wsRpcClients = new Set()
     this.#publicRoot = fileURLToPath(new URL('../../public', import.meta.url))
 
     this.#registerRoutes()
@@ -59,12 +60,7 @@ export class WebServer {
       this.#disposeStreamClient(ws)
     }
 
-    for (const ws of this.#wsRpcClients) {
-      this.#disposeRpcClient(ws)
-    }
-
     this.#wsStreamClients.clear()
-    this.#wsRpcClients.clear()
 
     if (this.#listeningToken && typeof uWS.us_listen_socket_close === 'function') {
       try {
@@ -80,7 +76,6 @@ export class WebServer {
   #registerRoutes() {
     this.#registerStatic()
     this.#registerWsStream()
-    this.#registerWsRpc()
     this.#registerTaskerSim()
     this.#registerApi()
   }
@@ -103,7 +98,9 @@ export class WebServer {
         const secExtensions = req.getHeader('sec-websocket-extensions')
 
         const rawQuery = req.getQuery()
-        const select = this.#busStream?.parseQuery ? this.#busStream.parseQuery(rawQuery) : { buses: ['main'] }
+        const select = this.#busStream?.parseQuery
+          ? this.#busStream.parseQuery(rawQuery)
+          : { buses: ['main'] }
 
         res.upgrade(
           {
@@ -158,54 +155,6 @@ export class WebServer {
     })
   }
 
-  #registerWsRpc() {
-    this.#app.ws('/rpc', {
-      open: (ws) => {
-        this.#wsRpcClients.add(ws)
-
-        this.#wsSend(ws, {
-          type: 'ws:welcome',
-          payload: { ok: true, features: { rpc: true } },
-        })
-
-        this.#logger.notice('ws_rpc_open', { clients: this.#wsRpcClients.size })
-      },
-
-      close: (ws) => {
-        this.#disposeRpcClient(ws)
-        this.#wsRpcClients.delete(ws)
-        this.#logger.notice('ws_rpc_close', { clients: this.#wsRpcClients.size })
-      },
-
-      message: async (ws, message, isBinary) => {
-        if (isBinary) {
-          return
-        }
-
-        const text = Buffer.from(message).toString('utf8')
-
-        let req = null
-        try {
-          req = JSON.parse(text)
-        } catch (e) {
-          this.#wsSend(ws, {
-            id: null,
-            ok: false,
-            type: 'error',
-            error: { message: 'invalid_json', code: 'BAD_JSON' },
-          })
-
-          return
-        }
-
-        const res = await this.#rpcRouter.handle(req)
-        if (res) {
-          this.#wsSend(ws, res)
-        }
-      },
-    })
-  }
-
   #disposeStreamClient(ws) {
     if (typeof ws?.__detachStream === 'function') {
       try {
@@ -218,10 +167,6 @@ export class WebServer {
     ws.__detachStream = null
     ws.__select = null
     ws.__clientId = null
-  }
-
-  #disposeRpcClient(ws) {
-    // reserved for future per-client RPC state
   }
 
   #wsSend(ws, msg) {
@@ -262,7 +207,6 @@ export class WebServer {
 
   #registerApi() {
     this.#app.get('/api/status', (res, req) => {
-      // keep existing behavior if you still need it
       this.#json(res, 200, { ok: true })
     })
 

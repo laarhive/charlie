@@ -24,29 +24,6 @@ export class CliParser {
       return { kind: 'error', message: 'usage: inject on|off|status' }
     }
 
-    if (a === 'tap') {
-      const bus = b
-      const action = c
-
-      const validBus =
-        bus === 'main' ||
-        bus === 'presence' ||
-        bus === 'vibration' ||
-        bus === 'button' ||
-        bus === 'tasker' ||
-        bus === 'all'
-
-      if (!validBus) {
-        return { kind: 'error', message: 'usage: tap main|presence|vibration|button|tasker|all on|off|status' }
-      }
-
-      if (action === 'on') return { kind: 'tapOn', bus }
-      if (action === 'off') return { kind: 'tapOff', bus }
-      if (action === 'status') return { kind: 'tapStatus', bus }
-
-      return { kind: 'error', message: 'usage: tap main|presence|vibration|button|tasker|all on|off|status' }
-    }
-
     if (a === 'presence') {
       const zone = b
       const action = c

@@ -5,7 +5,6 @@ import Logger from '../logging/logger.js'
 import formatError from '../core/errorFormat.js'
 import CliParser from '../cli/cliParser.js'
 import CliController from '../cli/cliController.js'
-import CliWsController from '../cli/cliWsController.js'
 
 import parseArgs from './args.js'
 import { loadConfigFile } from './configLoader.js'
@@ -24,11 +23,6 @@ export class AppRunner {
     const args = parseArgs(argv)
     this.#logger = new Logger({ level: args.level })
 
-    if (args.run === 'cli') {
-      this.#runWsCli(args)
-      return
-    }
-
     if (!args.mode) {
       this.#logger.error('missing_required_arg', {
         arg: '--mode',
@@ -39,19 +33,6 @@ export class AppRunner {
     }
 
     this.#runDaemon(args)
-  }
-
-  #runWsCli(args) {
-    const parser = new CliParser()
-    const wsUrl = `ws://${args.host}:${args.port}/ws`
-
-    const cli = new CliWsController({
-      logger: this.#logger,
-      parser,
-      wsUrl,
-    })
-
-    cli.start()
   }
 
   #runDaemon(args) {
@@ -109,7 +90,6 @@ export class AppRunner {
         loadConfig,
         getContext,
         setContext,
-        mode: args.mode,
       })
 
       cli.start()
@@ -117,7 +97,7 @@ export class AppRunner {
     }
 
     this.#logger.notice('daemon_started', {
-      note: 'Interactive CLI disabled. Use --run cli to attach remotely.',
+      note: 'Interactive CLI disabled. Start with --interactive to enable local CLI.',
       mode: args.mode,
     })
   }

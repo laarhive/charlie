@@ -1,20 +1,17 @@
 // src/app/args.js
 export const parseArgs = function parseArgs(argv) {
   const args = {
-    // process role
-    run: 'daemon', // 'daemon' | 'cli'
-
     // runtime config
     config: null,
-    mode: null, // REQUIRED for daemon
+    mode: null, // REQUIRED
 
     // logging
     level: 'info',
 
-    // local CLI attachment
+    // local interactive CLI
     interactive: false,
 
-    // ws client / server
+    // ws server (bus streaming / web ui later)
     host: '127.0.0.1',
     port: 8787,
     portProvided: false,
@@ -22,17 +19,6 @@ export const parseArgs = function parseArgs(argv) {
 
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i]
-
-    if (a === '--run') {
-      const v = String(argv[i + 1] || '').trim()
-      i += 1
-
-      if (v === 'daemon' || v === 'cli') {
-        args.run = v
-      }
-
-      continue
-    }
 
     if (a === '--host') {
       args.host = String(argv[i + 1] || '127.0.0.1').trim()
