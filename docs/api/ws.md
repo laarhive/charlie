@@ -1,177 +1,102 @@
 <!-- docs/api/ws.md -->
-# WebSocket API
+# WebSocket Bus Streaming API
 
-Charlie exposes two WebSocket endpoints:
+Charlie exposes a **read-only WebSocket API** for streaming internal bus events.
 
-- **RPC** (`/rpc`) for request/response control
-- **Stream** (`/ws`) for server-pushed bus events
-
-Used by:
-- remote CLI
+This API is intended for:
+- observability
+- debugging
+- live inspection
 - future Web UI
-- external debugging tools
+
+It does **not** provide control or command execution.
 
 ---
 
-## Endpoints
+## Default address
 
 ```text
-ws://<host>:<port>/rpc
-ws://<host>:<port>/ws
+ws://127.0.0.1:8787/ws
 ```
+
+- Default port: **8787**
+- Configurable via `config.server.port`
 
 ---
 
-## RPC (`/rpc`)
+## HTTP companion page
 
-### Protocol
-
-Request:
-```json
-{
-  "id": "string",
-  "type": "rpc.type",
-  "payload": {}
-}
-```
-
-Success:
-```json
-{
-  "id": "string",
-  "ok": true,
-  "type": "rpc.type",
-  "payload": {}
-}
-```
-
-Error:
-```json
-{
-  "id": "string",
-  "ok": false,
-  "type": "rpc.type",
-  "error": {
-    "message": "human_readable_message",
-    "code": "ERROR_CODE"
-  }
-}
-```
-
-### Core
-
-#### `state.get`
-Returns a runtime snapshot.
-
-```json
-{ "id": "1", "type": "state.get" }
-```
-
-#### `config.get`
-Returns the active config object.
-
-```json
-{ "id": "2", "type": "config.get" }
-```
-
-### Injection
-
-#### `inject.enable`
-Enables semantic injection.
-
-#### `inject.disable`
-Disables semantic injection.
-
-#### `inject.event`
-Publishes a semantic event to a bus (usually `main`).
-
-Payload:
-- `bus`
-- `type`
-- `payload`
-- `source` (optional)
-
-```json
-{
-  "id": "3",
-  "type": "inject.event",
-  "payload": {
-    "bus": "main",
-    "type": "presence:enter",
-    "payload": { "zone": "front" },
-    "source": "cli"
-  }
-}
-```
-
-### Devices
-
-#### `device.list`
-Lists devices active in the current mode.
-
-```json
-{ "id": "4", "type": "device.list" }
-```
-
-Example response payload:
-```json
-{
-  "devices": [
-    {
-      "id": "buttonGpio1",
-      "publishAs": "button1",
-      "kind": "buttonEdge",
-      "domain": "button",
-      "state": "active",
-      "started": true
-    }
-  ]
-}
-```
-
-#### `device.block`
-```json
-{ "id": "5", "type": "device.block", "payload": { "deviceId": "buttonGpio1" } }
-```
-
-#### `device.unblock`
-Unblock is idempotent.
-
-```json
-{ "id": "6", "type": "device.unblock", "payload": { "deviceId": "buttonGpio1" } }
-```
-
-#### `device.inject`
-Routes a generic payload to the device kind.
-
-```json
-{
-  "id": "7",
-  "type": "device.inject",
-  "payload": {
-    "deviceId": "buttonVirt1",
-    "payload": "press 200"
-  }
-}
-```
-
----
-
-## Stream (`/ws`)
-
-### Bus selection (query params)
-
-Select buses at connect time:
+A simple built-in bus viewer is available at:
 
 ```text
-/ws               -> default: main
-/ws?main&button   -> selected buses
-/ws?all           -> all buses
+http://127.0.0.1:8787/bus.html
+```
+
+This page:
+- connects to the WebSocket endpoint
+- displays live bus events
+- is intended for debugging and development
+
+> Note: The viewer may be moved to a different path or replaced by a full Web UI in the future.  
+> The WebSocket API itself is the stable contract.
+
+---
+
+## Scope and guarantees
+
+- **Server → client only**
+- No inbound messages are processed
+- No state mutation
+- Events reflect real internal buses
+- Ordering is preserved per bus
+- Filtering happens at connection time
+
+---
+
+## Endpoint
+
+```text
+/ws
+```
+
+---
+
+## Bus selection (query parameters)
+
+Bus selection is done **when opening the connection**.
+
+```text
+/ws                 → default bus (main, if available)
+/ws?main&button     → subscribe to selected buses
+/ws?all             → subscribe to all buses
 ```
 
 Rules:
-- Unknown params are ignored
-- If no valid bus is selected, defaults to `main` (if available)
+- Unknown query tokens are ignored
+- If no valid bus is selected, `main` is used (if available)
+- Selection cannot be changed after connection
+
+---
+
+## Messages
+
+### Welcome message
+
+Sent once on successful connection.
+
+```json
+{
+  "type": "ws:welcome",
+  "payload": {
+    "ok": true,
+    "features": {
+      "streaming": true
+    }
+  }
+}
+```
+
+---
 
 ### `bus.event` (server-pushed)
 
@@ -181,26 +106,56 @@ Rules:
   "payload": {
     "bus": "main",
     "event": {
-      "type": "system:hardware",
+      "type": "presence:enter",
       "ts": 1700000000000,
       "source": "deviceManager",
       "payload": {
-        "deviceId": "buttonGpio1",
-        "state": "active"
+        "zone": "front",
+        "sensorId": "presence_front"
       }
     }
   }
 }
 ```
 
+Fields:
+- `bus` – bus name (`main`, `presence`, `button`, etc.)
+- `event.type` – semantic or system event type
+- `event.ts` – timestamp (milliseconds)
+- `event.source` – emitting component
+- `event.payload` – event-specific data
+
 ---
 
-## Error codes (non-exhaustive)
+## What this API does NOT do
 
-- `BAD_JSON`
-- `BAD_REQUEST`
-- `UNKNOWN_TYPE`
-- `INJECT_DISABLED`
-- `DEVICE_NOT_FOUND`
-- `NOT_SUPPORTED`
-- `INTERNAL_ERROR`
+- ❌ No control or commands
+- ❌ No CLI integration
+- ❌ No RPC
+- ❌ No acknowledgements
+- ❌ No state changes
+
+All control is performed locally via the interactive CLI or through SSH access to the host.
+
+---
+
+## Design intent
+
+- Keep the WebSocket surface minimal and safe
+- Avoid duplication of CLI or control logic
+- Allow passive observers without side effects
+- Enable future Web UI without breaking changes
+
+---
+
+## Summary
+
+| Capability        | Supported |
+|-------------------|-----------|
+| Bus streaming     | ✅        |
+| Bus filtering     | ✅        |
+| State mutation    | ❌        |
+| Command execution | ❌        |
+| Bidirectional WS  | ❌        |
+
+This API is **observational by design**.
