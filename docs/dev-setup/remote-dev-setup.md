@@ -189,14 +189,6 @@ scripts/dev/restart.sh --mode hw --no-inspect
 scripts/dev/restart.sh --mode hw -- --some-flag value
 ```
 
-CLI:
-
-```shell
-scripts/dev/cli.sh
-scripts/dev/cli.sh --host 127.0.0.1 --port 8787
-scripts/dev/cli.sh --no-inspect
-```
-
 ---
 
 ## Result
