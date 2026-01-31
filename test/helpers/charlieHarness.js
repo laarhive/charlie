@@ -7,15 +7,14 @@
  *
  * Core idea:
  * - Spawn the real `appRunner` in a separate Node.js process
- * - Communicate only via public WebSocket interfaces
+ * - Communicate only via public interfaces (WebSocket / HTTP)
  * - Treat Charlie as a black box
  *
  * What this harness abstracts:
  * - Selecting a free TCP port
  * - Spawning and stopping the Charlie daemon
- * - Waiting for WebSocket readiness
- * - Connecting to specific WS endpoints (`/rpc`, `/ws`)
- * - Sending WS RPC requests and awaiting responses
+ * - Waiting for readiness
+ * - Connecting to WS streaming endpoint (`/ws`)
  * - Capturing stdout/stderr for crash diagnostics
  *
  * Why this exists:
@@ -30,9 +29,9 @@
  * - All assertions belong in spec files, not in this harness
  *
  * Intended usage:
- * - WS API contract tests
+ * - WS streaming integration tests
  * - Future Web UI integration tests
- * - End-to-end CLI / daemon interaction tests
+ * - End-to-end daemon interaction tests
  *
  * Non-goals:
  * - Unit testing
@@ -42,11 +41,11 @@
  * If a test using this harness fails, it indicates a real runtime regression.
  */
 
-
 import { spawn } from 'node:child_process'
 import net from 'node:net'
 import path from 'node:path'
 import process from 'node:process'
+import http from 'node:http'
 import WebSocket from 'ws'
 
 export const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -80,7 +79,6 @@ export const startCharlieDaemon = ({ port, mode = 'virt', logLevel = 'info', ext
 
   const args = [
     entry,
-    '--cmd', 'daemon',
     '--mode', mode,
     '--log-level', logLevel,
     '--port', String(port),
@@ -119,18 +117,17 @@ export const stopCharlie = async (child, timeoutMs = 2000) => {
 }
 
 /**
- * Connect to a Charlie WS endpoint.
+ * Connect to the Charlie WS streaming endpoint.
  *
  * @param {object} args
  * @param {number} args.port
- * @param {string} [args.path='/rpc'] Endpoint path, e.g. '/rpc' or '/ws?all'
+ * @param {string} [args.path='/ws'] Endpoint path, e.g. '/ws?all' or '/ws?main&button'
  *
  * @example
- * const rpc = await connectWs({ port, path: '/rpc' })
- * const stream = await connectWs({ port, path: '/ws?main&button' })
+ * const stream = await connectWs({ port, path: '/ws?main' })
  */
-export const connectWs = async ({ port, path: p = '/rpc' }) => {
-  const pathStr = String(p || '/rpc')
+export const connectWs = async ({ port, path: p = '/ws' }) => {
+  const pathStr = String(p || '/ws')
   const ws = new WebSocket(`ws://127.0.0.1:${port}${pathStr}`)
   ws.__msgs = []
 
@@ -151,20 +148,13 @@ export const connectWs = async ({ port, path: p = '/rpc' }) => {
 }
 
 /**
- * Wait until both RPC and streaming endpoints accept connections.
- *
- * @example
- * await waitForWsReady({ port, timeoutMs: 12000 })
+ * Wait until the streaming endpoint accepts connections.
  */
 export const waitForWsReady = async ({ port, timeoutMs = 12000 }) => {
   await waitFor(async () => {
     try {
-      const rpc = await connectWs({ port, path: '/rpc' })
-      rpc.close()
-
       const stream = await connectWs({ port, path: '/ws' })
       stream.close()
-
       return true
     } catch (e) {
       return false
@@ -174,6 +164,74 @@ export const waitForWsReady = async ({ port, timeoutMs = 12000 }) => {
   return true
 }
 
+/**
+ * Optional helper: wait until HTTP is ready (useful when tests rely on HTTP hooks).
+ */
+export const waitForHttpReady = async ({ port, timeoutMs = 12000 }) => {
+  await waitFor(async () => {
+    try {
+      const ok = await new Promise((resolve) => {
+        const req = http.request({
+          host: '127.0.0.1',
+          port,
+          path: '/api/status',
+          method: 'GET',
+        }, (res) => {
+          res.resume()
+          res.on('end', () => resolve(res.statusCode && res.statusCode < 500))
+        })
+
+        req.on('error', () => resolve(false))
+        req.end()
+      })
+
+      return Boolean(ok)
+    } catch {
+      return false
+    }
+  }, timeoutMs)
+
+  return true
+}
+
+/**
+ * Optional helper: POST JSON to an HTTP endpoint.
+ */
+export const httpPostJson = async ({ port, path: p, body }) => {
+  const payload = JSON.stringify(body ?? {})
+
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1',
+      port,
+      path: p,
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'content-length': Buffer.byteLength(payload),
+      }
+    }, (res) => {
+      let data = ''
+      res.on('data', (d) => { data += d.toString('utf8') })
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data))
+        } catch {
+          resolve({ ok: false, status: res.statusCode, raw: data })
+        }
+      })
+    })
+
+    req.on('error', reject)
+    req.write(payload)
+    req.end()
+  })
+}
+
+/**
+ * Legacy helper: WS RPC request/response (unused in current architecture).
+ * Kept for possible future Web UI control surface.
+ */
 export const wsRequest = async (ws, type, payload = {}, timeoutMs = 2000) => {
   const id = `${Date.now()}:${Math.random().toString(16).slice(2)}`
   ws.send(JSON.stringify({ id, type, payload }))

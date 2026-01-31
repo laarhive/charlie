@@ -13,8 +13,11 @@ import eventTypes from '../core/eventTypes.js'
  *
  * Notes:
  * - This server exposes streaming only (observability).
- * - Control is performed locally via the interactive CLI (`--interactive`).
- * - A separate WS RPC endpoint may be added later for a Web UI.
+ * - A separate control surface may be added later for a Web UI.
+ *
+ * Test hooks:
+ * - When CHARLIE_TEST=1, exposes POST /__tests__/publish to publish an event to a bus.
+ * - This keeps test-only surfaces under the /__tests__ namespace.
  */
 export class WebServer {
   #logger
@@ -78,6 +81,10 @@ export class WebServer {
     this.#registerWsStream()
     this.#registerTaskerSim()
     this.#registerApi()
+
+    if (String(process.env.CHARLIE_TEST || '').trim() === '1') {
+      this.#registerTestHooks()
+    }
   }
 
   #registerStatic() {
@@ -212,6 +219,42 @@ export class WebServer {
 
     this.#app.get('/api/config', (res, req) => {
       this.#json(res, 200, { ok: true })
+    })
+  }
+
+  #registerTestHooks() {
+    this.#app.post('/__tests__/publish', (res, req) => {
+      this.#readJsonBody(res, (body) => {
+        const busName = String(body?.bus || '').trim()
+        const event = body?.event
+
+        const bus = this.#buses?.[busName]
+        if (!busName || !bus || typeof bus.publish !== 'function') {
+          this.#json(res, 400, { ok: false, error: 'BUS_NOT_FOUND' })
+          return
+        }
+
+        if (!event || typeof event !== 'object') {
+          this.#json(res, 400, { ok: false, error: 'BAD_EVENT' })
+          return
+        }
+
+        const normalized = {
+          type: event?.type,
+          ts: typeof event?.ts === 'number' ? event.ts : Date.now(),
+          source: event?.source || 'testHook',
+          payload: event?.payload ?? {},
+        }
+
+        if (!normalized.type) {
+          this.#json(res, 400, { ok: false, error: 'MISSING_TYPE' })
+          return
+        }
+
+        bus.publish(normalized)
+
+        this.#json(res, 200, { ok: true })
+      })
     })
   }
 
