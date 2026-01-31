@@ -1,6 +1,4 @@
 <-- src/architecture/devices/device.contract.md -->
-# Device Contract
-
 This document defines the **mandatory contract** that all devices must follow.
 
 It is the source of truth for:
@@ -111,6 +109,29 @@ inject(payload) -> { ok: true } | { ok: false, error: string }
 Errors:
 - must use stable error codes
 - must not throw for expected failure modes
+
+---
+
+### 3.2 Inject / emit parity (record & replay compatibility)
+
+For any device that **emits events on a domain bus**:
+
+> Every payload shape emitted by the device **must be accepted by**
+> `inject(payload)`.
+
+This guarantees:
+- recorded domain events can be replayed verbatim
+- Recorder and Player remain device-agnostic
+- no translation logic exists outside devices
+
+Rules:
+- emitted payload shapes define the inject surface
+- `inject(payload)` must tolerate those shapes
+- malformed payloads may return `{ ok:false, error:'INVALID_INJECT_PAYLOAD' }`
+- inject must not throw for expected cases
+
+This rule does **not** require devices to re-emit injected payloads,
+only to accept them and behave sensibly.
 
 ---
 
