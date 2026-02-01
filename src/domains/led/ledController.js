@@ -28,37 +28,35 @@ export default class LedController {
     }
   }
 
-  /**
-   * Starts the controller (subscribe to mainBus).
-   *
-   * @example
-   * controller.start()
-   */
   start() {
     if (this.#unsubscribe) return
 
-    this.#logger.notice('led_controller_started', { controllerId: this.#controllerId, mode: 'rgb' })
+    this.#logger.notice('led_controller_started', { controllerId: this.#controllerId })
 
     this.#unsubscribe = this.#mainBus.subscribe((event) => {
       if (!event?.type) return
 
-      if (event.type === eventTypes.led.setRgb) {
-        this.#onSetRgb(event)
+      if (event.type === eventTypes.presence.enter) {
+        this.#onPresenceEnter(event)
         return
       }
 
-      if (event.type === eventTypes.led.off) {
-        this.#onOff(event)
+      if (event.type === eventTypes.presence.exit) {
+        this.#onPresenceExit(event)
+        return
+      }
+
+      if (event.type === eventTypes.vibration.hit) {
+        this.#onVibrationHit(event)
+        return
+      }
+
+      if (event.type === eventTypes.button.press) {
+        this.#onButtonPress(event)
       }
     })
   }
 
-  /**
-   * Disposes the controller (unsubscribe).
-   *
-   * @example
-   * controller.dispose()
-   */
   dispose() {
     if (!this.#unsubscribe) return
 
@@ -68,79 +66,69 @@ export default class LedController {
     this.#logger.notice('led_controller_disposed', { controllerId: this.#controllerId })
   }
 
-  #onSetRgb(event) {
-    const p = event?.payload || {}
-
-    const ledId = this.#asOptId(p.ledId)
-    const publishAs = this.#asOptId(p.publishAs)
-
-    const r = this.#clampByte(p.r)
-    const g = this.#clampByte(p.g)
-    const b = this.#clampByte(p.b)
-
-    const led = ledId ? this.#ledsById.get(ledId) : null
-    if (ledId && !led) {
-      this.#logger.warning('led_unknown_target', { ledId })
-      return
-    }
-
-    if (led && led.enabled === false) return
-
-    this.#publishCommand({
-      ledId,
-      publishAs,
-      command: 'setRgb',
-      args: { r, g, b },
-    })
+  #onPresenceEnter(event) {
+    const ledId = this.#pickDefaultLedId()
+    this.#publishRgb({ ledId, publishAs: null, rgb: [0, 255, 0] })
   }
 
-  #onOff(event) {
-    const p = event?.payload || {}
-
-    const ledId = this.#asOptId(p.ledId)
-    const publishAs = this.#asOptId(p.publishAs)
-
-    const led = ledId ? this.#ledsById.get(ledId) : null
-    if (ledId && !led) {
-      this.#logger.warning('led_unknown_target', { ledId })
-      return
-    }
-
-    if (led && led.enabled === false) return
-
-    this.#publishCommand({
-      ledId,
-      publishAs,
-      command: 'off',
-      args: {},
-    })
+  #onPresenceExit(event) {
+    const ledId = this.#pickDefaultLedId()
+    this.#publishRgb({ ledId, publishAs: null, rgb: [0, 0, 0] })
   }
 
-  #publishCommand({ ledId, publishAs, command, args }) {
-    const event = {
+  #onVibrationHit(event) {
+    const ledId = this.#pickDefaultLedId()
+
+    this.#publishRgb({ ledId, publishAs: null, rgb: [255, 0, 0] })
+
+    setTimeout(() => {
+      this.#publishRgb({ ledId, publishAs: null, rgb: [0, 0, 0] })
+    }, 120)
+  }
+
+  #onButtonPress(event) {
+    const ledId = this.#pickDefaultLedId()
+    this.#publishRgb({ ledId, publishAs: null, rgb: [0, 60, 255] })
+  }
+
+  #publishRgb({ ledId, publishAs, rgb }) {
+    const safe = this.#clampRgb(rgb)
+
+    const e = {
       type: domainEventTypes.led.command,
       ts: this.#clock.nowMs(),
       source: this.#controllerId,
       payload: {
         ledId: ledId || null,
         publishAs: publishAs || null,
-        command: String(command || '').trim(),
-        args: args || {},
+        rgb: safe,
       },
     }
 
-    this.#logger.debug('event_publish', event)
-    this.#ledBus.publish(event)
+    this.#logger.debug('event_publish', e)
+    this.#ledBus.publish(e)
+  }
+
+  #pickDefaultLedId() {
+    for (const [id, led] of this.#ledsById.entries()) {
+      if (led?.enabled === false) continue
+      return id
+    }
+
+    return null
+  }
+
+  #clampRgb(rgb) {
+    const a = Array.isArray(rgb) ? rgb : []
+    const r = this.#clampByte(a[0])
+    const g = this.#clampByte(a[1])
+    const b = this.#clampByte(a[2])
+    return [r, g, b]
   }
 
   #clampByte(x) {
     const n = Number(x)
     if (!Number.isFinite(n)) return 0
     return Math.max(0, Math.min(255, Math.round(n)))
-  }
-
-  #asOptId(x) {
-    const s = String(x || '').trim()
-    return s.length > 0 ? s : null
   }
 }

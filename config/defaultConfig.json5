@@ -87,7 +87,22 @@
       modes: ['rpi4', 'win11'],
       state: 'active'
     },
-
+    {
+      id: 'led',
+      publishAs: 'LD2450A',
+      domain: 'led',
+      kind: 'ld2450Radar',
+      protocol: {
+        type: 'serial',
+        usbId: { vid: '2e8a', pid: '101f', serial: '6&68C07EB&0&0002' },
+        baudRate: 256000,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+      },
+      modes: ['rpi4', 'win11'],
+      state: 'active'
+    }
   ],
   core: {
     armingDelayMs: 1200,

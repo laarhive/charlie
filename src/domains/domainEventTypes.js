@@ -16,6 +16,10 @@ export const domainEventTypes = Object.freeze({
     edge: 'buttonRaw:edge',
     level: 'buttonRaw:level',
   }),
+
+  led: Object.freeze({
+    command: 'ledRaw:command',
+  }),
 })
 
 export default domainEventTypes

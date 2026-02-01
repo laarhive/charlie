@@ -13,6 +13,7 @@ export const makeBuses = function makeBuses() {
     presence: new EventBus(),
     vibration: new EventBus(),
     button: new EventBus(),
+    led: new EventBus(),
     tasker: new EventBus(),
   }
 }

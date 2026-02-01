@@ -2,6 +2,7 @@
 import BinaryPresenceController from '../domains/presence/binaryPresenceController.js'
 import HitVibrationController from '../domains/vibration/hitVibrationController.js'
 import EdgeButtonController from '../domains/button/edgeButtonController.js'
+import LedController from '../domains/led/ledController.js'
 
 /**
  * Builds domain controllers that consume domain buses and publish to main bus.
@@ -15,6 +16,7 @@ export const makeDomainControllers = function makeDomainControllers({ logger, bu
   const presenceSensors = sensors.filter((s) => s?.role === 'presence')
   const vibrationSensors = sensors.filter((s) => s?.role === 'vibration')
   const buttonSensors = sensors.filter((s) => s?.role === 'button')
+  const ledDevices = sensors.filter((s) => s?.role === 'led')
 
   const presenceController = new BinaryPresenceController({
     logger,
@@ -43,27 +45,25 @@ export const makeDomainControllers = function makeDomainControllers({ logger, bu
     sensors: buttonSensors,
   })
 
-  return [presenceController, vibrationController, pushButtonController]
+
+  const ledController = new LedController({
+    logger,
+    ledBus: buses.led,
+    mainBus: buses.main,
+    clock,
+    controllerId: 'ledController',
+    leds: ledDevices,
+  })
+
+  return [presenceController, vibrationController, pushButtonController, ledController]
 }
 
-/**
- * Starts all controllers.
- *
- * @example
- * startAll(controllers)
- */
 export const startAll = function startAll(items) {
   for (const x of items) {
     x.start()
   }
 }
 
-/**
- * Disposes all controllers/drivers.
- *
- * @example
- * disposeAll(controllers)
- */
 export const disposeAll = function disposeAll(items) {
   for (const x of items) {
     x.dispose()
