@@ -246,25 +246,62 @@ Example:
 Example:
 ```js
 {
-  type: 'led:rgb',
+  type: 'ledRaw:command',
   ts,
   source,
   payload: {
-    ledId,
-    r,
-    g,
-    b
+    ledId,          // string | null
+    publishAs,      // string | null
+    rgb             // [r, g, b]
   }
 }
 ```
 
-Other commands:
-- `led:off`
+Where:
+- `r`, `g`, `b` are integers in range `0–255`
+- `rgb: [0, 0, 0]` is the **canonical OFF command**
 
-Rules:
+---
+
+### 8.2 Full event example
+
+```js
+{
+  type: 'ledRaw:command',
+  ts: 1700000000000,
+  source: 'ledScheduler',
+  payload: {
+    ledId: 'statusLed1',
+    publishAs: null,
+    rgb: [255, 64, 0]
+  }
+}
+```
+
+Turn off:
+
+```js
+{
+  type: 'ledRaw:command',
+  ts: 1700000001000,
+  source: 'ledScheduler',
+  payload: {
+    ledId: 'statusLed1',
+    publishAs: null,
+    rgb: [0, 0, 0]
+  }
+}
+```
+
+---
+
+### 8.3 Rules
+
 - commands are **stateless**
 - no timing encoded in the bus
 - scheduler is responsible for emission cadence
+- LED devices **must** accept the same payload via `inject(payload)` (inject–emit parity)
+- No timing, fading, or pattern logic appears on the bus
 
 ---
 
