@@ -1,6 +1,6 @@
-// src/domain/led/ledController.js
-import eventTypes from '../../core/eventTypes.js'
-import domainEventTypes from '../domainEventTypes.js'
+// src/domains/led/ledController.js
+import LedScheduler from './ledScheduler.js'
+import { validateLedConfig } from './ledValidate.js'
 
 export default class LedController {
   #logger
@@ -9,127 +9,182 @@ export default class LedController {
   #clock
   #controllerId
 
-  #ledsById
+  #controllerConfigRaw
+  #devices
+
+  #config
+  #schedulersByLedId
   #unsubscribe
 
-  constructor({ logger, ledBus, mainBus, clock, controllerId, devices }) {
+  constructor({ logger, ledBus, mainBus, clock, controllerId, controller, devices }) {
     this.#logger = logger
     this.#ledBus = ledBus
     this.#mainBus = mainBus
     this.#clock = clock
     this.#controllerId = controllerId || 'ledController'
 
-    this.#ledsById = new Map()
+    this.#controllerConfigRaw = controller || {}
+    this.#devices = Array.isArray(devices) ? devices : []
+
+    this.#config = null
+    this.#schedulersByLedId = new Map()
     this.#unsubscribe = null
 
-    const list = Array.isArray(devices) ? devices : []
-    for (const x of list) {
-      if (!x?.id) continue
-      this.#ledsById.set(x.id, x)
+    if (!this.#mainBus?.subscribe) {
+      throw new Error('ledController requires mainBus.subscribe')
+    }
+
+    if (!this.#ledBus?.publish) {
+      throw new Error('ledController requires ledBus.publish')
     }
   }
 
   start() {
     if (this.#unsubscribe) return
 
-    this.#logger.notice('led_controller_started', { controllerId: this.#controllerId })
+    this.#config = validateLedConfig({ config: this.#controllerConfigRaw, logger: this.#logger })
+    if (!this.#config?.enabled) {
+      this.#logger.notice('led_controller_disabled', { controllerId: this.#controllerId })
+      return
+    }
+
+    this.#buildSchedulers()
 
     this.#unsubscribe = this.#mainBus.subscribe((event) => {
       if (!event?.type) return
+      this.#onMainEvent(event)
+    })
 
-      if (event.type === eventTypes.presence.enter) {
-        this.#onPresenceEnter(event)
-        return
-      }
-
-      if (event.type === eventTypes.presence.exit) {
-        this.#onPresenceExit(event)
-        return
-      }
-
-      if (event.type === eventTypes.vibration.hit) {
-        this.#onVibrationHit(event)
-        return
-      }
-
-      if (event.type === eventTypes.button.press) {
-        this.#onButtonPress(event)
-      }
+    this.#logger.notice('led_controller_started', {
+      controllerId: this.#controllerId,
+      schedulers: this.#schedulersByLedId.size,
     })
   }
 
   dispose() {
-    if (!this.#unsubscribe) return
+    if (this.#unsubscribe) {
+      this.#unsubscribe()
+      this.#unsubscribe = null
+    }
 
-    this.#unsubscribe()
-    this.#unsubscribe = null
+    for (const s of this.#schedulersByLedId.values()) {
+      s.dispose()
+    }
+
+    this.#schedulersByLedId.clear()
+    this.#config = null
 
     this.#logger.notice('led_controller_disposed', { controllerId: this.#controllerId })
   }
 
-  #onPresenceEnter(event) {
-    const ledId = this.#pickDefaultLedId()
-    this.#publishRgb({ ledId, publishAs: null, rgb: [0, 255, 0] })
+  #buildSchedulers() {
+    for (const d of this.#devices) {
+      if (!d?.id) continue
+      if (d?.enabled === false) continue
+
+      const ledId = String(d.id)
+      if (this.#schedulersByLedId.has(ledId)) continue
+
+      const scheduler = new LedScheduler({
+        logger: this.#logger,
+        ledBus: this.#ledBus,
+        clock: this.#clock,
+        ledId,
+        config: this.#config,
+      })
+
+      this.#schedulersByLedId.set(ledId, scheduler)
+    }
   }
 
-  #onPresenceExit(event) {
-    const ledId = this.#pickDefaultLedId()
-    this.#publishRgb({ ledId, publishAs: null, rgb: [0, 0, 0] })
+  #onMainEvent(event) {
+    const rules = Array.isArray(this.#config?.rules) ? this.#config.rules : []
+    if (rules.length === 0) return
+
+    for (const rule of rules) {
+      if (!rule?.on) continue
+      if (rule.on !== event.type) continue
+      if (!this.#matchWhen(rule.when, event)) continue
+
+      const target = this.#resolveTarget(rule.target)
+      if (!target?.ledId) {
+        this.#logger.warning('led_rule_missing_target', { controllerId: this.#controllerId, rule })
+        continue
+      }
+
+      const scheduler = this.#schedulersByLedId.get(target.ledId)
+      if (!scheduler) {
+        this.#logger.warning('led_rule_unknown_led', {
+          controllerId: this.#controllerId,
+          ledId: target.ledId,
+          rule,
+        })
+        continue
+      }
+
+      const d = rule.do || {}
+      const effectId = String(d.effect || '').trim()
+      if (!effectId) {
+        this.#logger.warning('led_rule_missing_effect', { controllerId: this.#controllerId, rule })
+        continue
+      }
+
+      const ttlMs = d.ttlMs === null || d.ttlMs === undefined
+        ? null
+        : this.#toNonNegInt(d.ttlMs)
+
+      scheduler.request({
+        ledId: target.ledId,
+        effectId,
+        priority: Number.isFinite(Number(d.priority)) ? Number(d.priority) : 0,
+        restore: Boolean(d.restore),
+        ttlMs,
+        interrupt: d.interrupt || 'ifLower',
+        sourceEvent: event,
+        source: this.#controllerId,
+      })
+    }
   }
 
-  #onVibrationHit(event) {
-    const ledId = this.#pickDefaultLedId()
+  #matchWhen(when, event) {
+    if (!when) return true
 
-    this.#publishRgb({ ledId, publishAs: null, rgb: [255, 0, 0] })
+    const p = event?.payload || {}
 
-    setTimeout(() => {
-      this.#publishRgb({ ledId, publishAs: null, rgb: [0, 0, 0] })
-    }, 120)
-  }
-
-  #onButtonPress(event) {
-    const ledId = this.#pickDefaultLedId()
-    this.#publishRgb({ ledId, publishAs: null, rgb: [0, 60, 255] })
-  }
-
-  #publishRgb({ ledId, publishAs, rgb }) {
-    const safe = this.#clampRgb(rgb)
-
-    const e = {
-      type: domainEventTypes.led.command,
-      ts: this.#clock.nowMs(),
-      source: this.#controllerId,
-      payload: {
-        ledId: ledId || null,
-        publishAs: publishAs || null,
-        rgb: safe,
-      },
+    if (when.coreRole !== undefined) {
+      if (String(p.coreRole || '') !== String(when.coreRole || '')) return false
     }
 
-    this.#logger.debug('event_publish', e)
-    this.#ledBus.publish(e)
+    if (when.hasTarget !== undefined) {
+      const targets = Array.isArray(p.targets) ? p.targets : []
+      const has = targets.length > 0
+      if (Boolean(when.hasTarget) !== has) return false
+    }
+
+    return true
   }
 
-  #pickDefaultLedId() {
-    for (const [id, led] of this.#ledsById.entries()) {
-      if (led?.enabled === false) continue
-      return id
+  #resolveTarget(target) {
+    if (!target || typeof target !== 'object') return null
+
+    if (target.ledId) {
+      return { ledId: String(target.ledId).trim() }
+    }
+
+    if (target.alias) {
+      const alias = String(target.alias).trim()
+      const entry = this.#config?.targets?.alias?.[alias]
+      if (entry?.ledId) {
+        return { ledId: String(entry.ledId).trim() }
+      }
     }
 
     return null
   }
 
-  #clampRgb(rgb) {
-    const a = Array.isArray(rgb) ? rgb : []
-    const r = this.#clampByte(a[0])
-    const g = this.#clampByte(a[1])
-    const b = this.#clampByte(a[2])
-    return [r, g, b]
-  }
-
-  #clampByte(x) {
+  #toNonNegInt(x) {
     const n = Number(x)
     if (!Number.isFinite(n)) return 0
-    return Math.max(0, Math.min(255, Math.round(n)))
+    return Math.max(0, Math.floor(n))
   }
 }

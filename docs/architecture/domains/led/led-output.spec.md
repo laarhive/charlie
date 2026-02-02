@@ -1,352 +1,369 @@
-# LED Output Architecture — Specification & HLD
+# LED Output Architecture — Specification (v1)
 
-This document defines the **LED output architecture** for Charlie Core,
-incorporating effect factories, scheduling, and priority-based arbitration.
+This document defines how **semantic events** on the main bus drive **LED effects**
+via a controller, schedulers, and raw LED devices.
 
-It builds on the existing [Device Contract](../../devices/device.contract.md) and applies semantic control via buses with device-level execution.
-
----
-
-## 1. Scope and intent
-
-This specification defines:
-
-- how LED behavior is derived from system events
-- how LED effects are composed, scheduled, and prioritized
-- how LED devices interact with buses, controllers, and inject
-- how blocking and injection semantics apply to actuators
+**Primary goals**
+- clear separation of responsibilities
+- deterministic LED behavior
+- config-first effect and rule definition
+- easy maintenance and extension
 
 Non-goals:
-- UI rendering
-- physical LED wiring
+- UI
+- sensor logic
+- physical wiring
 - effect authoring UX
 
 ---
 
-## 2. Architectural position
-
-LED handling follows the same architectural pattern as other domains:
+## 1. Architectural overview
 
 ```
-Semantic events (main bus)
+Main Bus (semantic events)
         ↓
-LED Controller (decision logic)
+LED Controller (rules + mapping)
         ↓
-LED Scheduler (per-device arbitration)
+Per-LED Scheduler (time + priority)
         ↓
-LED Domain Bus (raw-ish LED commands)
+LED Domain Bus (ledRaw:command)
         ↓
-LED Device(s) (hardware IO or virtual)
+LED Device (hardware I/O)
 ```
 
-Key properties:
+Key points:
 - LED devices are **actuators**
-- LED devices **subscribe** to their domain bus
-- LED devices **do not interpret semantic intent**
-- LED devices execute **raw-ish LED commands only**
+- Controllers interpret **semantic intent**
+- Schedulers own **time, priority, restore**
+- Raw LED bus is **stateless**
+- One scheduler per LED device
 
 ---
 
-## 3. Buses
+## 2. Buses
 
-### 3.1 Main bus
-Carries **semantic events** such as:
-- presence enter/exit
-- button press
-- system hardware degraded/ok
+### 2.1 Main bus
+Carries **semantic events**, e.g.:
+
+- `presence:targets`
+- `vibration:hit`
+- `button:press`
+- `system:hardware`
 
 The main bus **never** carries LED commands.
 
 ---
 
-### 3.2 LED domain bus
+### 2.2 LED domain bus
 
-The LED domain bus carries **raw-ish LED output commands**.
+Carries **raw LED commands only**.
 
-Examples:
-- set RGB
-- turn off
-
-This bus:
-- is observable (tap-able via WebSocket)
-- is the only input channel for LED devices (besides inject)
-
----
-
-## 4. LED Device model
-
-### 4.1 Responsibilities
-
-An LED device:
-- subscribes to the LED domain bus on `start()`
-- executes raw LED commands (`rgb`, `off`, etc.)
-- performs hardware IO only when **not manualBlocked**
-- accepts `inject(payload)` for simulation/testing
-- does not implement effects, timing, or priorities
-
-### 4.2 Blocking behavior
-
-When `manualBlocked`:
-- bus events **must not** cause hardware IO
-- device **may** update internal simulated state
-- `inject(payload)` remains allowed
-
-Bus subscription may remain active; suppression is logical, not structural.
-
----
-
-## 5. LED Controller
-
-### 5.1 Role
-
-The LED Controller:
-- subscribes to the **main bus**
-- interprets semantic events
-- decides *what visual behavior should occur*
-- never talks to hardware directly
-
-The controller does **not** emit LED frames itself.
-
----
-
-### 5.2 Output
-
-For each relevant semantic event, the controller submits an **effect request**
-to a scheduler.
-
-The controller does **not** manage timing loops, fades, or priority resolution.
-
----
-
-## 6. Effect model
-
-### 6.1 EffectFactory (pure)
-
-Effects are defined externally via an **EffectFactory**.
-
-Properties:
-- pure functions
-- no timers
-- no hardware IO
-- deterministic output
-
-Signature:
+Event type:
 ```js
-createEffect(effectId, params) -> EffectPlan
+domainEventTypes.led.command // "ledRaw:command"
 ```
 
----
-
-### 6.2 EffectPlan
-
-An EffectPlan represents **how LED output evolves over time**.
-
-Constraints:
-- deterministic
-- side-effect free
-- time-relative
-
-Possible representations:
-- generator yielding `{ dtMs, rgb }`
-- iterator over frames
-- abstract schedule object
-
-The scheduler, not the effect, owns time.
-
----
-
-## 7. LED Scheduler (core of the system)
-
-### 7.1 Instantiation model
-
-**One LED Scheduler per LED device**.
-
-Rationale:
-- simplifies state management
-- avoids cross-device interference
-- matches physical reality
-
----
-
-### 7.2 Responsibilities
-
-The scheduler:
-- owns the active effect for a given LED
-- resolves priority conflicts
-- manages preemption and restoration
-- emits raw LED commands on the LED bus
-- drives time progression (tick loop)
-
-The scheduler is the **only component allowed to manage time** for LED output.
-
----
-
-### 7.3 Effect request shape
-
+Payload shape:
 ```js
 {
-  ledId,
-  effectId,
-  params,
+  ledId: 'statusLed1',     // required
+  publishAs: null,         // optional
+  rgb: [r, g, b]           // 0–255
+}
+```
 
-  priority,        // integer, higher wins
-  ttlMs,           // optional
-  interrupt,       // 'always' | 'ifLower' | 'never'
-  restore          // boolean
+Rules:
+- commands are stateless
+- no timing information on the bus
+- `[0,0,0]` is canonical OFF
+- same payload must be accepted by `inject()`
+
+---
+
+## 3. LED Device contract (actuator)
+
+Responsibilities:
+- subscribe to `ledRaw:command`
+- perform hardware I/O
+- respect `manualBlocked`
+- support `inject(payload)` with inject–emit parity
+- apply optional output transforms (e.g. gamma)
+
+Constraints:
+- no timing
+- no effects
+- no priorities
+- no semantic interpretation
+
+Gamma correction (if enabled):
+- applied **in device**, before hardware write
+- effects operate in logical RGB space
+
+---
+
+## 4. LED Controller
+
+Responsibilities:
+- subscribe to **main bus**
+- evaluate rules
+- resolve targets
+- submit **effect requests** to schedulers
+
+The controller:
+- does **not** emit `ledRaw:command`
+- does **not** manage time
+- does **not** handle priority resolution
+
+---
+
+## 5. Effect requests (internal API)
+
+Effect requests are **internal**, not a bus.
+
+Shape:
+```js
+{
+  ledId,              // required
+  effectId,           // string
+  params,             // resolved parameters
+  priority,           // integer (higher wins)
+  ttlMs,              // number | null (null = infinite)
+  restore,            // boolean
+  interrupt           // 'always' | 'ifLower' | 'never'
 }
 ```
 
 Defaults:
-- `priority`: 0
-- `interrupt`: 'ifLower'
-- `restore`: false
+- `priority: 0`
+- `interrupt: 'ifLower'`
+- `restore: false`
+- `ttlMs: null` (infinite)
 
 ---
 
-### 7.4 Priority & arbitration rules
+## 6. Scheduler (per LED device)
 
-1. Higher priority **always preempts** lower priority
-2. Equal priority:
-  - last request wins
-3. Lower priority:
-  - ignored if an active effect exists
+Each LED device has **exactly one scheduler**.
 
----
+Responsibilities:
+- accept effect requests
+- manage active effect
+- resolve priority conflicts
+- manage restore stack
+- drive time progression
+- emit `ledRaw:command`
 
-### 7.5 Restore semantics (stack model)
+### 6.1 Priority rules
+1. Higher priority always preempts lower
+2. Equal priority: last request wins
+3. Lower priority ignored unless `interrupt: 'always'`
 
-Each scheduler maintains an **effect stack**.
+### 6.2 Restore semantics
+- when preempting:
+  - if `restore: true`, paused effect is pushed onto stack
+- when effect ends or TTL expires:
+  - pop stack and resume previous effect
+- resumed effects continue with **remaining time**
 
-- When a new effect preempts another:
-  - if `restore === true`, push the old effect onto the stack
-- When an effect expires (TTL):
-  - pop the stack and resume the previous effect
-
-Example:
-- presence breathing (priority 10, infinite)
-- button flash (priority 50, ttl 1000ms, restore true)
-  → after 1s, breathing resumes automatically
-
----
-
-### 7.6 TTL handling
-
-- TTL is counted from effect activation
-- when TTL expires:
-  - effect stops
-  - restore behavior applies
-- no implicit fade-out unless effect defines it
+### 6.3 Time model
+- scheduler owns all timers
+- uses frame boundaries and `setTimeout`
+- effects never manage time directly
 
 ---
 
-## 8. LED Domain Bus events
+## 7. Effects (config-defined)
 
-### 8.1 Command shape
+Effects are **named presets** defined in config.
 
-Example:
-```js
-{
-  type: 'ledRaw:command',
-  ts,
-  source,
-  payload: {
-    ledId,          // string | null
-    publishAs,      // string | null
-    rgb             // [r, g, b]
+Two categories:
+1. `frames` — explicit RGB frames
+2. built-in parametric effects
+
+Effects are **data**, not code.
+
+---
+
+## 8. Built-in effect types
+
+### 8.1 Base effects
+
+- `solid`
+- `flash`
+- `breathe`
+- `fadeTo`
+- `frames`
+
+---
+
+### 8.2 Modulators
+
+Modulators modify effect parameters using **presence data**.
+
+Supported modulators (v1):
+
+**Color**
+- `color.fixed`
+- `color.gradientByDistance`
+
+**Speed**
+- `speed.fixed`
+- `speed.byDistance`
+
+Inputs:
+- `presence:targets` semantic event
+- uses `payload.primary`, fallback `targets[0]`
+- distance computed as `hypot(x, y)`
+
+Order of application:
+1. derive distance
+2. resolve color
+3. resolve speed
+4. run base effect
+
+---
+
+## 9. Palette
+
+Palettes are reusable color definitions.
+
+```json5
+palette: {
+  colors: {
+    off:  { rgb: [0, 0, 0] },
+    red:  { rgb: [255, 0, 0] }
+  },
+
+  gradients: {
+    distanceAlert: [
+      { t: 0.0, rgb: [0, 255, 0] },
+      { t: 1.0, rgb: [255, 0, 0] }
+    ]
   }
 }
 ```
 
-Where:
-- `r`, `g`, `b` are integers in range `0–255`
-- `rgb: [0, 0, 0]` is the **canonical OFF command**
+Gradient `t` is always normalized `0..1`.
 
 ---
 
-### 8.2 Full event example
+## 10. Rules (main bus → effects)
 
-```js
+Rules map **semantic events** to **effect requests**.
+
+### 10.1 Rule shape
+
+```json5
 {
-  type: 'ledRaw:command',
-  ts: 1700000000000,
-  source: 'ledScheduler',
-  payload: {
-    ledId: 'statusLed1',
-    publishAs: null,
-    rgb: [255, 64, 0]
+  on: 'presence:targets',
+
+  when: {
+    coreRole: 'presence.front',
+    hasPrimary: true
+  },
+
+  target: {
+    ledId: 'statusLed1'
+  },
+
+  do: {
+    effect: 'breathePresence',
+    priority: 10,
+    restore: false,
+    ttlMs: null
   }
 }
 ```
 
-Turn off:
+Notes:
+- `target` is required (no default LED)
+- `ttlMs: null` means infinite
+- `when` is optional and declarative
 
-```js
+---
+
+### 10.2 Example: vibration hit → flash for 2s
+
+```json5
 {
-  type: 'ledRaw:command',
-  ts: 1700000001000,
-  source: 'ledScheduler',
-  payload: {
-    ledId: 'statusLed1',
-    publishAs: null,
-    rgb: [0, 0, 0]
+  on: 'vibration:hit',
+  target: { ledId: 'statusLed1' },
+  do: {
+    effect: 'flashRed',
+    priority: 50,
+    restore: true,
+    ttlMs: 2000
   }
 }
 ```
 
 ---
 
-### 8.3 Rules
+### 10.3 Example: presence → breathe with distance-based color + speed
 
-- commands are **stateless**
-- no timing encoded in the bus
-- scheduler is responsible for emission cadence
-- LED devices **must** accept the same payload via `inject(payload)` (inject–emit parity)
-- No timing, fading, or pattern logic appears on the bus
+```json5
+{
+  on: 'presence:targets',
+  when: { hasPrimary: true },
+  target: { ledId: 'statusLed1' },
+  do: {
+    effect: 'breatheByDistance',
+    priority: 10,
+    ttlMs: null
+  }
+}
+```
+
+Effect definition:
+
+```json5
+breatheByDistance: {
+  type: 'breathe',
+  modulators: {
+    color: {
+      type: 'gradientByDistance',
+      gradient: 'distanceAlert',
+      nearM: 0,
+      farM: 3
+    },
+    speed: {
+      type: 'byDistance',
+      nearMs: 250,
+      farMs: 1200,
+      nearM: 0,
+      farM: 3
+    }
+  }
+}
+```
 
 ---
 
-## 9. Injection semantics (actuators)
+## 11. Injection semantics
 
-LED devices follow the **same inject contract as sensors**.
+LED devices implement:
+```js
+inject(payload)
+```
 
-### 9.1 `inject(payload)`
+Rules:
+- payload matches `ledRaw:command` shape
+- allowed regardless of device state
+- must not perform hardware I/O when blocked
+- must not throw for expected input
 
-- payload matches LED domain payload shape
-- works regardless of device state
-- must not perform hardware IO when blocked
-- must not throw for expected cases
-
-Injection parity:
-- anything the device can emit or consume via bus
-  must be valid input to `inject()`
-
----
-
-## 10. Observability
-
-- LED bus is tap-able over WebSocket
-- Schedulers are internal and not directly observable
-- Device runtime state changes are published via `system:hardware`
-
-This allows:
-- debugging LED behavior
-- replaying LED command streams
-- validating effect arbitration
+Inject–emit parity is mandatory.
 
 ---
 
-## 11. Summary
+## 12. Summary
 
-- Semantic intent lives on the **main bus**
-- LED logic lives in **LED Controller**
-- Time + priority live in **LED Scheduler**
-- Hardware IO lives in **LED Device**
-- One scheduler per LED device
-- Priority + stack-based restore handle conflicts cleanly
-- Inject remains consistent with sensor devices
+- semantic intent lives on **main bus**
+- LED controller is **rule-based**
+- scheduler owns **time and arbitration**
+- LED devices are **pure actuators**
+- effects and rules are **config-defined**
+- no default LEDs
+- no presentation logic in presence domain
 
-This keeps:
-- devices dumb
-- controllers declarative
-- scheduling deterministic
-- testing straightforward
+This structure keeps LED behavior deterministic, testable, and maintainable.

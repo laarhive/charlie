@@ -1,27 +1,134 @@
-// config/controllers/led.json5
 {
   enabled: true,
 
-  routing: {
-    defaultLedId: 'statusLed1',
+  targets: {
+    alias: {
+      status: { ledId: 'statusLed1' },
+    },
   },
 
-  // patterns are sequences of absolute rgb states
-  patterns: {
-    off: [
-      { rgb: [0, 0, 0], ms: 0 }
-    ],
+  palette: {
+    colors: {
+      off:   { rgb: [0, 0, 0] },
+      red:   { rgb: [255, 0, 0] },
+      green: { rgb: [0, 255, 0] },
+      blue:  { rgb: [0, 60, 255] },
+      amber: { rgb: [255, 64, 0] },
+    },
 
-    flashRed: [
-      { rgb: [255, 0, 0], ms: 120 },
-      { rgb: [0, 0, 0], ms: 0 }
-    ],
+    gradients: {
+      presenceDistance: [
+        { t: 0.0, rgb: [0, 255, 0] },
+        { t: 0.5, rgb: [255, 200, 0] },
+        { t: 1.0, rgb: [255, 0, 0] },
+      ],
+    },
   },
 
-  // minimal example policy:
-  // (semantic events are on main bus; controller emits ledRaw:command)
+  effects: {
+    off: {
+      type: 'frames',
+      frames: [
+        { rgb: 'off', holdMs: 0 },
+      ],
+    },
+
+    flashRed: {
+      type: 'frames',
+      loop: 'inf',
+      frames: [
+        { rgb: 'red', holdMs: 120 },
+        { rgb: 'off', holdMs: 120 },
+      ],
+    },
+
+    breatheIdle: {
+      type: 'breathe',
+      rgb: [0, 255, 100],
+      periodMs: 3000,
+      minMix: 0.15,
+      maxMix: 1,
+      ease: 'inOutSine',
+    },
+
+    breathePresence: {
+      type: 'breathe',
+      rgb: 'blue',
+      periodMs: 2400,
+      minMix: 0.08,
+      maxMix: 0.35,
+      ease: 'inOutSine',
+
+      // optional: keep modulators for presence:targets events
+      modulators: {
+        color: {
+          type: 'gradientByDistance',
+          gradient: 'presenceDistance',
+          nearM: 0.0,
+          farM: 3.0,
+        },
+        speed: {
+          type: 'byDistance',
+          nearM: 0.0,
+          farM: 3.0,
+          nearMs: 900,
+          farMs: 2800,
+        },
+      },
+    },
+
+    fadeToBlue: {
+      type: 'fadeTo',
+      rgb: 'blue',
+      ms: 400,
+      ease: 'linear',
+    },
+  },
+
   rules: [
-    { on: 'presence:enter', do: { pattern: 'off' } },
-    { on: 'vibration:hit', do: { pattern: 'flashRed' } },
+    {
+      on: 'presence:targets',
+      when: { hasTarget: true },
+      target: { alias: 'status' },
+      do: {
+        effect: 'breathePresence',
+        priority: 10,
+        restore: false,
+        ttlMs: null,
+      },
+    },
+
+    {
+      on: 'presence:exit',
+      target: { alias: 'status' },
+      do: {
+        effect: 'breatheIdle',
+        priority: 10,
+        restore: false,
+        ttlMs: null,
+      }
+    },
+
+    {
+      on: 'vibration:hit',
+      target: { alias: 'status' },
+      do: {
+        effect: 'flashRed',
+        priority: 50,
+        restore: true,
+        ttlMs: 2000,
+      },
+    },
+
+    {
+      on: 'button:press',
+      target: { alias: 'status' },
+      do: {
+        effect: 'fadeToBlue',
+        priority: 40,
+        restore: true,
+        ttlMs: 800,
+      },
+    },
   ],
 }
