@@ -16,11 +16,36 @@ const normalizeSerial = function normalizeSerial(value) {
   return s ? s : null
 }
 
+const normalizeIface = function normalizeIface(value) {
+  const s = String(value || '').trim().toLowerCase()
+  if (!s) return null
+
+  const m = s.match(/^[0-9a-f]{2}$/i)
+  return m ? s : null
+}
+
+const extractIfaceFromLinuxById = function extractIfaceFromLinuxById(byIdPath) {
+  const s = String(byIdPath || '')
+  if (!s) return null
+
+  const m = s.match(/-if([0-9a-f]{2})/i)
+  return m ? m[1].toLowerCase() : null
+}
+
+const extractIfaceFromPnpId = function extractIfaceFromPnpId(pnpId) {
+  const s = String(pnpId || '')
+  if (!s) return null
+
+  const m = s.match(/\bMI_([0-9a-f]{2})\b/i)
+  return m ? m[1].toLowerCase() : null
+}
+
 const makeKey = function makeKey(usbId) {
   const vid = usbId?.vid || ''
   const pid = usbId?.pid || ''
   const serial = usbId?.serial || ''
-  return `${vid}:${pid}:${serial}`
+  const iface = usbId?.iface || ''
+  return `${vid}:${pid}:${serial}:${iface}`
 }
 
 const stableStringifyEndpoints = function stableStringifyEndpoints(endpoints) {
@@ -33,6 +58,8 @@ const stableStringifyEndpoints = function stableStringifyEndpoints(endpoints) {
     debug: e?.debug ? {
       manufacturer: e.debug.manufacturer ?? null,
       product: e.debug.product ?? null,
+      pnpId: e.debug.pnpId ?? null,
+      iface: e.debug.iface ?? null,
     } : null,
   }))
 
@@ -149,11 +176,23 @@ export class UsbInventory extends EventEmitter {
       if (!k.startsWith(keyPrefix)) continue
 
       if (want.serial) {
-        if (k === makeKey(want)) {
-          matches.push(v)
+        const wantSerialKeyPrefix = `${want.vid}:${want.pid}:${want.serial}:`
+
+        if (!k.startsWith(wantSerialKeyPrefix)) continue
+
+        if (want.iface) {
+          const wantKey = makeKey(want)
+          if (k === wantKey) matches.push(v)
+          continue
         }
 
+        matches.push(v)
         continue
+      }
+
+      if (want.iface) {
+        const wantIfaceSuffix = `:${want.iface}`
+        if (!k.endsWith(wantIfaceSuffix)) continue
       }
 
       matches.push(v)
@@ -185,11 +224,22 @@ export class UsbInventory extends EventEmitter {
 
       if (!vid || !pid) continue
 
-      const serial = normalizeSerial(p.serialNumber)
-      const usbId = { vid, pid, ...(serial ? { serial } : {}) }
-
       const ttyPath = String(p.path || '').trim() || null
       const linuxById = (this.#platform === 'linux' && ttyPath) ? byIdMap.get(ttyPath) : null
+
+      const serial = normalizeSerial(p.serialNumber)
+      const pnpId = this.#platform === 'windows' ? (String(p.pnpId || '').trim() || null) : null
+
+      const ifaceFromLinux = this.#platform === 'linux' ? extractIfaceFromLinuxById(linuxById) : null
+      const ifaceFromWindows = this.#platform === 'windows' ? extractIfaceFromPnpId(pnpId) : null
+      const iface = normalizeIface(ifaceFromLinux || ifaceFromWindows)
+
+      const usbId = {
+        vid,
+        pid,
+        ...(serial ? { serial } : {}),
+        ...(iface ? { iface } : {}),
+      }
 
       const endpoint = {
         serialPath: linuxById || ttyPath,
@@ -198,6 +248,8 @@ export class UsbInventory extends EventEmitter {
         debug: {
           manufacturer: p.manufacturer || undefined,
           product: p.product || undefined,
+          pnpId: pnpId || undefined,
+          iface: iface || undefined,
         },
       }
 
@@ -260,12 +312,21 @@ export class UsbInventory extends EventEmitter {
     const vid = normalizeHex(usbId.vid)
     const pid = normalizeHex(usbId.pid)
     const serial = normalizeSerial(usbId.serial)
+    const iface = normalizeIface(usbId.iface)
 
     if (!vid || !pid) {
       return { ok: false, error: 'INVALID_USB_ID' }
     }
 
-    return { ok: true, usbId: { vid, pid, ...(serial ? { serial } : {}) } }
+    return {
+      ok: true,
+      usbId: {
+        vid,
+        pid,
+        ...(serial ? { serial } : {}),
+        ...(iface ? { iface } : {}),
+      },
+    }
   }
 }
 
