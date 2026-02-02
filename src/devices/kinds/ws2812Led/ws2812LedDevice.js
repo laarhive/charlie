@@ -1,3 +1,4 @@
+// src/devices/kinds/ws2812Led/ws2812LedDevice.js
 import eventTypes from '../../../core/eventTypes.js'
 import BaseDevice from '../../base/baseDevice.js'
 import domainEventTypes from '../../../domains/domainEventTypes.js'
@@ -14,12 +15,12 @@ export default class Ws2812LedDevice extends BaseDevice {
   #serialPath
   #duplex
   #unsubBus
+  #unsubStatus
 
   #lastProtocolErrorMsg
   #lastProtocolErrorTs
 
   #runtimeState
-
   #lastRgb
 
   constructor({ logger, clock, domainBus, mainBus, device, protocolFactory }) {
@@ -34,12 +35,12 @@ export default class Ws2812LedDevice extends BaseDevice {
     this.#serialPath = null
     this.#duplex = null
     this.#unsubBus = null
+    this.#unsubStatus = null
 
     this.#lastProtocolErrorMsg = null
     this.#lastProtocolErrorTs = 0
 
     this.#runtimeState = 'unknown'
-
     this.#lastRgb = [0, 0, 0]
 
     if (!this.#mainBus?.publish) {
@@ -92,7 +93,9 @@ export default class Ws2812LedDevice extends BaseDevice {
       onError: (e) => this.#onProtocolError(e),
     })
 
-    this.#setRuntimeState('active', null)
+    this.#unsubStatus = this.#duplex.subscribeStatus((evt) => this.#onLinkStatus(evt))
+
+    void this.#openLink()
   }
 
   _stopImpl(reason) {
@@ -120,8 +123,48 @@ export default class Ws2812LedDevice extends BaseDevice {
       return err(deviceErrorCodes.invalidInjectPayload)
     }
 
-    this.#applyRgb(rgb, { source: 'inject' })
+    void this.#applyRgb(rgb, { source: 'inject' })
     return ok()
+  }
+
+  async #openLink() {
+    if (!this.#duplex) return
+    if (this.isBlocked() || this.isDisposed()) return
+
+    const res = await this.#duplex.open()
+    if (!res?.ok) {
+      const reason = res.error === 'SERIAL_OPEN_TIMEOUT' ? 'serial_open_timeout' : 'serial_open_failed'
+      this.#setRuntimeState('degraded', reason)
+      return
+    }
+
+    this.#setRuntimeState('active', null)
+
+    await this.#writeRgb(this.#lastRgb)
+    this.#publishHardwareState('applied', null, { rgb: this.#lastRgb, source: 'recovery' })
+  }
+
+  #onLinkStatus(evt) {
+    if (this.isBlocked() || this.isDisposed()) return
+
+    const t = String(evt?.type || '')
+
+    if (t === 'open') {
+      if (this.#runtimeState !== 'active') {
+        void this.#openLink()
+      }
+
+      return
+    }
+
+    if (t === 'close') {
+      this.#setRuntimeState('degraded', 'serial_closed')
+      return
+    }
+
+    if (t === 'error') {
+      this.#setRuntimeState('degraded', 'serial_error')
+    }
   }
 
   #attachBus() {
@@ -158,7 +201,7 @@ export default class Ws2812LedDevice extends BaseDevice {
       return
     }
 
-    this.#applyRgb(rgb, { source: 'bus' })
+    void this.#applyRgb(rgb, { source: 'bus' })
   }
 
   #isTargetMatch(payload) {
@@ -173,11 +216,10 @@ export default class Ws2812LedDevice extends BaseDevice {
       return publishAs === this.getPublishAs()
     }
 
-    // If both are null => treat as broadcast (optional but practical)
     return true
   }
 
-  #applyRgb(rgb, { source }) {
+  async #applyRgb(rgb, { source }) {
     this.#lastRgb = rgb
 
     const blocked = this.isBlocked() || this.isDisposed() || this.#runtimeState !== 'active'
@@ -186,22 +228,20 @@ export default class Ws2812LedDevice extends BaseDevice {
       return
     }
 
-    const okWrite = this.#writeRgb(rgb)
-    if (!okWrite) {
-      return
-    }
+    const okWrite = await this.#writeRgb(rgb)
+    if (!okWrite) return
 
     this.#publishHardwareState('applied', null, { rgb, source })
   }
 
-  #writeRgb(rgb) {
+  async #writeRgb(rgb) {
     if (!this.#duplex) {
       this.#setRuntimeState('degraded', 'serial_not_ready')
       return false
     }
 
     const buf = this.#encodeRgbCommand(rgb)
-    const res = this.#duplex.write(buf)
+    const res = await this.#duplex.write(buf)
 
     if (!res?.ok) {
       const msg = res?.error || 'serial_write_failed'
@@ -214,14 +254,11 @@ export default class Ws2812LedDevice extends BaseDevice {
 
   #encodeRgbCommand(rgb) {
     const [r, g, b] = rgb
-    const line = `LED ${r} ${g} ${b}\n`
+    const line = `${r},${g},${b}\n`
     return Buffer.from(line, 'utf8')
   }
 
   #parseRgbPayload(payload) {
-    // accepts:
-    // - { rgb: [r,g,b] }
-    // - { r, g, b }  (optional convenience)
     const arr = Array.isArray(payload?.rgb) ? payload.rgb : null
 
     if (arr) {
@@ -273,10 +310,6 @@ export default class Ws2812LedDevice extends BaseDevice {
         message: e?.message,
       })
     }
-
-    if (!this.isBlocked() && !this.isDisposed()) {
-      this.#setRuntimeState('degraded', this.getLastError())
-    }
   }
 
   #setRuntimeState(state, error) {
@@ -286,10 +319,15 @@ export default class Ws2812LedDevice extends BaseDevice {
   }
 
   #teardownProtocol() {
-    // keep bus subscription attached while active; when blocked, we typically stop everything
     this.#detachBus()
 
-    if (this.#duplex?.dispose) {
+    if (this.#unsubStatus) {
+      this.#unsubStatus()
+      this.#unsubStatus = null
+    }
+
+    if (this.#duplex) {
+      void this.#duplex.close()
       this.#duplex.dispose()
     }
 

@@ -15,7 +15,8 @@ export default class Ld2410RadarDevice extends BaseDevice {
 
   #serialPath
   #duplex
-  #unsub
+  #unsubData
+  #unsubStatus
 
   #lastProtocolErrorMsg
   #lastProtocolErrorTs
@@ -40,7 +41,8 @@ export default class Ld2410RadarDevice extends BaseDevice {
 
     this.#serialPath = null
     this.#duplex = null
-    this.#unsub = null
+    this.#unsubData = null
+    this.#unsubStatus = null
 
     this.#lastProtocolErrorMsg = null
     this.#lastProtocolErrorTs = 0
@@ -122,12 +124,13 @@ export default class Ld2410RadarDevice extends BaseDevice {
       onError: (e) => this.#onProtocolError(e),
     })
 
-    this.#unsub = this.#duplex.subscribe((buf) => this.#onData(buf))
+    this.#unsubData = this.#duplex.subscribeData((buf) => this.#onData(buf))
+    this.#unsubStatus = this.#duplex.subscribeStatus((evt) => this.#onLinkStatus(evt))
 
     this.#lastDataTs = this.#clock.nowMs()
     this.#startWatchdog()
 
-    this.#setRuntimeState('active', null)
+    void this.#openLink()
   }
 
   _stopImpl(reason) {
@@ -146,24 +149,17 @@ export default class Ld2410RadarDevice extends BaseDevice {
       return err(deviceErrorCodes.invalidInjectPayload)
     }
 
-    // Allow raw bytes injection (tests/replay)
     if (Buffer.isBuffer(payload)) {
       this.#publishRaw(payload)
       return ok()
     }
 
-    // Accept emitted payload shapes (inject–emit parity):
-    // - { deviceId, publishAs, frame }
-    // - { deviceId, publishAs, base64, bytes }
-    // plus tolerate extra fields.
     if (typeof payload === 'object') {
-      // 1) Frame payload
       if (payload.frame && typeof payload.frame === 'object') {
         this.#publishFrame(payload.frame)
         return ok()
       }
 
-      // 2) Raw/base64 payload
       const b64 = payload.base64
       if (typeof b64 === 'string' && b64.length > 0) {
         try {
@@ -183,6 +179,43 @@ export default class Ld2410RadarDevice extends BaseDevice {
     }
 
     return err(deviceErrorCodes.invalidInjectPayload)
+  }
+
+  async #openLink() {
+    if (!this.#duplex) return
+    if (this.isBlocked() || this.isDisposed()) return
+
+    const res = await this.#duplex.open()
+    if (!res?.ok) {
+      const reason = res.error === 'SERIAL_OPEN_TIMEOUT' ? 'serial_open_timeout' : 'serial_open_failed'
+      this.#setRuntimeState('degraded', reason)
+      return
+    }
+
+    this.#setRuntimeState('active', null)
+  }
+
+  #onLinkStatus(evt) {
+    if (this.isBlocked() || this.isDisposed()) return
+
+    const t = String(evt?.type || '')
+
+    if (t === 'open') {
+      if (this.#runtimeState !== 'active') {
+        this.#setRuntimeState('active', null)
+      }
+
+      return
+    }
+
+    if (t === 'close') {
+      this.#setRuntimeState('degraded', 'serial_closed')
+      return
+    }
+
+    if (t === 'error') {
+      this.#setRuntimeState('degraded', 'serial_error')
+    }
   }
 
   #onData(buf) {
@@ -246,10 +279,6 @@ export default class Ld2410RadarDevice extends BaseDevice {
         message: e?.message,
       })
     }
-
-    if (!this.isBlocked() && !this.isDisposed()) {
-      this.#setRuntimeState('degraded', this.getLastError())
-    }
   }
 
   #startWatchdog() {
@@ -292,12 +321,18 @@ export default class Ld2410RadarDevice extends BaseDevice {
   #teardown() {
     this.#stopWatchdog()
 
-    if (this.#unsub) {
-      this.#unsub()
-      this.#unsub = null
+    if (this.#unsubData) {
+      this.#unsubData()
+      this.#unsubData = null
     }
 
-    if (this.#duplex?.dispose) {
+    if (this.#unsubStatus) {
+      this.#unsubStatus()
+      this.#unsubStatus = null
+    }
+
+    if (this.#duplex) {
+      void this.#duplex.close()
       this.#duplex.dispose()
     }
 

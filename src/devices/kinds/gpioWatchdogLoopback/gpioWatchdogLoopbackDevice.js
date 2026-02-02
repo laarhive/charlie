@@ -88,6 +88,9 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
   #lastState
   #lastErrorCode
 
+  #tickTimer
+  #toggling
+
   constructor({ logger, clock, buses, device }) {
     super(device)
 
@@ -149,11 +152,18 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
 
     this.#lastState = 'unknown'
     this.#lastErrorCode = null
+
+    this.#tickTimer = null
+    this.#toggling = false
   }
 
   _startImpl() {
+    if (this.isBlocked() || this.isDisposed()) return
+
     this._setLastError(null)
 
+    this.#stopToggling()
+    this.#clearStaleTimer()
     this.#closeGpio()
 
     try {
@@ -165,20 +175,21 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
         edge: Gpio.EITHER_EDGE,
       })
     } catch (e) {
-      this.#clearStaleTimer()
-      this.#closeGpio()
-
       const msg = `gpio_init_failed: ${String(e?.message || e)}`
       this.#publish('degraded', msg)
       return
     }
 
     this.#inp.on('interrupt', () => {
+      if (this.isDisposed() || this.isBlocked()) return
+
       this.#armStaleTimer()
       this.#publish('active', null)
     })
 
     this.#inp.on('error', ({ source, message }) => {
+      if (this.isDisposed() || this.isBlocked()) return
+
       this.#clearStaleTimer()
       this.#publish('degraded', `${source}: ${message}`)
     })
@@ -189,8 +200,8 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
     this.#startToggling()
   }
 
-
   _stopImpl(reason) {
+    this.#stopToggling()
     this.#clearStaleTimer()
     this.#closeGpio()
 
@@ -206,9 +217,21 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
   }
 
   #startToggling() {
+    if (this.#toggling) return
+    this.#toggling = true
+
     let backoffMs = 250
 
+    const schedule = (ms) => {
+      if (!this.#toggling) return
+      this.#tickTimer = setTimeout(() => {
+        this.#tickTimer = null
+        tick()
+      }, ms)
+    }
+
     const tick = () => {
+      if (!this.#toggling) return
       if (this.isDisposed() || this.isBlocked()) return
       if (!this.#out) return
 
@@ -218,25 +241,29 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
         this.#out.digitalWrite(this.#level)
         backoffMs = 250
       } catch (e) {
-        const msg = `write failed: ${String(e?.message || e)}`
+        const msg = `write_failed: ${String(e?.message || e)}`
         this.#publish('degraded', msg)
 
         const waitMs = Math.min(backoffMs, 5000)
         backoffMs = Math.min(backoffMs * 2, 5000)
 
-        setTimeout(() => {
-          tick()
-        }, waitMs)
-
+        schedule(waitMs)
         return
       }
 
-      setTimeout(() => {
-        tick()
-      }, this.#toggleMs)
+      schedule(this.#toggleMs)
     }
 
     tick()
+  }
+
+  #stopToggling() {
+    this.#toggling = false
+
+    if (this.#tickTimer) {
+      clearTimeout(this.#tickTimer)
+      this.#tickTimer = null
+    }
   }
 
   #armStaleTimer() {
@@ -246,7 +273,7 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
       this.#staleTimer = null
       if (this.isDisposed() || this.isBlocked()) return
 
-      this.#publish('degraded', `loopback stale (no edge for ${this.#staleMs}ms)`)
+      this.#publish('degraded', `loopback_stale_no_edge_${this.#staleMs}ms`)
     }, this.#staleMs)
   }
 
@@ -298,7 +325,7 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
     this.#mainBus.publish({
       type: eventTypes.system.hardware,
       ts: this.#clock.nowMs(),
-      source: 'gpioWatchdogLoopback',
+      source: 'gpioWatchdogLoopbackDevice',
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),

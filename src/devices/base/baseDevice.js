@@ -38,6 +38,8 @@
  *   }
  * }
  */
+import { err } from '../deviceResult.js'
+import deviceErrorCodes from '../deviceErrorCodes.js'
 
 export default class BaseDevice {
   #device
@@ -118,7 +120,7 @@ export default class BaseDevice {
 
   inject(payload) {
     void payload
-    return err('INVALID_INJECT_PAYLOAD')
+    return err(deviceErrorCodes.invalidInjectPayload)
   }
 
   block(reason) {

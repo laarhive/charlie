@@ -3,6 +3,7 @@ import eventTypes from '../core/eventTypes.js'
 import ProtocolFactory from './protocols/protocolFactory.js'
 import makeDeviceInstance from './kinds/index.js'
 import UsbInventory from './usbInventory.js'
+import deviceErrorCodes from './deviceErrorCodes.js'
 
 export class DeviceManager {
   #logger
@@ -135,7 +136,7 @@ export class DeviceManager {
   block(deviceId, reason = 'manual') {
     const id = String(deviceId || '').trim()
     const cfg = this.#deviceConfigById.get(id)
-    if (!cfg) return { ok: false, error: 'DEVICE_NOT_FOUND' }
+    if (!cfg) return { ok: false, error: deviceErrorCodes.deviceNotFound }
 
     const inst = this.#deviceById.get(id)
     if (inst?.block) {
@@ -153,23 +154,18 @@ export class DeviceManager {
   unblock(deviceId, reason = 'manual') {
     const id = String(deviceId || '').trim()
     const cfg = this.#deviceConfigById.get(id)
-    if (!cfg) return { ok: false, error: 'DEVICE_NOT_FOUND' }
-
-    const current = this.#stateById.get(id)
-    if (current === 'active') {
-      return { ok: true, note: 'already_active' }
-    }
+    if (!cfg) return { ok: false, error: deviceErrorCodes.deviceNotFound }
 
     const inst = this.#deviceById.get(id)
 
     if (!inst) {
       const ok = this.#ensureStarted(cfg, { reason })
-      return ok ? { ok: true } : { ok: false, error: 'START_FAILED' }
+      return ok ? { ok: true } : { ok: false, error: deviceErrorCodes.startFailed }
     }
 
     try {
       inst.unblock?.()
-      this.#setState(id, 'active', { phase: 'unblock', reason })
+      // Do NOT set active here. Device will publish real state (active/degraded).
       return { ok: true }
     } catch (e) {
       this.#logger.error('device_unblock_failed', { deviceId: id, error: e?.message || String(e) })
@@ -179,17 +175,17 @@ export class DeviceManager {
         error: e?.message || String(e),
         errorCode: e?.code ? String(e.code) : null,
       })
-      return { ok: false, error: 'START_FAILED' }
+      return { ok: false, error: deviceErrorCodes.startFailed }
     }
   }
 
   inject(deviceId, payload) {
     const id = String(deviceId || '').trim()
     const cfg = this.#deviceConfigById.get(id)
-    if (!cfg) return { ok: false, error: 'DEVICE_NOT_FOUND' }
+    if (!cfg) return { ok: false, error: deviceErrorCodes.deviceNotFound }
 
     const inst = this.#deviceById.get(id)
-    if (!inst) return { ok: false, error: 'DEVICE_NOT_READY' }
+    if (!inst) return { ok: false, error: deviceErrorCodes.deviceNotReady }
 
     try {
       const res = inst.inject(payload)
@@ -199,7 +195,7 @@ export class DeviceManager {
 
       return { ok: true }
     } catch (e) {
-      return { ok: false, error: 'INJECT_FAILED', message: e?.message || String(e) }
+      return { ok: false, error: deviceErrorCodes.injectFailed, message: e?.message || String(e) }
     }
   }
 
@@ -255,8 +251,7 @@ export class DeviceManager {
 
     try {
       inst.start?.()
-
-      this.#setState(id, 'active', { phase: 'start', ...detail })
+      // Do NOT set active here. Device will publish real state (active/degraded).
       return true
     } catch (e) {
       const msg = e?.message || String(e)

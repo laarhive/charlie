@@ -71,6 +71,8 @@ export default class ButtonEdgeDevice extends BaseDevice {
   #lastProtocolErrorMsg
   #lastProtocolErrorTs
 
+  #runtimeState
+
   constructor({ logger, clock, domainBus, mainBus, device, protocolFactory }) {
     super(device)
 
@@ -87,72 +89,39 @@ export default class ButtonEdgeDevice extends BaseDevice {
     this.#lastProtocolErrorMsg = null
     this.#lastProtocolErrorTs = 0
 
+    this.#runtimeState = 'unknown'
+
     if (!this.#mainBus?.publish) {
       throw new Error('buttonEdge requires main bus for system:hardware reporting')
     }
   }
 
   _startImpl() {
+    if (this.isBlocked() || this.isDisposed()) return
+
     if (!this.#input) {
       this._setLastError(null)
 
       this.#input = this.#protocolFactory.makeBinaryInput(this._device().protocol, {
-        onError: (e) => {
-          const msg = String(e?.message || '')
-          const now = this.#clock.nowMs()
-
-          const duplicate = msg &&
-            msg === this.#lastProtocolErrorMsg &&
-            (now - this.#lastProtocolErrorTs) < 2000
-
-          this.#lastProtocolErrorMsg = msg
-          this.#lastProtocolErrorTs = now
-
-          this._setLastError(msg || 'gpio_error')
-
-          if (!duplicate) {
-            this.#logger.error('device_protocol_error', {
-              deviceId: this.getId(),
-              source: e?.source,
-              message: e?.message,
-            })
-          }
-
-          this.#publishHardwareState('degraded', this.getLastError())
-        }
+        onError: (e) => this.#onProtocolError(e),
       })
     }
 
     if (this.#unsub) {
+      // Already running
+      if (this.#runtimeState !== 'active') {
+        this.#setRuntimeState('active', null)
+      }
+
       return
     }
 
     const initial = this._device()?.protocol?.initial
     this.#last = (initial === true || initial === false) ? Boolean(initial) : null
 
-    this.#unsub = this.#input.subscribe((value) => {
-      if (this.isBlocked()) {
-        this.#last = Boolean(value)
-        return
-      }
+    this.#unsub = this.#input.subscribe((value) => this.#onValue(value))
 
-      const v = Boolean(value)
-      const prev = this.#last
-
-      if (prev === null) {
-        this.#last = v
-        return
-      }
-
-      if (v !== prev) {
-        const edge = v ? 'rising' : 'falling'
-        this.#publishEdge(edge)
-      }
-
-      this.#last = v
-    })
-
-    this.#publishHardwareState('active', null)
+    this.#setRuntimeState('active', null)
   }
 
   _stopImpl(reason) {
@@ -169,8 +138,13 @@ export default class ButtonEdgeDevice extends BaseDevice {
 
     this.#input = null
 
+    this.#lastProtocolErrorMsg = null
+    this.#lastProtocolErrorTs = 0
+
     if (reason !== 'dispose') {
       const msg = reason ? `blocked: ${String(reason)}` : 'blocked'
+      this.#runtimeState = 'manualBlocked'
+      this._setLastError(msg)
       this.#publishHardwareState('manualBlocked', msg)
     }
   }
@@ -186,8 +160,69 @@ export default class ButtonEdgeDevice extends BaseDevice {
     }
 
     this.#publishEdge(edge)
-
     return ok()
+  }
+
+  #onValue(value) {
+    const v = Boolean(value)
+
+    // Suppress domain emission while blocked, but keep tracking the last level.
+    if (this.isBlocked() || this.isDisposed()) {
+      this.#last = v
+      return
+    }
+
+    // If we were degraded previously, treat incoming values as recovery.
+    if (this.#runtimeState !== 'active') {
+      this.#setRuntimeState('active', null)
+    }
+
+    const prev = this.#last
+
+    if (prev === null) {
+      this.#last = v
+      return
+    }
+
+    if (v !== prev) {
+      const edge = v ? 'rising' : 'falling'
+      this.#publishEdge(edge)
+    }
+
+    this.#last = v
+  }
+
+  #onProtocolError(e) {
+    const msg = String(e?.message || '')
+    const now = this.#clock.nowMs()
+
+    const duplicate = msg &&
+      msg === this.#lastProtocolErrorMsg &&
+      (now - this.#lastProtocolErrorTs) < 2000
+
+    this.#lastProtocolErrorMsg = msg
+    this.#lastProtocolErrorTs = now
+
+    const errMsg = msg || 'binary_input_error'
+    this._setLastError(errMsg)
+
+    if (!duplicate) {
+      this.#logger?.error?.('device_protocol_error', {
+        deviceId: this.getId(),
+        source: e?.source,
+        message: e?.message,
+      })
+    }
+
+    if (!this.isBlocked() && !this.isDisposed()) {
+      this.#setRuntimeState('degraded', errMsg)
+    }
+  }
+
+  #setRuntimeState(state, error) {
+    this.#runtimeState = state
+    this._setLastError(error || null)
+    this.#publishHardwareState(state, this.getLastError())
   }
 
   #publishHardwareState(state, error) {
