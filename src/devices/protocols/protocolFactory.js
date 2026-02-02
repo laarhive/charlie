@@ -73,6 +73,9 @@ export default class ProtocolFactory {
         stopBits: p?.stopBits ?? 1,
         parity: p?.parity ?? 'none',
         highWaterMark: p?.highWaterMark ?? 120,
+        openTimeoutMs: p?.openTimeoutMs ?? this.#config?.usbSerial?.openTimeoutMs ?? 1500,
+        reconnectMinMs: p?.reconnectMinMs ?? this.#config?.usbSerial?.reconnectMinMs ?? 250,
+        reconnectMaxMs: p?.reconnectMaxMs ?? this.#config?.usbSerial?.reconnectMaxMs ?? 5000,
       },
       onError,
     })
