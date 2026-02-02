@@ -7,14 +7,15 @@ export class HitVibrationController extends VibrationController {
   #unsubscribe
   #lastHitTsBySensor
 
-  constructor({ logger, vibrationBus, mainBus, clock, controllerId, sensors }) {
+  constructor({ logger, vibrationBus, mainBus, clock, controllerId, devices }) {
     super({ logger, vibrationBus, mainBus, clock, controllerId })
 
     this.#sensorsById = new Map()
     this.#unsubscribe = null
     this.#lastHitTsBySensor = new Map()
 
-    const list = Array.isArray(sensors) ? sensors : []
+    const list = Array.isArray(devices) ? devices : []
+
     for (const s of list) {
       if (!s?.id) {
         continue
@@ -62,7 +63,7 @@ export class HitVibrationController extends VibrationController {
       return
     }
 
-    if (!sensor.enabled) {
+    if (sensor.enabled === false) {
       return
     }
 

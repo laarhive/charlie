@@ -10,7 +10,7 @@ export class BinaryPresenceController extends PresenceController {
   #stableBySensor
   #pendingTimers
 
-  constructor({ logger, presenceBus, mainBus, clock, controllerId, sensors }) {
+  constructor({ logger, presenceBus, mainBus, clock, controllerId, devices }) {
     super({ logger, presenceBus, mainBus, clock, controllerId })
 
     this.#sensorsById = new Map()
@@ -20,7 +20,8 @@ export class BinaryPresenceController extends PresenceController {
     this.#stableBySensor = new Map()
     this.#pendingTimers = new Map()
 
-    const list = Array.isArray(sensors) ? sensors : []
+    const list = Array.isArray(devices) ? devices : []
+
     for (const s of list) {
       if (!s?.id) {
         continue
@@ -76,7 +77,7 @@ export class BinaryPresenceController extends PresenceController {
       return
     }
 
-    if (!sensor.enabled) {
+    if (sensor.enabled === false) {
       return
     }
 

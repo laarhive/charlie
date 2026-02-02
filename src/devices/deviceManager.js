@@ -46,10 +46,6 @@ export class DeviceManager {
 
     for (const cfg of devices) {
       if (!cfg?.id) continue
-
-      const modes = Array.isArray(cfg?.modes) ? cfg.modes : []
-      if (!modes.includes(this.#mode)) continue
-
       this.#deviceConfigById.set(cfg.id, cfg)
     }
 
@@ -261,7 +257,8 @@ export class DeviceManager {
 
     try {
       inst.start?.()
-//      this.#setState(id, 'active', { phase: 'start', ...detail })
+
+      this.#setState(id, 'active', { phase: 'start', ...detail })
       return true
     } catch (e) {
       const msg = e?.message || String(e)
@@ -453,7 +450,6 @@ export class DeviceManager {
         subsystem: 'usb',
         action,
         seq: this.#usbEventSeq,
-        source: 'deviceManager',
         usbId: usbId ? { ...usbId } : undefined,
         endpoints: Array.isArray(endpoints) ? endpoints : undefined,
         relatedDevices: Array.isArray(relatedDevices) ? relatedDevices : [],

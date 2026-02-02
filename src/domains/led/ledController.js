@@ -1,3 +1,4 @@
+// src/domain/led/ledController.js
 import eventTypes from '../../core/eventTypes.js'
 import domainEventTypes from '../domainEventTypes.js'
 
@@ -11,7 +12,7 @@ export default class LedController {
   #ledsById
   #unsubscribe
 
-  constructor({ logger, ledBus, mainBus, clock, controllerId, leds }) {
+  constructor({ logger, ledBus, mainBus, clock, controllerId, devices }) {
     this.#logger = logger
     this.#ledBus = ledBus
     this.#mainBus = mainBus
@@ -21,7 +22,7 @@ export default class LedController {
     this.#ledsById = new Map()
     this.#unsubscribe = null
 
-    const list = Array.isArray(leds) ? leds : []
+    const list = Array.isArray(devices) ? devices : []
     for (const x of list) {
       if (!x?.id) continue
       this.#ledsById.set(x.id, x)

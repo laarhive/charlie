@@ -4,58 +4,81 @@ import HitVibrationController from '../domains/vibration/hitVibrationController.
 import EdgeButtonController from '../domains/button/edgeButtonController.js'
 import LedController from '../domains/led/ledController.js'
 
-/**
- * Builds domain controllers that consume domain buses and publish to main bus.
- *
- * @example
- * const controllers = makeDomainControllers({ logger, buses, clock, config })
- */
+const toRuntimeDevices = function toRuntimeDevices(devices) {
+  const list = Array.isArray(devices) ? devices : []
+
+  return list.map((d) => {
+    const out = { ...d }
+
+    if (out.enabled === undefined) {
+      out.enabled = true
+    }
+
+    return out
+  })
+}
+
 export const makeDomainControllers = function makeDomainControllers({ logger, buses, clock, config }) {
-  const sensors = Array.isArray(config?.sensors) ? config.sensors : []
+  const devices = toRuntimeDevices(config?.devices)
+  const controllers = config?.controllers || {}
 
-  const presenceSensors = sensors.filter((s) => s?.role === 'presence')
-  const vibrationSensors = sensors.filter((s) => s?.role === 'vibration')
-  const buttonSensors = sensors.filter((s) => s?.role === 'button')
-  const ledDevices = sensors.filter((s) => s?.role === 'led')
+  const byDomain = (domain) => devices.filter((d) => d?.domain === domain)
 
-  const presenceController = new BinaryPresenceController({
-    logger,
-    presenceBus: buses.presence,
-    mainBus: buses.main,
-    clock,
-    controllerId: 'presenceController',
-    sensors: presenceSensors,
-  })
+  const out = []
 
-  const vibrationController = new HitVibrationController({
-    logger,
-    vibrationBus: buses.vibration,
-    mainBus: buses.main,
-    clock,
-    controllerId: 'vibrationController',
-    sensors: vibrationSensors,
-  })
+  {
+    const controller = controllers?.presence || {}
+    out.push(new BinaryPresenceController({
+      logger,
+      presenceBus: buses.presence,
+      mainBus: buses.main,
+      clock,
+      controllerId: 'presenceController',
+      controller,
+      devices: byDomain('presence'),
+    }))
+  }
 
-  const pushButtonController = new EdgeButtonController({
-    logger,
-    buttonBus: buses.button,
-    mainBus: buses.main,
-    clock,
-    controllerId: 'pushButtonController',
-    sensors: buttonSensors,
-  })
+  {
+    const controller = controllers?.vibration || {}
+    out.push(new HitVibrationController({
+      logger,
+      vibrationBus: buses.vibration,
+      mainBus: buses.main,
+      clock,
+      controllerId: 'vibrationController',
+      controller,
+      devices: byDomain('vibration'),
+    }))
+  }
 
+  {
+    const controller = controllers?.button || {}
+    out.push(new EdgeButtonController({
+      logger,
+      buttonBus: buses.button,
+      mainBus: buses.main,
+      clock,
+      controllerId: 'pushButtonController',
+      controller,
+      devices: byDomain('button'),
+    }))
+  }
 
-  const ledController = new LedController({
-    logger,
-    ledBus: buses.led,
-    mainBus: buses.main,
-    clock,
-    controllerId: 'ledController',
-    leds: ledDevices,
-  })
+  {
+    const controller = controllers?.led || {}
+    out.push(new LedController({
+      logger,
+      ledBus: buses.led,
+      mainBus: buses.main,
+      clock,
+      controllerId: 'ledController',
+      controller,
+      devices: byDomain('led'),
+    }))
+  }
 
-  return [presenceController, vibrationController, pushButtonController, ledController]
+  return out
 }
 
 export const startAll = function startAll(items) {

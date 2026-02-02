@@ -6,13 +6,13 @@ export class TargetsPresenceController extends PresenceController {
   #sensorsById
   #unsubscribe
 
-  constructor({ logger, presenceBus, mainBus, clock, controllerId, sensors }) {
+  constructor({ logger, presenceBus, mainBus, clock, controllerId, devices }) {
     super({ logger, presenceBus, mainBus, clock, controllerId })
 
     this.#sensorsById = new Map()
     this.#unsubscribe = null
 
-    const list = Array.isArray(sensors) ? sensors : []
+    const list = Array.isArray(devices) ? devices : []
     for (const s of list) {
       if (!s?.id) {
         continue
@@ -60,7 +60,7 @@ export class TargetsPresenceController extends PresenceController {
       return
     }
 
-    if (!sensor.enabled) {
+    if (sensor.enabled === false) {
       return
     }
 

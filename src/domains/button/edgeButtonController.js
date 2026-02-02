@@ -25,16 +25,14 @@ export class EdgeButtonController extends PushButtonController {
   #unsubscribe
   #lastPressTsByDeviceId
 
-  constructor({ logger, buttonBus, mainBus, clock, controllerId, devices, sensors }) {
+  constructor({ logger, buttonBus, mainBus, clock, controllerId, devices }) {
     super({ logger, buttonBus, mainBus, clock, controllerId })
 
     this.#devicesById = new Map()
     this.#unsubscribe = null
     this.#lastPressTsByDeviceId = new Map()
 
-    const list = Array.isArray(devices)
-      ? devices
-      : (Array.isArray(sensors) ? sensors : [])
+    const list = Array.isArray(devices) ? devices : []
 
     for (const d of list) {
       if (!d?.id) {
@@ -95,11 +93,6 @@ export class EdgeButtonController extends PushButtonController {
       return
     }
 
-    const configuredState = device.state ?? 'active'
-    if (configuredState === 'manualBlocked') {
-      return
-    }
-
     const now = this._clock().nowMs()
     const cooldownMs = device.params?.cooldownMs ?? 250
     const last = this.#lastPressTsByDeviceId.get(deviceId)
@@ -113,7 +106,7 @@ export class EdgeButtonController extends PushButtonController {
 
     this.#lastPressTsByDeviceId.set(deviceId, now)
 
-    const coreRole = device.coreRole ?? null
+    const coreRole = device.coreRole ?? device.CoreRole ?? null
     this._publishPress({ coreRole, deviceId, publishAs })
   }
 }

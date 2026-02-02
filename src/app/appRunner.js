@@ -40,8 +40,7 @@ export class AppRunner {
     const initialConfigFile = args.config || defaultConfigFile
 
     try {
-      const loaded = loadConfigFile(initialConfigFile)
-      const config = loaded.config
+      const config = loadConfigFile(initialConfigFile, { mode: args.mode })
 
       if (args.portProvided) {
         config.server ??= {}
@@ -49,7 +48,7 @@ export class AppRunner {
       }
 
       this.#context = makeContext({ logger: this.#logger, config, mode: args.mode })
-      this.#logger.info('app_started', { configFile: loaded.fullPath, mode: args.mode, interactive: args.interactive })
+      this.#logger.info('app_started', { configFile: initialConfigFile, mode: args.mode, interactive: args.interactive })
     } catch (e) {
       const fe = formatError(e)
 
@@ -79,7 +78,7 @@ export class AppRunner {
       }
     }
 
-    const loadConfig = (filename) => loadConfigFile(filename)
+    const loadConfig = (filename) => loadConfigFile(filename, { mode: args.mode })
 
     if (args.interactive) {
       const parser = new CliParser()

@@ -34,12 +34,7 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     return new FakeConversationAdapter()
   })()
 
-  const normalizedConfig = {
-    ...config,
-    sensors: Array.isArray(config?.devices) ? config.devices : [],
-  }
-
-  const domainControllers = makeDomainControllers({ logger, buses, clock, config: normalizedConfig })
+  const domainControllers = makeDomainControllers({ logger, buses, clock, config })
   startAll(domainControllers)
 
   const core = new CharlieCore({
