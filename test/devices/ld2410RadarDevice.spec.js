@@ -3,7 +3,10 @@ import { expect } from 'chai'
 import EventBus from '../../src/core/eventBus.js'
 import Ld2410RadarDevice from '../../src/devices/kinds/ld2410Radar/ld2410RadarDevice.js'
 import domainEventTypes from '../../src/domains/domainEventTypes.js'
+import deviceErrorCodes from '../../src/devices/deviceErrorCodes.js'
+import FakeUsbSerialDuplex from './shared/fakeUsbSerialDuplex.js'
 import { runDeviceConformanceTests } from './shared/deviceConformance.js'
+import { runUsbSerialDeviceConformanceTests } from './shared/usbSerialDeviceConformance.js'
 
 const makeClock = function makeClock() {
   let now = 0
@@ -14,15 +17,15 @@ const makeClock = function makeClock() {
   }
 }
 
-const makeHarness = function makeHarness() {
+const makeHarness = function makeHarness({ serialPath = null, openResults } = {}) {
   const clock = makeClock()
   const mainBus = new EventBus()
   const domainBus = new EventBus()
 
+  const duplex = new FakeUsbSerialDuplex({ openResults })
+
   const protocolFactory = {
-    makeUsbSerialDuplex: () => {
-      throw new Error('test_should_not_open_serial')
-    },
+    makeUsbSerialDuplex: () => duplex,
   }
 
   const device = new Ld2410RadarDevice({
@@ -37,7 +40,7 @@ const makeHarness = function makeHarness() {
       kind: 'ld2410Radar',
       protocol: {
         type: 'serial',
-        serialPath: null,
+        serialPath,
         dataTimeoutMs: 1500,
       },
       state: 'active',
@@ -50,16 +53,25 @@ const makeHarness = function makeHarness() {
     mainBus,
     domainBus,
     device,
+    deviceId: 'LD2410A',
 
-    // emits domain events but we don't simulate protocol input in the harness yet
+    duplex,
+    emitData: (buf) => duplex.emitData(buf),
+    emitStatus: (evt) => duplex.emitStatus(evt),
+
     expectsDomainEvents: true,
-    // participatesInRecording defaults true (parity test will skip because there is no trigger)
   }
 }
 
 runDeviceConformanceTests({
   name: 'Ld2410RadarDevice',
+  makeHarness: () => makeHarness({ serialPath: null }),
+})
+
+runUsbSerialDeviceConformanceTests({
+  name: 'Ld2410RadarDevice',
   makeHarness,
+  activeRequiresData: true,
 })
 
 describe('Ld2410RadarDevice – device-specific', function () {
@@ -152,19 +164,13 @@ describe('Ld2410RadarDevice – device-specific', function () {
 
     const res = h.device.inject(undefined)
     expect(res.ok).to.equal(false)
-    expect(res.error).to.equal('INVALID_INJECT_PAYLOAD')
+    expect(res.error).to.equal(deviceErrorCodes.invalidInjectPayload)
 
     h.device.dispose()
   })
 
   it('inject should accept emitted frame payload shape (inject–emit parity)', function () {
     const h = makeHarness()
-
-    // NOTE:
-    // The device can emit payloads that include { frame } from real protocol decoding.
-    // Parity rule requires inject(payload) to accept the same shape.
-    //
-    // This test is expected to FAIL until inject() is extended to accept { frame }.
 
     const res = h.device.inject({
       deviceId: 'LD2410A',
