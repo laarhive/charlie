@@ -143,8 +143,9 @@ export default class Ws2812LedDevice extends BaseDevice {
 
     this.#setRuntimeState('active', null)
 
+    // Recovery: re-apply last known RGB (state stays active)
     await this.#writeRgb(this.#lastRgb)
-    this.#publishHardwareState('applied', null, { rgb: this.#lastRgb, source: 'recovery' })
+    this.#publishHardwareState('active', null, { action: 'applied', rgb: this.#lastRgb, source: 'recovery' })
   }
 
   #onLinkStatus(evt) {
@@ -227,14 +228,17 @@ export default class Ws2812LedDevice extends BaseDevice {
 
     const blocked = this.isBlocked() || this.isDisposed() || this.#runtimeState !== 'active'
     if (blocked) {
-      this.#publishHardwareState('simulated', null, { rgb, source })
+      // Do not introduce new states; just report intent.
+      const state = this.#runtimeState === 'manualBlocked' ? 'manualBlocked' : 'degraded'
+      this.#publishHardwareState(state, this.getLastError(), { action: 'simulated', rgb, source })
       return
     }
 
     const okWrite = await this.#writeRgb(rgb)
     if (!okWrite) return
 
-    this.#publishHardwareState('applied', null, { rgb, source })
+    // State stays active; action goes into detail.
+    this.#publishHardwareState('active', null, { action: 'applied', rgb, source })
   }
 
   async #writeRgb(rgb) {
