@@ -12,4 +12,4 @@ When you provide documentation in Markdown format meant to be copied into a repo
 
 or 
 
-Always wrap repo documentation in an outer quadruple-backtick Markdown block so it is copy-paste safe
+Always wrap repo markdown documentation in an outer quadruple-backtick Markdown block so it is copy-paste safe
