@@ -96,7 +96,7 @@
     protocol: {
       type: 'serial',
       usbId: { vid: '2e8a', pid: '101f', serial: '6&68C07EB&0&0002' },
-      baudRate: 256000,
+      baudRate: 115200,
       dataBits: 8,
       stopBits: 1,
       parity: 'none',
