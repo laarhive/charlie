@@ -1,4 +1,3 @@
-// src/app/configLoader.js
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -89,17 +88,28 @@ const walkIncludes = function walkIncludes(node, currentPathParts, out) {
   }
 }
 
-const filterDevicesByMode = function filterDevicesByMode(config, mode) {
+const filterAndStripDevicesByMode = function filterAndStripDevicesByMode(config, mode) {
   const devices = Array.isArray(config?.devices) ? config.devices : []
-  if (!mode) return []
 
-  const wantMode = String(mode).trim()
-  if (!wantMode) return []
+  const wantMode = String(mode || '').trim()
+  if (!wantMode) {
+    return []
+  }
 
-  return devices.filter((d) => {
+  const filtered = []
+
+  for (const d of devices) {
     const modes = Array.isArray(d?.modes) ? d.modes : []
-    return modes.includes(wantMode)
-  })
+    if (modes.length === 0) continue
+    if (!modes.includes(wantMode)) continue
+
+    const out = { ...d }
+    delete out.modes
+
+    filtered.push(out)
+  }
+
+  return filtered
 }
 
 /**
@@ -130,7 +140,7 @@ export const loadConfigFile = function loadConfigFile(entry = 'defaultConfig.jso
 
   result = deepMerge(result, rootWithoutInclude)
 
-  result.devices = filterDevicesByMode(result, mode)
+  result.devices = filterAndStripDevicesByMode(result, mode)
 
   return result
 }

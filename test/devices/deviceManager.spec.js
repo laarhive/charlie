@@ -1,4 +1,3 @@
-// test/devices/deviceManager.spec.js
 import EventBus from '../../src/core/eventBus.js'
 import { DeviceManager } from '../../src/devices/deviceManager.js'
 import { runDeviceManagerUnitConformanceTests } from './shared/deviceManagerUnitConformance.js'
@@ -26,6 +25,11 @@ const makeHarness = function makeHarness() {
     watchdog: new EventBus(),
   }
 
+  /*
+   * DeviceManager unit tests should assume config is already in "runtime" form:
+   * - devices are already filtered to the selected mode
+   * - per-device `modes` does not exist anymore
+   */
   const config = {
     devices: [
       {
@@ -34,16 +38,6 @@ const makeHarness = function makeHarness() {
         domain: 'button',
         kind: 'buttonEdge',
         protocol: { type: 'virt', initial: false },
-        modes: ['win11'],
-        state: 'manualBlocked',
-      },
-      {
-        id: 'rpiOnly1',
-        publishAs: 'button2',
-        domain: 'button',
-        kind: 'buttonEdge',
-        protocol: { type: 'virt', initial: false },
-        modes: ['rpi4'],
         state: 'manualBlocked',
       },
       {
@@ -52,7 +46,6 @@ const makeHarness = function makeHarness() {
         domain: 'main',
         kind: 'nope',
         protocol: { type: 'virt', initial: false },
-        modes: ['win11'],
         state: 'active',
       }
     ]
@@ -64,7 +57,6 @@ const makeHarness = function makeHarness() {
     buses,
     clock,
     config,
-    mode: 'win11',
   })
 
   return {

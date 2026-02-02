@@ -10,7 +10,6 @@ export class DeviceManager {
   #buses
   #clock
   #config
-  #mode
 
   #protocolFactory
   #usbInventory
@@ -22,13 +21,12 @@ export class DeviceManager {
 
   #unsubMain
 
-  constructor({ logger, mainBus, buses, clock, config, mode }) {
+  constructor({ logger, mainBus, buses, clock, config }) {
     this.#logger = logger
     this.#mainBus = mainBus
     this.#buses = buses
     this.#clock = clock
     this.#config = config
-    this.#mode = mode
 
     this.#protocolFactory = new ProtocolFactory({ logger, clock, config })
     this.#usbInventory = new UsbInventory({ logger, clock, config })

@@ -1,4 +1,3 @@
-// test/devices/shared/deviceManagerUnitConformance.js
 import { expect } from 'chai'
 import eventTypes from '../../../src/core/eventTypes.js'
 
@@ -6,16 +5,6 @@ export const runDeviceManagerUnitConformanceTests = function runDeviceManagerUni
                                                                                                     makeHarness,
                                                                                                   }) {
   const find = (dm, id) => dm.list().devices.find((d) => d.id === id)
-
-  it('filters devices by mode', function () {
-    const h = makeHarness()
-    h.dm.start()
-
-    const listed = h.dm.list().devices.map((d) => d.id).sort()
-    expect(listed).to.deep.equal(h.expect.visibleIds.sort())
-
-    h.dm.dispose()
-  })
 
   it('start() respects config state manualBlocked (not started + state manualBlocked)', function () {
     const h = makeHarness()
