@@ -1,0 +1,12 @@
+// config/controllers/presence.json5
+{
+  enabled: true,
+
+  // placeholder for later:
+  // - zone mapping
+  // - hysteresis/debounce
+  // - sensor filters
+  params: {
+    debounceMs: 250,
+  }
+}

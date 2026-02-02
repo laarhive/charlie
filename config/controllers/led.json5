@@ -1,0 +1,27 @@
+// config/controllers/led.json5
+{
+  enabled: true,
+
+  routing: {
+    defaultLedId: 'statusLed1',
+  },
+
+  // patterns are sequences of absolute rgb states
+  patterns: {
+    off: [
+      { rgb: [0, 0, 0], ms: 0 }
+    ],
+
+    flashRed: [
+      { rgb: [255, 0, 0], ms: 120 },
+      { rgb: [0, 0, 0], ms: 0 }
+    ],
+  },
+
+  // minimal example policy:
+  // (semantic events are on main bus; controller emits ledRaw:command)
+  rules: [
+    { on: 'presence:enter', do: { pattern: 'off' } },
+    { on: 'vibration:hit', do: { pattern: 'flashRed' } },
+  ],
+}

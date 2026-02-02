@@ -1,0 +1,4 @@
+// config/controllers/vibration.json5
+{
+  enabled: true,
+}

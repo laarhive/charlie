@@ -1,153 +1,16 @@
+// config/defaultConfig.json5
 {
-  devices: [
-    {
-      id: 'gpioWatchdog1',
-      kind: 'gpioWatchdogLoopback',
-      domain: 'main',
-      modes: ['rpi4'],
-      state: 'active',
-      publishAs: 'gpioWatchdog1',
+  include: {
+    devices: './devices/devices.json5',
+    core: './core/core.json5',
 
-      protocol: {
-        type: 'gpio',
-        chip: 'gpiochip0',
-        outLine: 17,
-        inLine: 27,
-        consumerTag: 'charlie',
-        reclaimOnBusy: true
-      },
-
-      params: {
-        toggleMs: 1000,
-        bias: 'pull-down'
-      }
+    controllers: {
+      presence: './controllers/presence.json5',
+      led: './controllers/led.json5',
+      vibration: './controllers/vibration.json5',
+      button: './controllers/button.json5',
     },
 
-    {
-      id: 'buttonVirt1',
-      publishAs: 'button1',
-
-      domain: 'button',
-      role: 'button',
-
-      kind: 'buttonEdge',
-      protocol: { type: 'virt', initial: false },
-
-      modes: ['win11'],
-      state: 'active',
-      params: { cooldownMs: 250 }
-    },
-
-    {
-      id: 'buttonLine26',
-      publishAs: 'buttonGpioLine26',
-
-      domain: 'button',
-      role: 'button',
-
-      kind: 'buttonEdge',
-      protocol: { type: 'gpio', chip: 'gpiochip0', line: 26, activeHigh: false },
-
-      modes: ['rpi4'],
-      state: 'active',
-      params: { cooldownMs: 250 }
-    },
-
-    {
-      id: 'LD2410A',
-      publishAs: 'LD2410A',
-      domain: 'presence',
-      kind: 'ld2410Radar',
-      protocol: {
-        type: 'serial',
-        usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-76-LD2410A' },
-        baudRate: 256000,
-        dataBits: 8,
-        stopBits: 1,
-        parity: 'none',
-      },
-      modes: ['rpi4', 'win11'],
-      state: 'active'
-    },
-
-    {
-      id: 'LD2450A',
-      publishAs: 'LD2450A',
-      domain: 'presence',
-      kind: 'ld2450Radar',
-      protocol: {
-        type: 'serial',
-        usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-93-LD2450A' },
-        baudRate: 256000,
-        dataBits: 8,
-        stopBits: 1,
-        parity: 'none',
-        highWaterMark: 2400,
-      },
-      modes: ['rpi4', 'win11'],
-      state: 'active'
-    },
-    {
-      id: 'led',
-      publishAs: 'LD2450A',
-      domain: 'led',
-      kind: 'ld2450Radar',
-      protocol: {
-        type: 'serial',
-        usbId: { vid: '2e8a', pid: '101f', serial: '6&68C07EB&0&0002' },
-        baudRate: 256000,
-        dataBits: 8,
-        stopBits: 1,
-        parity: 'none',
-      },
-      modes: ['rpi4', 'win11'],
-      state: 'active'
-    }
-  ],
-  core: {
-    armingDelayMs: 1200,
-    cooldownMs: 60000,
-    injectDefaults: {
-      presenceFront: 'presence.front',
-      presenceBack: 'presence.back',
-      vibrationLow: 'vibration.light',
-      vibrationHigh: 'vibration.heavy',
-      buttonShort: 'button1',
-      buttonLong: 'button1'
-    },
-  },
-
-  rules: [
-    {
-      id: 'front_anytime',
-      priority: 10,
-      conditions: {
-        zone: 'front',
-        weekday: [1, 2, 3, 4, 5, 6, 7],
-        timeRanges: [{ start: '00:00', end: '24:00' }],
-      },
-      actions: {
-        modePromptId: 'mode.front.any',
-        openerPromptId: 'opener.front.any',
-      },
-    },
-  ],
-
-  tasker: {
-    baseUrl: "http://127.0.0.1:8787/tasker", // simulator in virt/dev
-    timeoutMs: 2500,
-    retries: 1,
-    retryDelayMs: 300,
-    token: { header: "X-Tasker-Token", value: "..." }
-  },
-
-  promptText: {
-    base: 'You are Charlie.',
-    modes: {
-      'mode.front.any': 'Mode: invite passersby.',
-    },
-    openers: {
-      'opener.front.any': 'Generate one short friendly Romanian opener (max 12 words).',
-    },
+    tasker: './tasker/tasker.json5',
   },
 }

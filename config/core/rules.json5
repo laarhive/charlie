@@ -1,0 +1,17 @@
+// core/rules.json5
+[
+
+  {
+    id: 'front_anytime',
+    priority: 10,
+    conditions: {
+      zone: 'front',
+      weekday: [1, 2, 3, 4, 5, 6, 7],
+      timeRanges: [{ start: '00:00', end: '24:00' }],
+    },
+    actions: {
+      modePromptId: 'mode.front.any',
+      openerPromptId: 'opener.front.any',
+    },
+  },
+]

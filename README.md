@@ -21,5 +21,5 @@ It can:
 - [Architecture](docs/architecture/charlie-core.md)
 - [Devices](docs/architecture/devices.md)
 - [CLI](docs/cli.md)
-- [Configuration](docs/configuration.md)
+- [Configuration](docs/config/config.md)
 - [WebSocket API](docs/api/ws.md)

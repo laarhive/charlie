@@ -1,0 +1,16 @@
+// config/core/core.json5
+{
+  armingDelayMs: 1200,
+  cooldownMs: 60000,
+
+  injectDefaults: {
+    presenceFront: 'presence.front',
+    presenceBack: 'presence.back',
+    vibrationLow: 'vibration.light',
+    vibrationHigh: 'vibration.heavy',
+    buttonShort: 'button1',
+    buttonLong: 'button1'
+  },
+  rules: './core/rules.json5',
+  promptText: './core/promptText.json5'
+}

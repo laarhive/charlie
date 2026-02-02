@@ -1,0 +1,12 @@
+// config/core/promptText.json5
+{
+  base: 'You are Charlie.',
+
+  modes: {
+    'mode.front.any': 'Mode: invite passersby.',
+  },
+
+  openers: {
+    'opener.front.any': 'Generate one short friendly Romanian opener (max 12 words).',
+  },
+}

@@ -1,0 +1,8 @@
+// config/tasker/tasker.json5
+{
+  baseUrl: 'http://127.0.0.1:8787/tasker',
+  timeoutMs: 2500,
+  retries: 1,
+  retryDelayMs: 300,
+  token: { header: 'X-Tasker-Token', value: '...' }
+}

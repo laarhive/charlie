@@ -1,0 +1,4 @@
+// config/controllers/button.json5
+{
+  enabled: true,
+}
