@@ -5,6 +5,7 @@ import domainEventTypes from '../../../domains/domainEventTypes.js'
 import deviceErrorCodes from '../../deviceErrorCodes.js'
 import { ok, err } from '../../deviceResult.js'
 import { createLd2410StreamDecoder } from './ld2410Decode.js'
+import usbSerialErrorCodes from '../../protocols/usbSerial/usbSerialErrorCodes.js'
 
 export default class Ld2410RadarDevice extends BaseDevice {
   #logger
@@ -187,12 +188,16 @@ export default class Ld2410RadarDevice extends BaseDevice {
 
     const res = await this.#duplex.open()
     if (!res?.ok) {
-      const reason = res.error === 'SERIAL_OPEN_TIMEOUT' ? 'serial_open_timeout' : 'serial_open_failed'
+      const reason = res.error === usbSerialErrorCodes.serialOpenTimeout
+        ? 'serial_open_timeout'
+        : 'serial_open_failed'
       this.#setRuntimeState('degraded', reason)
       return
     }
 
-    this.#setRuntimeState('active', null)
+    if (this.#runtimeState !== 'active') {
+      this.#setRuntimeState('degraded', 'link_ready')
+    }
   }
 
   #onLinkStatus(evt) {
@@ -202,7 +207,7 @@ export default class Ld2410RadarDevice extends BaseDevice {
 
     if (t === 'open') {
       if (this.#runtimeState !== 'active') {
-        this.#setRuntimeState('active', null)
+        this.#setRuntimeState('degraded', 'link_ready')
       }
 
       return

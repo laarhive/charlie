@@ -4,6 +4,7 @@ import BaseDevice from '../../base/baseDevice.js'
 import domainEventTypes from '../../../domains/domainEventTypes.js'
 import deviceErrorCodes from '../../deviceErrorCodes.js'
 import { ok, err } from '../../deviceResult.js'
+import usbSerialErrorCodes from '../../protocols/usbSerial/usbSerialErrorCodes.js'
 
 export default class Ws2812LedDevice extends BaseDevice {
   #logger
@@ -133,7 +134,9 @@ export default class Ws2812LedDevice extends BaseDevice {
 
     const res = await this.#duplex.open()
     if (!res?.ok) {
-      const reason = res.error === 'SERIAL_OPEN_TIMEOUT' ? 'serial_open_timeout' : 'serial_open_failed'
+      const reason = res.error === usbSerialErrorCodes.serialOpenTimeout
+        ? 'serial_open_timeout'
+        : 'serial_open_failed'
       this.#setRuntimeState('degraded', reason)
       return
     }
