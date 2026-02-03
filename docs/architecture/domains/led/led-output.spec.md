@@ -1,3 +1,4 @@
+<!-- docs/architecture/domains/led/led-output.spec.md -->
 # LED Output Architecture — Specification (v1)
 
 This document defines how semantic events on the main bus drive LED effects via a controller,
