@@ -1,3 +1,126 @@
+// config/controllers/led.json5
+/*
+LED Controller Config — Authoring Reference (v1)
+
+Purpose
+- Declaratively define LED behavior driven by semantic events on the main bus.
+- Everything here is data: which LED, what it shows, and when.
+- This file is the single source of truth for LED behavior.
+
+Top-level keys
+- enabled: boolean
+- targets: maps human-friendly aliases → LED device ids
+- palette: reusable colors and gradients
+- effects: reusable effect definitions
+- rules: event-driven bindings that schedule effects on targets
+
+Targets
+- targets.alias.<name> = { ledId: "<deviceId>" }
+- Rules select LEDs via: { target: { alias: "<name>" } }
+- No default LED exists: every rule must specify a target.
+
+Palette
+- palette.colors.<name>.rgb
+  - must be [r,g,b] integers (0..255)
+- palette.gradients.<name>
+  - array of stops: { t: 0..1, rgb:[r,g,b] }
+  - at least 2 stops
+  - used by distance-based modulators
+
+RGB fields (everywhere else)
+- rgb may be:
+  - a palette color name (string)
+  - a literal [r,g,b] triplet
+
+Effects (reusable building blocks)
+- effects.<effectId> is referenced by rules via do.effect
+- Effects do not select LEDs and do not listen to events.
+- Looping (where supported):
+  - omitted → play once
+  - true or 'inf' → loop indefinitely
+  - N (integer ≥ 1) → repeat N times
+
+Supported effect types
+
+1) frames
+- Static RGB frames with explicit hold times.
+- Fields:
+  - type: 'frames'
+  - frames: [{ rgb, holdMs }, ...]
+  - loop (optional): true | 'inf' | N
+- holdMs = 0 applies immediately with no delay.
+
+2) fadeTo
+- One-way interpolation from current RGB → target RGB.
+- Fields:
+  - type: 'fadeTo'
+  - rgb
+  - ms (duration)
+  - ease ('linear', 'inOutSine')
+
+3) breathe
+- Continuous oscillation of brightness (0→1→0) over time.
+- Fields:
+  - type: 'breathe'
+  - rgb: fallback base color
+  - periodMs: fallback cycle duration
+  - minMix, maxMix: 0..1 brightness multipliers
+  - ease
+  - modulators (optional):
+    - color.gradientByDistance:
+        { type:'gradientByDistance', gradient, nearM, farM }
+    - speed.byDistance:
+        { type:'byDistance', nearM, farM, nearMs, farMs }
+- Distance is derived from presence events:
+  - payload.primary.xy or payload.targets[0].xy
+  - distance = hypot(x, y)
+
+4) sequence
+- Deterministic timeline of operations (heartbeat, multi-pulse alerts).
+- Fields:
+  - type: 'sequence'
+  - steps: ordered list of ops
+  - loop (optional): true | 'inf' | N
+- Supported ops:
+  - { op:'fadeTo', rgb, ms, ease }
+  - { op:'hold', ms }
+
+Rules (event → effect scheduling)
+- rules[] entries react to main-bus semantic events.
+
+Rule shape:
+{
+  on: "<eventType>",
+  when?: {                 // optional filters (supported keys only)
+    hasTarget?: boolean,   // for presence:targets
+    coreRole?: string
+  },
+  target: { alias: "<name>" } | { ledId: "<deviceId>" },
+  do: {
+    effect: "<effectId>",
+    priority: number,      // higher preempts lower
+    restore: boolean,      // restore previous effect after ttl
+    ttlMs: number | null   // null = infinite
+  }
+}
+
+Scheduling semantics
+- Multiple effects may contend for the same LED.
+- priority decides which effect is active.
+- ttlMs:
+  - number → effect ends after ttlMs
+  - null → effect runs until replaced
+- restore:
+  - true → previous effect resumes after this one ends
+  - false → no restore; LED remains at last emitted RGB
+- Continuous events (e.g. presence:targets):
+  - active effects may update distance context without restarting.
+
+Validation
+- Config is validated strictly at startup.
+- Unknown palette names, gradients, effects, ops, or invalid fields cause startup failure.
+*/
+
 {
   enabled: true,
 
