@@ -50,8 +50,8 @@ Payload:
 ```js
 {
   ledId: 'statusLed1',
-  publishAs: null,
-  rgb: [r, g, b]
+    publishAs: null,
+    rgb: [r, g, b]
 }
 ```
 
@@ -91,16 +91,16 @@ Continuous semantic updates (presence):
 ### 6.1 Palette
 ```json5
 palette: {
-  colors: {
-    off:  { rgb: [0, 0, 0] },
-    red:  { rgb: [255, 0, 0] }
-  },
-  gradients: {
-    presenceDistance: [
-      { t: 0.0, rgb: [0, 80, 255] },
-      { t: 1.0, rgb: [255, 0, 0] }
-    ]
-  }
+colors: {
+off:  { rgb: [0, 0, 0] },
+red:  { rgb: [255, 0, 0] }
+},
+gradients: {
+presenceDistance: [
+{ t: 0.0, rgb: [0, 80, 255] },
+{ t: 1.0, rgb: [255, 0, 0] }
+]
+}
 }
 ```
 
@@ -118,12 +118,12 @@ Static RGB frames with holds.
 
 ```json5
 flashRed: {
-  type: 'frames',
-  loop: 'inf', // optional: true|'inf'|N
-  frames: [
-    { rgb: 'red', holdMs: 120 },
-    { rgb: 'off', holdMs: 120 }
-  ]
+type: 'frames',
+loop: 'inf', // optional: true|'inf'|N
+frames: [
+{ rgb: 'red', holdMs: 120 },
+{ rgb: 'off', holdMs: 120 }
+]
 }
 ```
 
@@ -132,10 +132,10 @@ Interpolates from current RGB to a target RGB.
 
 ```json5
 fadeToBlue: {
-  type: 'fadeTo',
-  rgb: 'blue',
-  ms: 400,
-  ease: 'linear'
+type: 'fadeTo',
+rgb: 'blue',
+ms: 400,
+ease: 'linear'
 }
 ```
 
@@ -144,28 +144,28 @@ Oscillating intensity mix (`0→1→0`) over a period.
 
 ```json5
 breathePresence: {
-  type: 'breathe',
-  rgb: 'blue',     // fallback when no targets
-  periodMs: 2400,  // fallback when no speed modulator
-  minMix: 0.08,
-  maxMix: 0.35,
-  ease: 'inOutSine',
+type: 'breathe',
+rgb: 'blue',     // fallback when no targets
+periodMs: 2400,  // fallback when no speed modulator
+minMix: 0.08,
+maxMix: 0.35,
+ease: 'inOutSine',
 
-  modulators: {
-    color: {
-      type: 'gradientByDistance',
-      gradient: 'presenceDistance',
-      nearM: 0.0,
-      farM: 3.0
-    },
-    speed: {
-      type: 'byDistance',
-      nearM: 0.0,
-      farM: 3.0,
-      nearMs: 900,
-      farMs: 2800
-    }
-  }
+modulators: {
+color: {
+type: 'gradientByDistance',
+gradient: 'presenceDistance',
+nearM: 0.0,
+farM: 3.0
+},
+speed: {
+type: 'byDistance',
+nearM: 0.0,
+farM: 3.0,
+nearMs: 900,
+farMs: 2800
+}
+}
 }
 ```
 
@@ -178,21 +178,21 @@ Supported step ops:
 
 ```json5
 heartbeatRed: {
-  type: 'sequence',
-  loop: 'inf',
-  steps: [
-    { op: 'fadeTo', rgb: [200, 10, 10], ms: 90,  ease: 'linear' },
-    { op: 'hold',   ms: 40 },
-    { op: 'fadeTo', rgb: [20, 1, 1],    ms: 140, ease: 'linear' },
+type: 'sequence',
+loop: 'inf',
+steps: [
+{ op: 'fadeTo', rgb: [200, 10, 10], ms: 90,  ease: 'linear' },
+{ op: 'hold',   ms: 40 },
+{ op: 'fadeTo', rgb: [20, 1, 1],    ms: 140, ease: 'linear' },
 
-    { op: 'hold', ms: 120 },
+{ op: 'hold', ms: 120 },
 
-    { op: 'fadeTo', rgb: [255, 14, 14], ms: 110, ease: 'linear' },
-    { op: 'hold',   ms: 60 },
-    { op: 'fadeTo', rgb: 'off',         ms: 220, ease: 'linear' },
+{ op: 'fadeTo', rgb: [255, 14, 14], ms: 110, ease: 'linear' },
+{ op: 'hold',   ms: 60 },
+{ op: 'fadeTo', rgb: 'off',         ms: 220, ease: 'linear' },
 
-    { op: 'hold', ms: 850 }
-  ]
+{ op: 'hold', ms: 850 }
+]
 }
 ```
 
