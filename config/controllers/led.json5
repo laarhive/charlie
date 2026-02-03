@@ -83,6 +83,39 @@
       ms: 400,
       ease: 'linear',
     },
+
+    heartbeatCalm: {
+      type: 'sequence',
+      loop: 'inf',
+      steps: [
+        // LUB
+        { op: 'fadeTo', rgb: [200, 10, 10], ms: 90,  ease: 'linear' },
+        { op: 'hold',   ms: 40 },
+        { op: 'fadeTo', rgb: [20, 1, 1],    ms: 140, ease: 'linear' },
+
+        { op: 'hold', ms: 120 },
+
+        // DUB
+        { op: 'fadeTo', rgb: [255, 14, 14], ms: 110, ease: 'linear' },
+        { op: 'hold',   ms: 60 },
+        { op: 'fadeTo', rgb: [0, 0, 0],     ms: 220, ease: 'linear' },
+
+        { op: 'hold', ms: 850 }
+      ]
+    },
+
+
+    heartbeatRed: {
+      type: 'frames',
+      loop: 'inf',
+      frames: [
+        { rgb: 'red', holdMs: 80 },   // first beat
+        { rgb: 'off', holdMs: 60 },
+
+        { rgb: 'red', holdMs: 120 },  // second beat (slightly stronger)
+        { rgb: 'off', holdMs: 400 }   // rest
+      ]
+    }
   },
 
   rules: [
@@ -102,7 +135,7 @@
       on: 'presence:exit',
       target: { alias: 'status' },
       do: {
-        effect: 'breatheIdle',
+        effect: 'heartbeatCalm',
         priority: 10,
         restore: false,
         ttlMs: null,

@@ -109,7 +109,7 @@ const normalizeLoop = function (loop) {
     return Math.max(1, Math.floor(n))
   }
 
-  throw new Error(`effects.frames.loop: must be true|'inf'|N`)
+  throw new Error(`effects.*.loop: must be true|'inf'|N`)
 }
 
 const validateEffectFrames = function ({ effectName, eff, paletteColors }) {
@@ -133,10 +133,10 @@ const validateEffectFrames = function ({ effectName, eff, paletteColors }) {
 
     const holdMs = toNonNegInt(fo.holdMs, 0)
 
-    const out = { holdMs }
-    out.rgb = rgbVal
-
-    return out
+    return {
+      rgb: rgbVal,
+      holdMs,
+    }
   })
 
   const loop = normalizeLoop(eff.loop)
@@ -172,6 +172,7 @@ const validateEffectFadeTo = function ({ effectName, eff, paletteColors }) {
     ms,
     ease,
     rgb: rgbVal,
+    loop: undefined,
   }
 }
 
@@ -193,33 +194,21 @@ const validateEffectBreathe = function ({ effectName, eff, paletteColors, palett
 
   if (asString(colorMod.type) === 'gradientByDistance') {
     const gradient = asString(colorMod.gradient)
-    if (!gradient) {
-      throw new Error(`effects.${effectName}.modulators.color: gradientByDistance requires gradient`)
-    }
-
-    if (!paletteGradients?.[gradient]) {
-      throw new Error(`effects.${effectName}.modulators.color: unknown gradient '${gradient}'`)
-    }
+    if (!gradient) throw new Error(`effects.${effectName}.modulators.color: gradientByDistance requires gradient`)
+    if (!paletteGradients?.[gradient]) throw new Error(`effects.${effectName}.modulators.color: unknown gradient '${gradient}'`)
 
     const nearM = Number(colorMod.nearM)
     const farM = Number(colorMod.farM)
-
     if (!Number.isFinite(nearM) || !Number.isFinite(farM) || nearM === farM) {
       throw new Error(`effects.${effectName}.modulators.color: invalid nearM/farM`)
     }
 
-    outMods.color = {
-      type: 'gradientByDistance',
-      gradient,
-      nearM,
-      farM,
-    }
+    outMods.color = { type: 'gradientByDistance', gradient, nearM, farM }
   }
 
   if (asString(speedMod.type) === 'byDistance') {
     const nearM = Number(speedMod.nearM)
     const farM = Number(speedMod.farM)
-
     if (!Number.isFinite(nearM) || !Number.isFinite(farM) || nearM === farM) {
       throw new Error(`effects.${effectName}.modulators.speed: invalid nearM/farM`)
     }
@@ -227,19 +216,11 @@ const validateEffectBreathe = function ({ effectName, eff, paletteColors, palett
     const nearMs = toNonNegInt(speedMod.nearMs, 900)
     const farMs = toNonNegInt(speedMod.farMs, 2800)
 
-    outMods.speed = {
-      type: 'byDistance',
-      nearM,
-      farM,
-      nearMs,
-      farMs,
-    }
+    outMods.speed = { type: 'byDistance', nearM, farM, nearMs, farMs }
   }
 
-  // fallback base color (used when no distance / no color modulator)
-  // required if you might run this effect on events without targets (presence:exit)
   if (o.rgb === undefined) {
-    throw new Error(`effects.${effectName}: breathe requires rgb (fallback color name or [r,g,b])`)
+    throw new Error(`effects.${effectName}: breathe requires rgb (fallback)`)
   }
 
   const rgbVal = validateRgbValue({
@@ -258,6 +239,59 @@ const validateEffectBreathe = function ({ effectName, eff, paletteColors, palett
 
   if (periodMs !== undefined) out.periodMs = periodMs
   if (Object.keys(outMods).length > 0) out.modulators = outMods
+
+  return out
+}
+
+const validateEffectSequence = function ({ effectName, eff, paletteColors }) {
+  const o = asObject(eff)
+
+  const steps = asArray(o.steps)
+  if (steps.length === 0) {
+    throw new Error(`effects.${effectName}: sequence requires steps[]`)
+  }
+
+  const outSteps = steps.map((s, idx) => {
+    const so = asObject(s)
+    const op = asString(so.op)
+
+    if (op === 'hold') {
+      return {
+        op: 'hold',
+        ms: toNonNegInt(so.ms, 0),
+      }
+    }
+
+    if (op === 'fadeTo') {
+      if (so.rgb === undefined) {
+        throw new Error(`effects.${effectName}.steps[${idx}]: fadeTo requires rgb`)
+      }
+
+      const rgbVal = validateRgbValue({
+        rgb: so.rgb,
+        paletteColors,
+        ctx: `effects.${effectName}.steps[${idx}]`,
+      })
+
+      return {
+        op: 'fadeTo',
+        rgb: rgbVal,
+        ms: toNonNegInt(so.ms, 0),
+        ease: asString(so.ease) || 'linear',
+      }
+    }
+
+    throw new Error(`effects.${effectName}.steps[${idx}]: unknown op '${op}'`)
+  })
+
+  const loop = normalizeLoop(o.loop)
+
+  const out = {
+    type: 'sequence',
+    steps: outSteps,
+  }
+
+  if (loop !== undefined) out.loop = loop
 
   return out
 }
@@ -289,12 +323,12 @@ const validateEffects = function ({ effectsRaw, palette }) {
     }
 
     if (type === 'breathe') {
-      out[effectName] = validateEffectBreathe({
-        effectName,
-        eff,
-        paletteColors,
-        paletteGradients,
-      })
+      out[effectName] = validateEffectBreathe({ effectName, eff, paletteColors, paletteGradients })
+      continue
+    }
+
+    if (type === 'sequence') {
+      out[effectName] = validateEffectSequence({ effectName, eff, paletteColors })
       continue
     }
 
@@ -423,7 +457,6 @@ const validateRules = function ({ rulesRaw, targets, effects }) {
 
 export const validateLedConfig = function ({ config, logger }) {
   const raw = asObject(config)
-
   const enabled = toBool(raw.enabled, true)
 
   const out = {
