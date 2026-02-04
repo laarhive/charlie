@@ -50,9 +50,9 @@
 
   // 5–7) Tracking pipeline
   tracking: {
+    updateIntervalMs: 100,
     maxDtMs: 400,
     dropTimeoutMs: 1500,
-    outputRateHz: 10,
 
     kf: {
       procNoiseAccelMmS2: 1200,
@@ -64,8 +64,10 @@
     association: {
       gateD2Max: 9.21,
       newTrackConfirmEnabled: true,
-      newTrackConfirmCount: 2,
-      newTrackConfirmWindowMs: 600,
+      newTrackConfirmCount: 3,
+      newTrackConfirmWindowMs: 400,
+      // prevent spawning near existing tracks
+      newTrackSpawnGateMm: 450,
     },
   },
 

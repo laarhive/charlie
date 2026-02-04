@@ -3,6 +3,7 @@ import eventTypes from '../../core/eventTypes.js'
 import domainEventTypes from '../domainEventTypes.js'
 import Ld2450IngestAdapter from './ld2450IngestAdapter.js'
 import Ld2410IngestAdapter from './ld2410IngestAdapter.js'
+import { TrackingPipeline } from './tracking/trackingPipeline.js'
 
 export class PresenceController {
   #logger
@@ -20,7 +21,9 @@ export class PresenceController {
 
   #ld2450
   #ld2410
-  #unsubInternal
+  #tracking
+
+  #unsubGlobal
 
   constructor({ logger, presenceInternalBus, presenceBus, mainBus, clock, controllerId, controller, devices }) {
     this.#logger = logger
@@ -38,7 +41,8 @@ export class PresenceController {
 
     this.#ld2450 = null
     this.#ld2410 = null
-    this.#unsubInternal = null
+    this.#tracking = null
+    this.#unsubGlobal = null
 
     if (!this.#presenceInternalBus?.publish || !this.#presenceInternalBus?.subscribe) {
       throw new Error('presenceController requires presenceInternalBus.publish+subscribe')
@@ -59,7 +63,7 @@ export class PresenceController {
       return
     }
 
-    if (this.#ld2450 || this.#ld2410 || this.#unsubInternal) {
+    if (this.#ld2450 || this.#ld2410 || this.#tracking || this.#unsubGlobal) {
       return
     }
 
@@ -83,21 +87,35 @@ export class PresenceController {
       devices: this.#devices,
     })
 
+    this.#tracking = new TrackingPipeline({
+      logger: this.#logger,
+      clock: this.#clock,
+      controllerId: this.#controllerId,
+      presenceInternalBus: this.#presenceInternalBus,
+      controllerConfig: this.#config,
+    })
+
     this.#ld2450.start()
     this.#ld2410.start()
+    this.#tracking.start()
 
-    this.#unsubInternal = this.#presenceInternalBus.subscribe((event) => {
-      if (event?.type !== domainEventTypes.presence.ld2450Tracks) return
-      this.#publishTargetsFromTracks(event)
+    this.#unsubGlobal = this.#presenceInternalBus.subscribe((event) => {
+      if (event?.type !== domainEventTypes.presence.globalTracks) return
+      this.#publishTargetsFromGlobalTracks(event)
     })
 
     this.#logger.notice('presence_controller_started', { controllerId: this.#controllerId })
   }
 
   dispose() {
-    if (this.#unsubInternal) {
-      this.#unsubInternal()
-      this.#unsubInternal = null
+    if (this.#unsubGlobal) {
+      this.#unsubGlobal()
+      this.#unsubGlobal = null
+    }
+
+    if (this.#tracking) {
+      this.#tracking.dispose()
+      this.#tracking = null
     }
 
     if (this.#ld2450) {
@@ -113,7 +131,7 @@ export class PresenceController {
     this.#logger.notice('presence_controller_disposed', { controllerId: this.#controllerId })
   }
 
-  #publishTargetsFromTracks(event) {
+  #publishTargetsFromGlobalTracks(event) {
     const p = event?.payload || {}
     const tracks = Array.isArray(p.tracks) ? p.tracks : []
 
@@ -122,27 +140,23 @@ export class PresenceController {
       ts: this.#clock.nowMs(),
       source: this.#controllerId,
       payload: {
-        targets: tracks.map((t) => {
-          const w = t.world || {}
-          const l = t.local || {}
+        targets: tracks
+          .filter((t) => t && t.state === 'confirmed')
+          .map((t) => ({
+            id: t.id,
 
-          const xMm = Number.isFinite(Number(w.xMm)) ? w.xMm : (Number(l.xMm) || 0)
-          const yMm = Number.isFinite(Number(w.yMm)) ? w.yMm : (Number(l.yMm) || 0)
+            xMm: t.xMm,
+            yMm: t.yMm,
 
-          return {
-            id: t.trackId,
-            radarId: t.radarId,
-            zoneId: t.zoneId,
+            vxMmS: t.vxMmS,
+            vyMmS: t.vyMmS,
+            speedMmS: t.speedMmS,
 
-            xMm,
-            yMm,
+            ageMs: t.ageMs,
+            lastSeenMs: t.lastSeenMs,
 
-            rangeMm: Number.isFinite(Number(w.rangeMm)) ? w.rangeMm : (Number(l.rangeMm) || 0),
-            bearingDeg: Number.isFinite(Number(w.bearingDeg)) ? w.bearingDeg : (Number(l.bearingDeg) || 0),
-
-            speedMmS: t.speedMmS || 0,
-          }
-        }),
+            sourceRadars: t.sourceRadars,
+          })),
       },
     })
   }

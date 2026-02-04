@@ -8,6 +8,7 @@ export const domainEventTypes = Object.freeze({
     // derived/internal (presenceInternal bus)
     ld2450Tracks: 'presence:ld2450Tracks',
     ld2410Stable: 'presence:ld2410Stable',
+    globalTracks: 'presence:globalTracks',
     calibrationStatus: 'presence:calibrationStatus',
   }),
 
