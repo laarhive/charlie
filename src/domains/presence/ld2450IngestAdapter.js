@@ -1,7 +1,8 @@
 // src/domains/presence/ld2450IngestAdapter.js
 import domainEventTypes from '../domainEventTypes.js'
+import TransformService from './transformService.js'
 
-export class Ld2450IngestAdapter {
+const Ld2450IngestAdapter = class Ld2450IngestAdapter {
   #logger
   #clock
   #controllerId
@@ -10,9 +11,13 @@ export class Ld2450IngestAdapter {
   #presenceInternalBus
 
   #devicesByPublishAs
+  #layoutByPublishAs
+
+  #transform
+
   #unsubscribe
 
-  constructor({ logger, clock, controllerId, presenceBus, presenceInternalBus, devices }) {
+  constructor({ logger, clock, controllerId, presenceBus, presenceInternalBus, controllerConfig, devices }) {
     this.#logger = logger
     this.#clock = clock
     this.#controllerId = controllerId || 'presenceController'
@@ -21,6 +26,7 @@ export class Ld2450IngestAdapter {
     this.#presenceInternalBus = presenceInternalBus
 
     this.#devicesByPublishAs = new Map()
+    this.#layoutByPublishAs = new Map()
     this.#unsubscribe = null
 
     const list = Array.isArray(devices) ? devices : []
@@ -29,6 +35,13 @@ export class Ld2450IngestAdapter {
       if (!publishAs) continue
       this.#devicesByPublishAs.set(publishAs, d)
     }
+
+    this.#initLayout(controllerConfig || {})
+
+    this.#transform = new TransformService({
+      config: controllerConfig || {},
+      logger: this.#logger,
+    })
 
     if (!this.#presenceBus?.subscribe) {
       throw new Error('Ld2450IngestAdapter requires presenceBus.subscribe')
@@ -54,6 +67,22 @@ export class Ld2450IngestAdapter {
     this.#unsubscribe = null
   }
 
+  #initLayout(cfg) {
+    const layout = cfg?.layout || {}
+    const list = Array.isArray(layout?.ld2450) ? layout.ld2450 : []
+
+    for (let radarId = 0; radarId < list.length; radarId += 1) {
+      const entry = list[radarId]
+      const publishAs = String(entry?.publishAs || '').trim()
+      if (!publishAs) continue
+
+      const enabled = entry?.enabled === true
+      const zoneId = `zone${radarId}`
+
+      this.#layoutByPublishAs.set(publishAs, { publishAs, radarId, zoneId, enabled })
+    }
+  }
+
   #deviceUsable(device) {
     if (!device) return false
     if (device.enabled === false) return false
@@ -67,6 +96,11 @@ export class Ld2450IngestAdapter {
 
     const device = this.#devicesByPublishAs.get(publishAs)
     if (!this.#deviceUsable(device)) {
+      return
+    }
+
+    const layoutEntry = this.#layoutByPublishAs.get(publishAs)
+    if (!layoutEntry || layoutEntry.enabled !== true) {
       return
     }
 
@@ -85,28 +119,45 @@ export class Ld2450IngestAdapter {
       }))
 
     const tracks = detections.map((d) => {
-      const xMm = d.xMm
-      const yMm = d.yMm
+      const local = this.#deriveLocal(d.xMm, d.yMm)
 
-      const rangeMm = Math.sqrt((xMm * xMm) + (yMm * yMm))
-      const bearingDeg = (Math.atan2(xMm, yMm) * 180) / Math.PI
+      const worldXY = this.#transform.toWorldMm({
+        radarId: layoutEntry.radarId,
+        xMm: d.xMm,
+        yMm: d.yMm,
+      })
+
+      const world = this.#deriveWorld(worldXY.xMm, worldXY.yMm)
 
       return {
         trackId: `${publishAs}:${d.localId}`,
         state: 'confirmed',
 
-        xMm,
-        yMm,
+        radarId: layoutEntry.radarId,
+        zoneId: layoutEntry.zoneId,
+
+        local: {
+          xMm: d.xMm,
+          yMm: d.yMm,
+          rangeMm: local.rangeMm,
+          bearingDeg: local.bearingDeg,
+        },
+
+        world: {
+          xMm: world.xMm,
+          yMm: world.yMm,
+          rangeMm: world.rangeMm,
+          bearingDeg: world.bearingDeg,
+        },
+
         vxMmS: 0,
         vyMmS: 0,
 
-        rangeMm,
-        bearingDeg,
         speedMmS: Math.abs(d.speedMmS),
 
         ageMs: 0,
         lastSeenMs: 0,
-        sourceRadars: [],
+        sourceRadars: [layoutEntry.radarId],
       }
     })
 
@@ -121,13 +172,33 @@ export class Ld2450IngestAdapter {
 
         meta: {
           publishAs,
+          radarId: layoutEntry.radarId,
+          zoneId: layoutEntry.zoneId,
           slotCount: slots.length,
           detectionCount: detections.length,
-          frame: 'radarLocal_placeholder',
+          frame: 'radarLocal_to_world_v0',
         },
       },
     })
   }
+
+  #deriveLocal(xMm, yMm) {
+    const rangeMm = Math.sqrt((xMm * xMm) + (yMm * yMm))
+    const bearingDeg = (Math.atan2(xMm, yMm) * 180) / Math.PI
+    return { rangeMm, bearingDeg }
+  }
+
+  #deriveWorld(xMm, yMm) {
+    const rangeMm = Math.sqrt((xMm * xMm) + (yMm * yMm))
+
+    // world frame:
+    // +X = North, +Y = East
+    // bearing clockwise from North: atan2(Y, X)
+    const bearingDeg = (Math.atan2(yMm, xMm) * 180) / Math.PI
+
+    return { xMm, yMm, rangeMm, bearingDeg }
+  }
 }
 
 export default Ld2450IngestAdapter
+export { Ld2450IngestAdapter }

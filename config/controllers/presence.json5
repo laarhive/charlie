@@ -12,10 +12,10 @@
     radarAzimuthDeg: [0, 90, 180, 270],
 
     ld2450: [
-      { publishAs: 'LD2450A' }, // index 0 => radarId 0
-      { publishAs: 'LD2450B' },
-      { publishAs: 'LD2450C' },
-      { publishAs: 'LD2450D' },
+      { publishAs: 'LD2450A', enabled: true }, // radarId 0
+      { publishAs: 'LD2450B', enabled: true }, // radarId 1
+      { publishAs: 'LD2450C', enabled: true }, // radarId 2
+      { publishAs: 'LD2450D', enabled: true }, // radarId 3
     ],
 
     ld2410: [

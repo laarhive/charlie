@@ -69,6 +69,7 @@ export class PresenceController {
       controllerId: this.#controllerId,
       presenceBus: this.#presenceBus,
       presenceInternalBus: this.#presenceInternalBus,
+      controllerConfig: this.#config,
       devices: this.#devices,
     })
 
@@ -90,10 +91,7 @@ export class PresenceController {
       this.#publishTargetsFromTracks(event)
     })
 
-    this.#logger.notice('presence_controller_started', {
-      controllerId: this.#controllerId,
-      ld2410Configured: Array.isArray(this.#config?.layout?.ld2410) ? this.#config.layout.ld2410.length : 0,
-    })
+    this.#logger.notice('presence_controller_started', { controllerId: this.#controllerId })
   }
 
   dispose() {
@@ -124,14 +122,27 @@ export class PresenceController {
       ts: this.#clock.nowMs(),
       source: this.#controllerId,
       payload: {
-        targets: tracks.map((t) => ({
-          id: t.trackId,
-          xMm: t.xMm,
-          yMm: t.yMm,
-          rangeMm: t.rangeMm,
-          bearingDeg: t.bearingDeg,
-          speedMmS: t.speedMmS,
-        })),
+        targets: tracks.map((t) => {
+          const w = t.world || {}
+          const l = t.local || {}
+
+          const xMm = Number.isFinite(Number(w.xMm)) ? w.xMm : (Number(l.xMm) || 0)
+          const yMm = Number.isFinite(Number(w.yMm)) ? w.yMm : (Number(l.yMm) || 0)
+
+          return {
+            id: t.trackId,
+            radarId: t.radarId,
+            zoneId: t.zoneId,
+
+            xMm,
+            yMm,
+
+            rangeMm: Number.isFinite(Number(w.rangeMm)) ? w.rangeMm : (Number(l.rangeMm) || 0),
+            bearingDeg: Number.isFinite(Number(w.bearingDeg)) ? w.bearingDeg : (Number(l.bearingDeg) || 0),
+
+            speedMmS: t.speedMmS || 0,
+          }
+        }),
       },
     })
   }
