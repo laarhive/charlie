@@ -1,8 +1,8 @@
 // src/domains/presence/presenceController.js
 import eventTypes from '../../core/eventTypes.js'
 import domainEventTypes from '../domainEventTypes.js'
-import Ld2450IngestAdapter from './ld2450IngestAdapter.js'
-import Ld2410IngestAdapter from './ld2410IngestAdapter.js'
+import Ld2450IngestAdapter from './ingest/ld2450IngestAdapter.js'
+import Ld2410IngestAdapter from './ingest/ld2410IngestAdapter.js'
 import { TrackingPipeline } from './tracking/trackingPipeline.js'
 
 export class PresenceController {

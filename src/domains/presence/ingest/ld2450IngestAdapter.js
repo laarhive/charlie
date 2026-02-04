@@ -1,6 +1,6 @@
-// src/domains/presence/ld2450IngestAdapter.js
-import domainEventTypes from '../domainEventTypes.js'
-import TransformService from './transformService.js'
+// src/domains/presence/ingest/ld2450IngestAdapter.js
+import domainEventTypes from '../../domainEventTypes.js'
+import TransformService from '../transform/transformService.js'
 
 const Ld2450IngestAdapter = class Ld2450IngestAdapter {
   #logger

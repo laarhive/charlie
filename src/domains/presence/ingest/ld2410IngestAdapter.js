@@ -1,5 +1,5 @@
-// src/domains/presence/ld2410IngestAdapter.js
-import domainEventTypes from '../domainEventTypes.js'
+// src/domains/presence/ingest/ld2410IngestAdapter.js
+import domainEventTypes from '../../domainEventTypes.js'
 
 export class Ld2410IngestAdapter {
   #logger
