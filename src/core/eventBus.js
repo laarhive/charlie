@@ -1,3 +1,4 @@
+// src/core/eventBus.js
 import { EventEmitter } from 'node:events'
 
 const EventBus = class EventBus {
