@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Charlie Presence Debug</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<header class="topbar">
+    <div class="title">Presence Debug</div>
+
+    <div class="controls">
+        <label><input id="chkGrid" type="checkbox" checked /> Grid</label>
+        <label><input id="chkFov" type="checkbox" checked /> FOV</label>
+        <label><input id="chkMeas" type="checkbox" checked /> Measurements</label>
+        <label><input id="chkTracks" type="checkbox" checked /> Tracks</label>
+
+        <label class="sep">Scale</label>
+        <select id="selScale">
+            <option value="0.10">0.10 px/mm (10px=10cm)</option>
+            <option value="0.20" selected>0.20 px/mm (20px=10cm)</option>
+            <option value="0.30">0.30 px/mm (30px=10cm)</option>
+            <option value="0.50">0.50 px/mm (50px=10cm)</option>
+        </select>
+
+        <button id="btnReconnect">Reconnect</button>
+    </div>
+
+    <div class="status">
+        <span id="wsStatus" class="pill">disconnected</span>
+        <span id="statLine" class="mono"></span>
+    </div>
+</header>
+
+<main class="layout">
+    <section class="canvasWrap">
+        <canvas id="canvas" width="1100" height="800"></canvas>
+    </section>
+
+    <aside class="side">
+        <div class="panel">
+            <div class="panelTitle">Layout</div>
+            <div id="layoutInfo" class="mono small"></div>
+        </div>
+
+        <div class="panel">
+            <div class="panelTitle">Tracks</div>
+            <div id="tracksTable" class="mono small"></div>
+        </div>
+
+        <div class="panel">
+            <div class="panelTitle">Last frames</div>
+            <div id="framesInfo" class="mono small"></div>
+        </div>
+    </aside>
+</main>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
+

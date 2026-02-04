@@ -1,0 +1,124 @@
+:root {
+    color-scheme: dark;
+    --bg: #0b0f14;
+    --panel: #101823;
+    --text: #d7e1ee;
+    --muted: #8aa0b8;
+    --border: #1e2a3a;
+    --pill: #22324a;
+    --ok: #2f7a52;
+    --bad: #7a2f2f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.topbar {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.title {
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.controls .sep {
+    margin-left: 10px;
+    color: var(--muted);
+}
+
+.status {
+    margin-left: auto;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.pill {
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: var(--pill);
+    border: 1px solid var(--border);
+    font-size: 12px;
+}
+
+.pill.ok { background: rgba(47,122,82,0.25); border-color: rgba(47,122,82,0.8); }
+.pill.bad { background: rgba(122,47,47,0.25); border-color: rgba(122,47,47,0.8); }
+
+.layout {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 12px;
+    padding: 12px;
+}
+
+.canvasWrap {
+    border: 1px solid var(--border);
+    background: #070a0f;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+canvas { display: block; width: 100%; height: auto; }
+
+.side {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.panel {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 10px;
+}
+
+.panelTitle {
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.small {
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--muted);
+}
+
+button, select, input {
+    accent-color: #6aa9ff;
+}
+
+button {
+    background: #162235;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #1a2b44;
+}
