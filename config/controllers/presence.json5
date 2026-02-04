@@ -2,11 +2,167 @@
 {
   enabled: true,
 
-  // placeholder for later:
-  // - zone mapping
-  // - hysteresis/debounce
-  // - sensor filters
-  params: {
-    debounceMs: 250,
-  }
+  layout: {
+    // Azimuth convention:
+    // - degrees clockwise from North
+    // - 0° = North (radar 0 forward)
+    // - 90° = East (right)
+    // - 180° = South (back)
+    // - 270° = West (left)
+    radarAzimuthDeg: [0, 90, 180, 270],
+
+    ld2450: [
+      { publishAs: 'LD2450A' }, // index 0 => radarId 0
+      { publishAs: 'LD2450B' },
+      { publishAs: 'LD2450C' },
+      { publishAs: 'LD2450D' },
+    ],
+
+    ld2410: [
+      { publishAs: 'LD2410A', zoneIndex: 0 },
+//      { publishAs: 'LD2410B', zoneIndex: 1 },
+      { publishAs: 'LD2410C', zoneIndex: 2 },
+//      { publishAs: 'LD2410D', zoneIndex: 3 },
+    ],
+  },
+
+  // 3) Extrinsics / Transform Service
+  extrinsics: {
+    // δ0 fixed to 0 by spec; others loaded from persistence if valid
+    yawOffsetsDeg: null, // null => load from store; or provide explicit override array length N
+  },
+
+  // 4) Measurement Quality Policy
+  quality: {
+    edgeBearingFullDeg: 25,
+    edgeBearingCutoffDeg: 55,
+    edgeNoiseScaleMax: 4.0,
+
+    rangeFullMm: 1200,
+    rangeCutoffMm: 3000,
+    rangeNoiseScaleMax: 3.0,
+
+    jitterWindowMs: 500,
+    jitterFullMm: 60,
+    jitterCutoffMm: 250,
+    jitterNoiseScaleMax: 3.0,
+  },
+
+  // 5–7) Tracking pipeline
+  tracking: {
+    maxDtMs: 400,
+    dropTimeoutMs: 1500,
+    outputRateHz: 10,
+
+    kf: {
+      procNoiseAccelMmS2: 1200,
+      measNoiseBaseMm: 160,
+      initialPosVarMm2: 500 * 500,
+      initialVelVarMm2S2: 1200 * 1200,
+    },
+
+    association: {
+      gateD2Max: 9.21,
+      newTrackConfirmEnabled: true,
+      newTrackConfirmCount: 2,
+      newTrackConfirmWindowMs: 600,
+    },
+  },
+
+  // 8) Zone Presence Engine
+  zones: {
+    // default: N zones from layout sectors unless overridden
+    mode: 'sectors', // 'sectors' | 'polygons'
+    aliases: {
+      // optional stable names for UI/main-bus payloads
+      zone0: 'front',
+      zone1: 'right',
+      zone2: 'back',
+      zone3: 'left',
+    },
+
+    // fallback behavior (LD2450-only)
+    enterConfirmMs: 250,
+    holdMs: 2500,
+    clearConfirmMs: 800,
+  },
+
+  // LD2410 policy (optional)
+  ld2410: {
+    enabledDefault: false,
+
+    debounce: {
+      onConfirmMs: 150,
+      offConfirmMs: 600,
+    },
+
+    // per-zone override if needed later
+    // zones: { zone0: { enabled: true }, ... }
+  },
+
+  // 9–10) Calibration
+  calibration: {
+    enabled: true,
+
+    pairMode: 'auto', // 'auto' | 'explicit'
+    minOverlapDeg: 15,
+
+    // used when pairMode === 'explicit'
+    pairList: [
+      // { i: 0, j: 1 }, ...
+    ],
+
+    pairTimeMaxDeltaMs: 80,
+    sessionEndGapMs: 600,
+
+    sessionMin: {
+      minPairSamplesTotal: 80,
+      minPairSamplesPerActivePair: 20,
+      minDisplacementMm: 1200,
+      minEigenRatio: 0.08,
+    },
+
+    solver: {
+      regLambda: 1e-3,
+      maxConditionNumber: 1e6,
+      maxUpdatePerSessionDeg: 1.0,
+      maxAbsDeltaDeg: 8.0,
+      violationPolicy: 'reject',
+    },
+
+    accept: {
+      maxRmsTotalMm: 250,
+      maxRmsPairMm: 300,
+      minImprovementRatioEnabled: true,
+      minImprovementRatio: 1.10,
+      outlierMaxDeg: 2.5,
+      outlierConfirmEnabled: true,
+      outlierConfirmCount: 2,
+      outlierConfirmWindowSessions: 3,
+      outlierConfirmBandDeg: 1.0,
+    },
+
+    smoothing: {
+      emaAlphaBase: 0.15,
+      emaAlphaMin: 0.03,
+      emaAlphaMax: 0.25,
+
+      sessionQualityMin: 0.35,
+      qWeights: {
+        disp: 1.0,
+        cov: 1.0,
+        covg: 1.0,
+        rms: 1.0,
+      },
+    },
+  },
+
+  // 11) Persistence
+  persistence: {
+    storeFormat: 'json',
+    storeVersion: 1,
+    atomicWrite: true,
+    maxHistory: 50,
+    // path, key, or backend id goes here later
+  },
 }
