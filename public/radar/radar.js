@@ -70,6 +70,9 @@ const createState = function () {
     trailEnabled: true,
     trailTimeoutMs: 2000,
 
+    // Safety: if we stop receiving valid updates for a target, hide it anyway
+    targetTimeoutMs: 1200,
+
     // Debug counters
     rxFrames: 0,
     rxJsonOk: 0,
@@ -101,19 +104,22 @@ const ensurePerTarget = function (state, id) {
   }
 }
 
-const enqueueIfChanged = function (state, id, xMm, yMm, ts) {
+const clearTarget = function (state, id) {
+  state.last.delete(id)
+  state.trail.delete(id)
+}
+
+const enqueueObservation = function (state, id, xMm, yMm, ts) {
   ensurePerTarget(state, id)
 
   const prev = state.last.get(id)
   const changed = !prev || prev.xMm !== xMm || prev.yMm !== yMm
 
-  if (!changed) {
-    return
-  }
-
+  // Always refresh "last seen" even if position is unchanged (prevents stale expiry for stationary targets)
   state.last.set(id, { xMm, yMm, ts })
 
-  if (state.trailEnabled) {
+  // Only add trail points when position changed (avoids flooding the trail while standing still)
+  if (state.trailEnabled && changed) {
     const arr = state.trail.get(id)
     arr.push({ xMm, yMm, ts })
   }
@@ -135,6 +141,20 @@ const pruneTrails = function (state, now) {
 
     if (arr.length === 0) {
       state.trail.delete(id)
+    }
+  }
+}
+
+const pruneStaleTargets = function (state, now) {
+  const timeout = state.targetTimeoutMs
+
+  for (const [id, last] of state.last.entries()) {
+    if (!last) {
+      continue
+    }
+
+    if ((now - last.ts) > timeout) {
+      clearTarget(state, id)
     }
   }
 }
@@ -374,7 +394,7 @@ const handleWsFrame = function (state, ev) {
 
   state.rxBusOk += 1
 
-  const frames = msg.payload?.event?.payload?.frames
+  const frames = msg.payload?.event?.payload?.frame
   const targets = frames?.targets
   if (!frames || !Array.isArray(targets)) {
     return
@@ -385,16 +405,26 @@ const handleWsFrame = function (state, ev) {
   const ts = typeof frames.ts === 'number' ? frames.ts : nowMs()
 
   for (const t of targets) {
-    if (!t || t.valid !== true) {
+    if (!t || typeof t.id !== 'number') {
       continue
     }
 
-    if (typeof t.id !== 'number' || typeof t.xMm !== 'number' || typeof t.yMm !== 'number') {
+    // Explicit disappearance: clear last + trail for this id
+    if (t.valid === false) {
+      clearTarget(state, t.id)
+      continue
+    }
+
+    if (t.valid !== true) {
+      continue
+    }
+
+    if (typeof t.xMm !== 'number' || typeof t.yMm !== 'number') {
       continue
     }
 
     state.rxValidTargets += 1
-    enqueueIfChanged(state, t.id, t.xMm, t.yMm, ts)
+    enqueueObservation(state, t.id, t.xMm, t.yMm, ts)
   }
 }
 
@@ -481,6 +511,7 @@ const connectWs = function (state, els) {
 const wireUi = function (state, els) {
   els.clear.addEventListener('click', () => {
     state.trail.clear()
+    state.last.clear()
   })
 
   els.reconnect.addEventListener('click', () => {
@@ -525,6 +556,7 @@ const renderLoop = function (state, els, ctx) {
   const now = nowMs()
 
   pruneTrails(state, now)
+  pruneStaleTargets(state, now)
 
   drawGrid(ctx, view)
   drawTrails(ctx, state, view, now)
