@@ -1,3 +1,4 @@
+// src/domains/led/ledScheduler.js
 import domainEventTypes from '../domainEventTypes.js'
 import { createEffectRunner } from './ledEffects.js'
 
