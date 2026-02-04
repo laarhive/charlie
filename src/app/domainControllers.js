@@ -1,5 +1,5 @@
 // src/app/domainControllers.js
-import BinaryPresenceController from '../domains/presence/binaryPresenceController.js'
+import PresenceController from '../domains/presence/PresenceController.js'
 import HitVibrationController from '../domains/vibration/hitVibrationController.js'
 import EdgeButtonController from '../domains/button/edgeButtonController.js'
 import LedController from '../domains/led/ledController.js'
@@ -28,8 +28,9 @@ export const makeDomainControllers = function makeDomainControllers({ logger, bu
 
   {
     const controller = controllers?.presence || {}
-    out.push(new BinaryPresenceController({
+    out.push(new PresenceController({
       logger,
+      presenceInternalBus: buses.presenceInternal,
       presenceBus: buses.presence,
       mainBus: buses.main,
       clock,

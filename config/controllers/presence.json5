@@ -5,10 +5,10 @@
   layout: {
     // Azimuth convention:
     // - degrees clockwise from North
-    // - 0° = North (radar 0 forward)
-    // - 90° = East (right)
-    // - 180° = South (back)
-    // - 270° = West (left)
+    // 0° = North (radar 0 forward)
+    // 90° = East (right)
+    // 180° = South (back)
+    // 270° = West (left)
     radarAzimuthDeg: [0, 90, 180, 270],
 
     ld2450: [
@@ -19,10 +19,10 @@
     ],
 
     ld2410: [
-      { publishAs: 'LD2410A', zoneIndex: 0 },
-//      { publishAs: 'LD2410B', zoneIndex: 1 },
-      { publishAs: 'LD2410C', zoneIndex: 2 },
-//      { publishAs: 'LD2410D', zoneIndex: 3 },
+      { publishAs: 'LD2410A', enabled: true,  zoneId: 'zone0' },
+      { publishAs: 'LD2410B', enabled: false, zoneId: 'zone1' },
+      { publishAs: 'LD2410C', enabled: true,  zoneId: 'zone2' },
+      { publishAs: 'LD2410D', enabled: false,  zoneId: 'zone3' }
     ],
   },
 

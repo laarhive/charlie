@@ -1,6 +1,7 @@
 // src/core/eventTypes.js
 export const eventTypes = Object.freeze({
   presence: Object.freeze({
+    targets: 'presence:targets',
     enter: 'presence:enter',
     exit: 'presence:exit',
   }),

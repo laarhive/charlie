@@ -1,85 +1,139 @@
-// src/domain/presence/presenceController.js
+// src/domains/presence/presenceController.js
 import eventTypes from '../../core/eventTypes.js'
+import domainEventTypes from '../domainEventTypes.js'
+import Ld2450IngestAdapter from './ld2450IngestAdapter.js'
+import Ld2410IngestAdapter from './ld2410IngestAdapter.js'
 
 export class PresenceController {
   #logger
-  #presenceBus
-  #mainBus
   #clock
   #controllerId
 
-  constructor({ logger, presenceBus, mainBus, clock, controllerId }) {
+  #presenceBus
+  #presenceInternalBus
+  #mainBus
+
+  #config
+  #enabled
+
+  #devices
+
+  #ld2450
+  #ld2410
+  #unsubInternal
+
+  constructor({ logger, presenceInternalBus, presenceBus, mainBus, clock, controllerId, controller, devices }) {
     this.#logger = logger
-    this.#presenceBus = presenceBus
-    this.#mainBus = mainBus
     this.#clock = clock
     this.#controllerId = controllerId || 'presenceController'
+
+    this.#presenceInternalBus = presenceInternalBus
+    this.#presenceBus = presenceBus
+    this.#mainBus = mainBus
+
+    this.#config = controller || {}
+    this.#enabled = this.#config?.enabled !== false
+
+    this.#devices = Array.isArray(devices) ? devices : []
+
+    this.#ld2450 = null
+    this.#ld2410 = null
+    this.#unsubInternal = null
+
+    if (!this.#presenceInternalBus?.publish || !this.#presenceInternalBus?.subscribe) {
+      throw new Error('presenceController requires presenceInternalBus.publish+subscribe')
+    }
+
+    if (!this.#presenceBus?.subscribe) {
+      throw new Error('presenceController requires presenceBus.subscribe')
+    }
+
+    if (!this.#mainBus?.publish) {
+      throw new Error('presenceController requires mainBus.publish')
+    }
   }
 
-  /**
-   * Starts the controller (subscribe to presenceBus).
-   *
-   * @example
-   * controller.start()
-   */
   start() {
-    throw new Error('not implemented')
+    if (!this.#enabled) {
+      this.#logger.notice('presence_controller_disabled', { controllerId: this.#controllerId })
+      return
+    }
+
+    if (this.#ld2450 || this.#ld2410 || this.#unsubInternal) {
+      return
+    }
+
+    this.#ld2450 = new Ld2450IngestAdapter({
+      logger: this.#logger,
+      clock: this.#clock,
+      controllerId: this.#controllerId,
+      presenceBus: this.#presenceBus,
+      presenceInternalBus: this.#presenceInternalBus,
+      devices: this.#devices,
+    })
+
+    this.#ld2410 = new Ld2410IngestAdapter({
+      logger: this.#logger,
+      clock: this.#clock,
+      controllerId: this.#controllerId,
+      presenceBus: this.#presenceBus,
+      presenceInternalBus: this.#presenceInternalBus,
+      controllerConfig: this.#config,
+      devices: this.#devices,
+    })
+
+    this.#ld2450.start()
+    this.#ld2410.start()
+
+    this.#unsubInternal = this.#presenceInternalBus.subscribe((event) => {
+      if (event?.type !== domainEventTypes.presence.ld2450Tracks) return
+      this.#publishTargetsFromTracks(event)
+    })
+
+    this.#logger.notice('presence_controller_started', {
+      controllerId: this.#controllerId,
+      ld2410Configured: Array.isArray(this.#config?.layout?.ld2410) ? this.#config.layout.ld2410.length : 0,
+    })
   }
 
-  /**
-   * Disposes the controller (unsubscribe).
-   *
-   * @example
-   * controller.dispose()
-   */
   dispose() {
-    throw new Error('not implemented')
-  }
-
-  /* protected-ish helpers */
-
-  _logger() {
-    return this.#logger
-  }
-
-  _presenceBus() {
-    return this.#presenceBus
-  }
-
-  _mainBus() {
-    return this.#mainBus
-  }
-
-  _clock() {
-    return this.#clock
-  }
-
-  _controllerId() {
-    return this.#controllerId
-  }
-
-  _publishEnter({ zone, sensorId }) {
-    const event = {
-      type: eventTypes.presence.enter,
-      ts: this.#clock.nowMs(),
-      source: this.#controllerId,
-      payload: { zone, sensorId },
+    if (this.#unsubInternal) {
+      this.#unsubInternal()
+      this.#unsubInternal = null
     }
 
-    this.#logger.debug('event_publish', event)
-    this.#mainBus.publish(event)
-  }
-
-  _publishExit({ zone, sensorId }) {
-    const event = {
-      type: eventTypes.presence.exit,
-      ts: this.#clock.nowMs(),
-      source: this.#controllerId,
-      payload: { zone, sensorId },
+    if (this.#ld2450) {
+      this.#ld2450.dispose()
+      this.#ld2450 = null
     }
 
-    this.#logger.debug('event_publish', event)
-    this.#mainBus.publish(event)
+    if (this.#ld2410) {
+      this.#ld2410.dispose()
+      this.#ld2410 = null
+    }
+
+    this.#logger.notice('presence_controller_disposed', { controllerId: this.#controllerId })
+  }
+
+  #publishTargetsFromTracks(event) {
+    const p = event?.payload || {}
+    const tracks = Array.isArray(p.tracks) ? p.tracks : []
+
+    this.#mainBus.publish({
+      type: eventTypes.presence.targets,
+      ts: this.#clock.nowMs(),
+      source: this.#controllerId,
+      payload: {
+        targets: tracks.map((t) => ({
+          id: t.trackId,
+          xMm: t.xMm,
+          yMm: t.yMm,
+          rangeMm: t.rangeMm,
+          bearingDeg: t.bearingDeg,
+          speedMmS: t.speedMmS,
+        })),
+      },
+    })
   }
 }
 
