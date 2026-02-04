@@ -78,7 +78,7 @@
     kind: 'ld2450Radar',
     protocol: {
       type: 'serial',
-      usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-25-LD2450B' },
+      usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-37-LD2450B' },
       baudRate: 256000,
       dataBits: 8,
       stopBits: 1,
