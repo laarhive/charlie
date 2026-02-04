@@ -38,10 +38,9 @@ export class TransformService {
     const tx = this.#tubeRadiusMm * Math.cos(phiRad)
     const ty = this.#tubeRadiusMm * Math.sin(phiRad)
 
-    // Rotate radar-local into world, then translate by radar position on tube
-    // world = R(theta) * [x,y] + t
-    const X = (cosT * xMm) - (sinT * yMm) + tx
-    const Y = (sinT * xMm) + (cosT * yMm) + ty
+    // Forward axis u = [cosT, sinT], Right axis v = [-sinT, cosT]
+    const X = (cosT * yMm) + (-sinT * xMm) + tx
+    const Y = (sinT * yMm) + ( cosT * xMm) + ty
 
     return { xMm: X, yMm: Y }
   }
