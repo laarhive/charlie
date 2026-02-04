@@ -57,8 +57,8 @@
     kf: {
       procNoiseAccelMmS2: 1200,
       measNoiseBaseMm: 160,
-      initialPosVarMm2: 500 * 500,
-      initialVelVarMm2S2: 1200 * 1200,
+      initialPosVarMm2: 250000, // 500^2
+      initialVelVarMm2S2: 1440000, // 1200^2
     },
 
     association: {
