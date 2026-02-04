@@ -24,6 +24,9 @@ export default class Ws2812LedDevice extends BaseDevice {
   #runtimeState
   #lastRgb
 
+  #lastPublishedState
+  #lastPublishedError
+
   constructor({ logger, clock, domainBus, mainBus, device, protocolFactory }) {
     super(device)
 
@@ -43,6 +46,9 @@ export default class Ws2812LedDevice extends BaseDevice {
 
     this.#runtimeState = 'unknown'
     this.#lastRgb = [0, 0, 0]
+
+    this.#lastPublishedState = null
+    this.#lastPublishedError = null
 
     if (!this.#mainBus?.publish) {
       throw new Error('ws2812Led requires main bus for system:hardware reporting')
@@ -104,9 +110,7 @@ export default class Ws2812LedDevice extends BaseDevice {
 
     if (reason !== 'dispose') {
       const msg = reason ? `blocked: ${String(reason)}` : 'blocked'
-      this.#runtimeState = 'manualBlocked'
-      this._setLastError(msg)
-      this.#publishHardwareState('manualBlocked', msg)
+      this.#setRuntimeState('manualBlocked', msg)
     }
   }
 
@@ -124,7 +128,7 @@ export default class Ws2812LedDevice extends BaseDevice {
       return err(deviceErrorCodes.invalidInjectPayload)
     }
 
-    void this.#applyRgb(rgb, { source: 'inject' })
+    void this.#applyRgb(rgb)
     return ok()
   }
 
@@ -143,9 +147,13 @@ export default class Ws2812LedDevice extends BaseDevice {
 
     this.#setRuntimeState('active', null)
 
-    // Recovery: re-apply last known RGB (state stays active)
-    await this.#writeRgb(this.#lastRgb)
-    this.#publishHardwareState('active', null, { action: 'applied', rgb: this.#lastRgb, source: 'recovery' })
+    const okWrite = await this.#writeRgb(this.#lastRgb)
+    if (!okWrite) return
+
+    this.#publishHardwareState('active', null, {
+      action: 'recovered',
+      rgb: this.#lastRgb,
+    }, true)
   }
 
   #onLinkStatus(evt) {
@@ -195,9 +203,7 @@ export default class Ws2812LedDevice extends BaseDevice {
 
     const p = event?.payload || {}
 
-    if (!this.#isTargetMatch(p)) {
-      return
-    }
+    if (!this.#isTargetMatch(p)) return
 
     const rgb = this.#parseRgbPayload(p)
     if (!rgb) {
@@ -205,7 +211,7 @@ export default class Ws2812LedDevice extends BaseDevice {
       return
     }
 
-    void this.#applyRgb(rgb, { source: 'bus' })
+    void this.#applyRgb(rgb)
   }
 
   #isTargetMatch(payload) {
@@ -223,22 +229,13 @@ export default class Ws2812LedDevice extends BaseDevice {
     return true
   }
 
-  async #applyRgb(rgb, { source }) {
+  async #applyRgb(rgb) {
     this.#lastRgb = rgb
 
-    const blocked = this.isBlocked() || this.isDisposed() || this.#runtimeState !== 'active'
-    if (blocked) {
-      // Do not introduce new states; just report intent.
-      const state = this.#runtimeState === 'manualBlocked' ? 'manualBlocked' : 'degraded'
-      this.#publishHardwareState(state, this.getLastError(), { action: 'simulated', rgb, source })
-      return
-    }
+    if (this.isBlocked() || this.isDisposed()) return
+    if (this.#runtimeState !== 'active') return
 
-    const okWrite = await this.#writeRgb(rgb)
-    if (!okWrite) return
-
-    // State stays active; action goes into detail.
-    this.#publishHardwareState('active', null, { action: 'applied', rgb, source })
+    await this.#writeRgb(rgb)
   }
 
   async #writeRgb(rgb) {
@@ -320,9 +317,13 @@ export default class Ws2812LedDevice extends BaseDevice {
   }
 
   #setRuntimeState(state, error) {
-    this.#runtimeState = state
-    this._setLastError(error || null)
-    this.#publishHardwareState(state, this.getLastError())
+    const nextState = String(state || 'unknown')
+    const nextError = error ? String(error) : null
+
+    this.#runtimeState = nextState
+    this._setLastError(nextError)
+
+    this.#publishHardwareState(nextState, nextError, null, false)
   }
 
   #teardownProtocol() {
@@ -344,9 +345,18 @@ export default class Ws2812LedDevice extends BaseDevice {
     this.#lastProtocolErrorTs = 0
   }
 
-  #publishHardwareState(state, error, detailExtra) {
+  #publishHardwareState(state, error, detailExtra, force) {
+    const errStr = error ? String(error) : null
+
+    if (!force) {
+      if (this.#lastPublishedState === state && this.#lastPublishedError === errStr) return
+    }
+
+    this.#lastPublishedState = state
+    this.#lastPublishedError = errStr
+
     const detail = { ...(detailExtra || {}) }
-    if (error) detail.error = error
+    if (errStr) detail.error = errStr
 
     this.#mainBus.publish({
       type: eventTypes.system.hardware,
