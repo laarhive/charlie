@@ -1,4 +1,4 @@
-// radar/radar.js
+// public/debug/radar/radar.js
 const DEFAULT_WS_URL = (() => {
   const isHttps = location.protocol === 'https:'
   const wsProto = isHttps ? 'wss:' : 'ws:'

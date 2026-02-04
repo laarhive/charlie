@@ -1,4 +1,4 @@
-// public/bus/bus.js
+// public/debug/bus/bus.js
 ;(() => {
   const statusEl = document.getElementById('status')
   const logEl = document.getElementById('log')
