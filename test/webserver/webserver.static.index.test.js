@@ -5,7 +5,13 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-import WebServer from '../../src/transport/webServer.js'
+import {
+  assertDaemonAlive,
+  getFreePort,
+  startCharlieDaemon,
+  stopCharlie,
+  waitForHttpReady,
+} from '../helpers/charlieHarness.js'
 
 const httpGet = (port, reqPath) =>
   new Promise((resolve, reject) => {
@@ -24,29 +30,25 @@ const httpGet = (port, reqPath) =>
     req.on('error', reject)
   })
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms))
-
 describe('WebServer static: directory index + trailing slash', function () {
-  this.timeout(10_000)
+  this.timeout(25_000)
 
-  let server
+  let child
   let port
 
   let publicRoot
-  let baseDirAbs
   let testDirAbs
 
   const baseUrl = '/dev/__tests__/static'
   const testUrl = `${baseUrl}/static-index-fixture`
 
   before(async () => {
-    const webServerFile = fileURLToPath(new URL('../../src/transport/webServer.js', import.meta.url))
+    const webServerFile = fileURLToPath(new URL('../src/transport/webServer.js', import.meta.url))
     const webServerDir = path.dirname(webServerFile)
 
     publicRoot = path.resolve(webServerDir, '../../../public')
 
-    baseDirAbs = path.join(publicRoot, 'dev', '__tests__', 'static')
-    testDirAbs = path.join(baseDirAbs, 'static-index-fixture')
+    testDirAbs = path.join(publicRoot, 'dev', '__tests__', 'static', 'static-index-fixture')
 
     await fs.mkdir(testDirAbs, { recursive: true })
 
@@ -56,22 +58,20 @@ describe('WebServer static: directory index + trailing slash', function () {
       'utf8'
     )
 
-    port = 18_000 + Math.floor(Math.random() * 1_000)
+    port = await getFreePort()
 
-    server = new WebServer({
-      logger: { notice() {}, error() {} },
+    child = startCharlieDaemon({
       port,
-      api: {},
-      streamHub: null,
+      mode: 'virt',
+      logLevel: 'info',
     })
 
-    server.start()
-    await wait(50)
+    await waitForHttpReady({ port, timeoutMs: 12_000 })
   })
 
   after(async () => {
     try {
-      server?.dispose()
+      await stopCharlie(child)
     } catch (e) {
       // ignore
     }
@@ -81,6 +81,10 @@ describe('WebServer static: directory index + trailing slash', function () {
     } catch (e) {
       // ignore
     }
+  })
+
+  it('daemon stays alive', async function () {
+    assert.doesNotThrow(() => assertDaemonAlive(child))
   })
 
   it('redirects /static-index-fixture to /static-index-fixture/', async () => {
