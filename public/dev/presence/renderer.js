@@ -16,6 +16,10 @@ export class PresenceRenderer {
   #ctx
   #cfg
 
+  #trackColorBySeq = new Map()
+  #trackColorOrder = []
+  #maxTrackColors = 30
+
   constructor({ canvas, cfg }) {
     this.#canvas = canvas
     this.#ctx = canvas.getContext('2d')
@@ -218,6 +222,45 @@ export class PresenceRenderer {
     ctx.restore()
   }
 
+  #parseTrackSeq = (id) => {
+    const s = String(id || '')
+    const i = s.lastIndexOf(':')
+    if (i === -1) return null
+
+    const n = Number(s.slice(i + 1))
+    return Number.isFinite(n) ? n : null
+  }
+
+  #colorForSeq = (seq, alpha = 0.85) => {
+    // golden-angle spacing → perceptually distinct colors
+    const hue = (seq * 137.508) % 360
+    return `hsla(${hue}, 90%, 55%, ${alpha})`
+  }
+
+  #getTrackFillStyle = (t) => {
+    const isTentative = String(t.state || '') === 'tentative'
+    if (isTentative) return 'rgba(255,200,0,0.85)'
+
+    const seq = this.#parseTrackSeq(t.id)
+    if (seq === null) return 'rgba(0,255,160,0.85)'
+
+    let color = this.#trackColorBySeq.get(seq)
+    if (color) return color
+
+    // create new color
+    color = this.#colorForSeq(seq, 0.85)
+    this.#trackColorBySeq.set(seq, color)
+    this.#trackColorOrder.push(seq)
+
+    // prune oldest if over limit
+    if (this.#trackColorOrder.length > this.#maxTrackColors) {
+      const oldSeq = this.#trackColorOrder.shift()
+      this.#trackColorBySeq.delete(oldSeq)
+    }
+
+    return color
+  }
+
   #drawTracks({ ctx, cx, cy, scale, tracks }) {
     const velScale = Number(this.#cfg.draw.velocityArrowScale) || 8
 
@@ -232,7 +275,7 @@ export class PresenceRenderer {
       ctx.save()
 
       const isTentative = String(t.state || '') === 'tentative'
-      ctx.fillStyle = isTentative ? 'rgba(255,200,0,0.85)' : 'rgba(0,255,160,0.85)'
+      ctx.fillStyle = this.#getTrackFillStyle(t)
 
       ctx.beginPath()
       ctx.arc(sx, sy, 6, 0, Math.PI * 2)
