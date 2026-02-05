@@ -137,11 +137,16 @@ export class TrackingPipeline {
     const mode = this.#mode()
     const debugEnabled = this.#debugEnabled()
 
-    const measurements = this.#drainBuffer()
+    const rawMeasurements = this.#drainBuffer()
+    const measurements = this.#dedupMeasurements(rawMeasurements)
     const measVarMm2ByRadarId = this.#computeMeasVarByRadar(measurements)
 
     if (mode === 'passthrough') {
-      this.#publishPassthrough(now, measurements, { debugEnabled })
+      this.#publishPassthrough(now, measurements, {
+        debugEnabled,
+        bufferedMeas: rawMeasurements.length,
+        dedupedMeas: measurements.length,
+      })
       return
     }
 
@@ -323,7 +328,8 @@ export class TrackingPipeline {
         tracks: out,
         meta: {
           mode,
-          bufferedMeas: measurements.length,
+          bufferedMeas: rawMeasurements.length,
+          dedupedMeas: measurements.length,
           activeTracks: out.length,
           updateIntervalMs: this.#getUpdateIntervalMs(),
         },
@@ -331,7 +337,7 @@ export class TrackingPipeline {
     })
   }
 
-  #publishPassthrough(now, measurements, { debugEnabled }) {
+  #publishPassthrough(now, measurements, { debugEnabled, bufferedMeas, dedupedMeas }) {
     const out = []
 
     for (const m of measurements) {
@@ -381,12 +387,41 @@ export class TrackingPipeline {
         tracks: out,
         meta: {
           mode: 'passthrough',
-          bufferedMeas: measurements.length,
+          bufferedMeas: Number(bufferedMeas) || measurements.length,
+          dedupedMeas: Number(dedupedMeas) || measurements.length,
           activeTracks: out.length,
           updateIntervalMs: this.#getUpdateIntervalMs(),
         },
       },
     })
+  }
+
+  #dedupMeasurements(measurements) {
+    const latestByKey = new Map()
+
+    for (const m of measurements) {
+      const prov = m?.prov || null
+      const publishAs = String(prov?.publishAs || '').trim()
+      const slotId = Number(prov?.slotId)
+
+      const key = publishAs && Number.isFinite(slotId)
+        ? `${publishAs}:${slotId}`
+        : `${Number(m?.radarId)}:${Number.isFinite(slotId) ? slotId : 'na'}`
+
+      const ts = Number(m?.ts) || 0
+      const prev = latestByKey.get(key)
+      if (!prev) {
+        latestByKey.set(key, m)
+        continue
+      }
+
+      const prevTs = Number(prev?.ts) || 0
+      if (ts >= prevTs) {
+        latestByKey.set(key, m)
+      }
+    }
+
+    return [...latestByKey.values()]
   }
 
   #buildDebug({ mode, updatedThisTick, m, assoc, kf }) {
