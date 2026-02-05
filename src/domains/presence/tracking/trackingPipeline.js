@@ -1,3 +1,4 @@
+// src/domains/presence/tracking/trackingPipeline.js
 import domainEventTypes from '../../domainEventTypes.js'
 import { KalmanFilterCv2d } from './kalmanFilterCv2d.js'
 import { AssociationEngine } from './associationEngine.js'
@@ -138,13 +139,16 @@ export class TrackingPipeline {
     const debugEnabled = this.#debugEnabled()
 
     const rawMeasurements = this.#drainBuffer()
-    const measurements = this.#dedupMeasurements(rawMeasurements)
+    const filtered = this.#filterMeasurements(rawMeasurements)
+    const measurements = this.#dedupMeasurements(filtered)
+
     const measVarMm2ByRadarId = this.#computeMeasVarByRadar(measurements)
 
     if (mode === 'passthrough') {
       this.#publishPassthrough(now, measurements, {
         debugEnabled,
         bufferedMeas: rawMeasurements.length,
+        filteredMeas: filtered.length,
         dedupedMeas: measurements.length,
       })
       return
@@ -329,6 +333,7 @@ export class TrackingPipeline {
         meta: {
           mode,
           bufferedMeas: rawMeasurements.length,
+          filteredMeas: filtered.length,
           dedupedMeas: measurements.length,
           activeTracks: out.length,
           updateIntervalMs: this.#getUpdateIntervalMs(),
@@ -337,7 +342,46 @@ export class TrackingPipeline {
     })
   }
 
-  #publishPassthrough(now, measurements, { debugEnabled, bufferedMeas, dedupedMeas }) {
+  #filterMeasurements(measurements) {
+    const q = this.#cfg?.quality || {}
+    const fullDeg = Number(q.edgeBearingFullDeg)
+    const cutoffDeg = Number(q.edgeBearingCutoffDeg)
+
+    const useBearingGate = Number.isFinite(cutoffDeg) && cutoffDeg > 0
+    const cutoffAbs = useBearingGate ? Math.abs(cutoffDeg) : null
+
+    if (!useBearingGate) return measurements
+
+    const out = []
+    for (const m of measurements) {
+      const prov = m?.prov || null
+      const local = prov?.localMm || null
+      const x = Number(local?.xMm)
+      const y = Number(local?.yMm)
+
+      // If we don't have local coords, don't drop it here.
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        out.push(m)
+        continue
+      }
+
+      const bearingDeg = (Math.atan2(x, y) * 180) / Math.PI
+      const absB = Math.abs(bearingDeg)
+
+      if (absB > cutoffAbs) {
+        continue
+      }
+
+      // (optional later) soft weighting between fullDeg and cutoffDeg
+      // For now, keep it simple: hard cutoff only.
+
+      out.push(m)
+    }
+
+    return out
+  }
+
+  #publishPassthrough(now, measurements, { debugEnabled, bufferedMeas, filteredMeas, dedupedMeas }) {
     const out = []
 
     for (const m of measurements) {
@@ -388,6 +432,7 @@ export class TrackingPipeline {
         meta: {
           mode: 'passthrough',
           bufferedMeas: Number(bufferedMeas) || measurements.length,
+          filteredMeas: Number(filteredMeas) || measurements.length,
           dedupedMeas: Number(dedupedMeas) || measurements.length,
           activeTracks: out.length,
           updateIntervalMs: this.#getUpdateIntervalMs(),

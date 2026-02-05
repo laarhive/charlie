@@ -39,8 +39,8 @@
 
   // 4) Measurement Quality Policy
   quality: {
-    edgeBearingFullDeg: 25,
-    edgeBearingCutoffDeg: 55,
+    edgeBearingFullDeg: 30,
+    edgeBearingCutoffDeg: 45,
     edgeNoiseScaleMax: 4.0,
 
     rangeFullMm: 1200,
