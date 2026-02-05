@@ -1,8 +1,8 @@
 // src/domains/presence/presenceController.js
 import eventTypes from '../../core/eventTypes.js'
 import domainEventTypes from '../domainEventTypes.js'
-import Ld2450IngestAdapter from './ingest/ld2450IngestAdapter.js'
-import Ld2410IngestAdapter from './ingest/ld2410IngestAdapter.js'
+import { Ld2450IngestAdapter } from './ingest/ld2450IngestAdapter.js'
+import { Ld2410IngestAdapter } from './ingest/ld2410IngestAdapter.js'
 import { TrackingPipeline } from './tracking/trackingPipeline.js'
 
 export class PresenceController {
@@ -131,9 +131,14 @@ export class PresenceController {
     this.#logger.notice('presence_controller_disposed', { controllerId: this.#controllerId })
   }
 
+  #debugEnabled() {
+    return this.#config?.debug?.enabled === true
+  }
+
   #publishTargetsFromGlobalTracks(event) {
     const p = event?.payload || {}
     const tracks = Array.isArray(p.tracks) ? p.tracks : []
+    const debugEnabled = this.#debugEnabled()
 
     this.#mainBus.publish({
       type: eventTypes.presence.targets,
@@ -142,21 +147,29 @@ export class PresenceController {
       payload: {
         targets: tracks
           .filter((t) => t && t.state === 'confirmed')
-          .map((t) => ({
-            id: t.id,
+          .map((t) => {
+            const out = {
+              id: t.id,
 
-            xMm: t.xMm,
-            yMm: t.yMm,
+              xMm: t.xMm,
+              yMm: t.yMm,
 
-            vxMmS: t.vxMmS,
-            vyMmS: t.vyMmS,
-            speedMmS: t.speedMmS,
+              vxMmS: t.vxMmS,
+              vyMmS: t.vyMmS,
+              speedMmS: t.speedMmS,
 
-            ageMs: t.ageMs,
-            lastSeenMs: t.lastSeenMs,
+              ageMs: t.ageMs,
+              lastSeenMs: t.lastSeenMs,
 
-            sourceRadars: t.sourceRadars,
-          })),
+              sourceRadars: t.sourceRadars,
+            }
+
+            if (debugEnabled && t.debug) {
+              out.debug = t.debug
+            }
+
+            return out
+          }),
       },
     })
   }

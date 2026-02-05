@@ -9,21 +9,26 @@
     // 90° = East (right)
     // 180° = South (back)
     // 270° = West (left)
-    radarAzimuthDeg: [0, 90, 180, 270],
+    radarAzimuthDeg: [0, 75, 285],
 
     ld2450: [
       { publishAs: 'LD2450A', enabled: true }, // radarId 0
       { publishAs: 'LD2450B', enabled: true }, // radarId 1
       { publishAs: 'LD2450C', enabled: true }, // radarId 2
-      { publishAs: 'LD2450D', enabled: true }, // radarId 3
+      { publishAs: 'LD2450D', enabled: false }, // radarId 3
     ],
 
     ld2410: [
-      { publishAs: 'LD2410A', enabled: true,  zoneId: 'zone0' },
+      { publishAs: 'LD2410A', enabled: false,  zoneId: 'zone0' },
       { publishAs: 'LD2410B', enabled: false, zoneId: 'zone1' },
-      { publishAs: 'LD2410C', enabled: true,  zoneId: 'zone2' },
+      { publishAs: 'LD2410C', enabled: false,  zoneId: 'zone2' },
       { publishAs: 'LD2410D', enabled: false,  zoneId: 'zone3' }
     ],
+  },
+
+  debug: {
+    // when true: main-bus targets include target.debug.*
+    enabled: true,
   },
 
   // 3) Extrinsics / Transform Service
@@ -50,6 +55,12 @@
 
   // 5–7) Tracking pipeline
   tracking: {
+    // mode switch:
+    // - 'passthrough' => no association, no KF, deterministic IDs m:<publishAs>:<slotId>
+    // - 'assocOnly'   => association + lifecycle, state = last measurement
+    // - 'kf'          => association + KF (current full)
+    mode: 'assocOnly',
+
     updateIntervalMs: 100,
     maxDtMs: 400,
     dropTimeoutMs: 1500,

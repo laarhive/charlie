@@ -1,3 +1,4 @@
+<!-- docs/architecture/domains/presence/presence-tracking-calibration.spec.md -->
 # Multi-Radar Global Tracking, Calibration, and Presence Module
 ## Requirements and High-Level Design
 

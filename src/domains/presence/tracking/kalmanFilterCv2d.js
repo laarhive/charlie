@@ -1,4 +1,3 @@
-// src/domains/presence/tracking/kalmanFilterCv2d.js
 export class KalmanFilterCv2d {
   #q
   #rBase
@@ -43,8 +42,6 @@ export class KalmanFilterCv2d {
     const dt3 = dt2 * dt
     const dt4 = dt2 * dt2
 
-    // Continuous white-acceleration model discretization (per axis)
-    // Q = q^2 * [[dt^4/4, dt^3/2], [dt^3/2, dt^2]]
     const q2 = q * q
 
     const Q = [
@@ -61,13 +58,17 @@ export class KalmanFilterCv2d {
   }
 
   update(state, z, measSigmaMm) {
+    const res = this.updateWithDebug(state, z, measSigmaMm)
+    return res.state
+  }
+
+  updateWithDebug(state, z, measSigmaMm) {
     const zx = Number(z?.xMm) || 0
     const zy = Number(z?.yMm) || 0
 
     const sigma = Number(measSigmaMm) || this.#rBase
     const r = sigma * sigma
 
-    // H maps [X,Y,VX,VY] -> [X,Y]
     const H = [
       [1, 0, 0, 0],
       [0, 1, 0, 0],
@@ -82,22 +83,30 @@ export class KalmanFilterCv2d {
     const P = state.P
 
     const zVec = [zx, zy]
-    const y = subVec(zVec, mulMatVec(H, x)) // innovation
+    const y = subVec(zVec, mulMatVec(H, x))
 
     const S = addMat(mulMat(mulMat(H, P), transpose(H)), R)
     const SInv = inv2(S)
     if (!SInv) {
-      return state
+      return {
+        state,
+        innovationMm: { dx: 0, dy: 0 },
+        sigmaMm: sigma,
+      }
     }
 
-    const K = mulMat(mulMat(P, transpose(H)), SInv) // 4x2
+    const K = mulMat(mulMat(P, transpose(H)), SInv)
 
     const xNew = addVec(x, mulMatVec(K, y))
     const I = ident4()
     const KH = mulMat(K, H)
     const PNew = mulMat(subMat(I, KH), P)
 
-    return { x: xNew, P: PNew }
+    return {
+      state: { x: xNew, P: PNew },
+      innovationMm: { dx: y[0], dy: y[1] },
+      sigmaMm: sigma,
+    }
   }
 }
 
@@ -216,3 +225,4 @@ const inv2 = function inv2(M) {
     [-c * invDet,  a * invDet],
   ]
 }
+

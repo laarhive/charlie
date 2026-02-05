@@ -13,8 +13,7 @@ export class TransformService {
 
     this.#azimuthDeg = az.map((x) => Number(x) || 0)
 
-    // Tube is fixed in spec; keep here but allow override later if you want
-    this.#tubeRadiusMm = 55
+    this.#tubeRadiusMm = 50
 
     this.#yawOffsetsDeg = this.#initYawOffsets(config)
   }
@@ -33,12 +32,10 @@ export class TransformService {
     const cosT = Math.cos(thetaRad)
     const sinT = Math.sin(thetaRad)
 
-    // t_i = R * [cos(phi), sin(phi)] in world frame (+X North, +Y East)
     const phiRad = (phiDeg * Math.PI) / 180
     const tx = this.#tubeRadiusMm * Math.cos(phiRad)
     const ty = this.#tubeRadiusMm * Math.sin(phiRad)
 
-    // Forward axis u = [cosT, sinT], Right axis v = [-sinT, cosT]
     const X = (cosT * yMm) + (-sinT * xMm) + tx
     const Y = (sinT * yMm) + ( cosT * xMm) + ty
 
@@ -47,6 +44,20 @@ export class TransformService {
 
   getYawOffsetsDeg() {
     return [...this.#yawOffsetsDeg]
+  }
+
+  getDebugForRadar(radarId) {
+    const i = Number(radarId)
+    if (!Number.isFinite(i) || i < 0 || i >= this.#azimuthDeg.length) return null
+
+    const phiDeg = this.#azimuthDeg[i]
+    const deltaDeg = this.#yawOffsetsDeg[i] || 0
+
+    return {
+      phiDeg,
+      deltaDeg,
+      tubeRadiusMm: this.#tubeRadiusMm,
+    }
   }
 
   #initYawOffsets(config) {
@@ -59,12 +70,10 @@ export class TransformService {
         arr[i] = Number(override[i]) || 0
       }
 
-      // spec: δ0 fixed to 0
       arr[0] = 0
       return arr
     }
 
-    // null => persistence later, default safe zeros now
     arr[0] = 0
     return arr
   }

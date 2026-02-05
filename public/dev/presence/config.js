@@ -5,7 +5,7 @@ export const getDefaultUiConfig = function getDefaultUiConfig() {
 
     layout: {
       /* Keep aligned with your config/controllers/presence.json5 */
-      radarAzimuthDeg: [0, 90, 180, 270],
+      radarAzimuthDeg: [0, 75, 285],
 
       /* Tube diameter: set to 100 if that’s your real ring */
       tubeDiameterMm: 100,

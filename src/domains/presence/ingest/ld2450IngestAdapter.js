@@ -1,8 +1,7 @@
-// src/domains/presence/ingest/ld2450IngestAdapter.js
 import domainEventTypes from '../../domainEventTypes.js'
-import TransformService from '../transform/transformService.js'
+import { TransformService } from '../transform/transformService.js'
 
-const Ld2450IngestAdapter = class Ld2450IngestAdapter {
+export class Ld2450IngestAdapter {
   #logger
   #clock
   #controllerId
@@ -14,6 +13,7 @@ const Ld2450IngestAdapter = class Ld2450IngestAdapter {
   #layoutByPublishAs
 
   #transform
+  #cfg
 
   #unsubscribe
 
@@ -29,6 +29,8 @@ const Ld2450IngestAdapter = class Ld2450IngestAdapter {
     this.#layoutByPublishAs = new Map()
     this.#unsubscribe = null
 
+    this.#cfg = controllerConfig || {}
+
     const list = Array.isArray(devices) ? devices : []
     for (const d of list) {
       const publishAs = String(d?.publishAs || '').trim()
@@ -36,10 +38,10 @@ const Ld2450IngestAdapter = class Ld2450IngestAdapter {
       this.#devicesByPublishAs.set(publishAs, d)
     }
 
-    this.#initLayout(controllerConfig || {})
+    this.#initLayout(this.#cfg)
 
     this.#transform = new TransformService({
-      config: controllerConfig || {},
+      config: this.#cfg,
       logger: this.#logger,
     })
 
@@ -105,13 +107,26 @@ const Ld2450IngestAdapter = class Ld2450IngestAdapter {
     }
 
     const frame = p.frame || {}
-    const frameTs = Number(frame.ts) || this.#clock.nowMs()
+    const frameTs = Number(frame.ts) || Number(event?.ts) || this.#clock.nowMs()
     const slots = Array.isArray(frame.targets) ? frame.targets : []
+
+    const frameSnapshot = {
+      measTs: frameTs,
+      bus: 'presence',
+      publishAs,
+      radarId: layoutEntry.radarId,
+      slots: slots.map((t) => ({
+        slotId: Number(t?.id),
+        valid: t?.valid === true,
+        xMm: Number(t?.xMm) || 0,
+        yMm: Number(t?.yMm) || 0,
+      })),
+    }
 
     const detections = slots
       .filter((t) => t && t.valid === true)
       .map((t) => ({
-        localId: t.id,
+        slotId: Number(t.id),
         xMm: Number(t.xMm) || 0,
         yMm: Number(t.yMm) || 0,
         speedMmS: Number.isFinite(Number(t.speedCms)) ? Number(t.speedCms) * 10 : 0,
@@ -121,16 +136,17 @@ const Ld2450IngestAdapter = class Ld2450IngestAdapter {
     const tracks = detections.map((d) => {
       const local = this.#deriveLocal(d.xMm, d.yMm)
 
-      const worldXY = this.#transform.toWorldMm({
+      const worldMeas = this.#transform.toWorldMm({
         radarId: layoutEntry.radarId,
         xMm: d.xMm,
         yMm: d.yMm,
       })
 
-      const world = this.#deriveWorld(worldXY.xMm, worldXY.yMm)
+      const world = this.#deriveWorld(worldMeas.xMm, worldMeas.yMm)
+      const transformDebug = this.#transform.getDebugForRadar(layoutEntry.radarId)
 
       return {
-        trackId: `${publishAs}:${d.localId}`,
+        trackId: `${publishAs}:${d.slotId}`,
         state: 'confirmed',
 
         radarId: layoutEntry.radarId,
@@ -152,12 +168,26 @@ const Ld2450IngestAdapter = class Ld2450IngestAdapter {
 
         vxMmS: 0,
         vyMmS: 0,
-
         speedMmS: Math.abs(d.speedMmS),
 
         ageMs: 0,
         lastSeenMs: 0,
         sourceRadars: [layoutEntry.radarId],
+
+        provenance: {
+          bus: 'presence',
+          publishAs,
+          radarId: layoutEntry.radarId,
+          slotId: d.slotId,
+          measTs: frameTs,
+
+          localMm: { xMm: d.xMm, yMm: d.yMm },
+          worldMeasMm: { xMm: worldMeas.xMm, yMm: worldMeas.yMm },
+
+          transform: transformDebug,
+
+          frame: frameSnapshot,
+        },
       }
     })
 
@@ -190,15 +220,9 @@ const Ld2450IngestAdapter = class Ld2450IngestAdapter {
 
   #deriveWorld(xMm, yMm) {
     const rangeMm = Math.sqrt((xMm * xMm) + (yMm * yMm))
-
-    // world frame:
-    // +X = North, +Y = East
-    // bearing clockwise from North: atan2(Y, X)
     const bearingDeg = (Math.atan2(yMm, xMm) * 180) / Math.PI
-
     return { xMm, yMm, rangeMm, bearingDeg }
   }
 }
 
 export default Ld2450IngestAdapter
-export { Ld2450IngestAdapter }

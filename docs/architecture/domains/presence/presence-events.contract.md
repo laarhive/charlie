@@ -1,3 +1,4 @@
+<!-- docs/architecture/domains/presence/presence-events.contract.md -->
 # Presence Domain — Architecture & Event Contracts (v1)
 
 This document defines the **Presence domain architecture**, internal buses, and the **v1 frozen event contracts** for tracking and presence outputs.  
