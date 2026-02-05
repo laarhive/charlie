@@ -239,10 +239,10 @@ from high-level concepts to concrete implementation details.
   Event-driven design, buses, controllers, core state machine, and runtime model
 
 ### Hardware & Deployment
-- [Hardware](hardware.md)  
+- [Hardware](../docs/setup/hardware.md)  
   Sensors, wiring concepts, and physical deployment considerations
 
-- [Deployment & systemd](setup/rpi-systemd.md)
+- [Deployment & systemd](../docs/setup/rpi-systemd.md)
   Running Charlie as a system service on the Pi
 
 ### AI Client & Phone
