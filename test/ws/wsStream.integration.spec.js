@@ -7,7 +7,7 @@
  *
  * This suite uses a test-only HTTP hook (enabled with CHARLIE_TEST=1) to
  * publish deterministic events to buses:
- *   POST /__tests__/publish
+ *   POST /api/v1/dev/publish
  */
 
 import assert from 'node:assert/strict'
@@ -72,7 +72,7 @@ describe('Bus streaming integration (daemon, virt)', function () {
 
     const published = await httpPostJson({
       port,
-      path: '/__tests__/publish',
+      path: '/api/v1/dev/publish',
       body: {
         bus: 'main',
         event: {
@@ -80,8 +80,8 @@ describe('Bus streaming integration (daemon, virt)', function () {
           ts: Date.now(),
           source: 'wsStreamTest',
           payload: { n: 1 },
-        }
-      }
+        },
+      },
     })
 
     assert.equal(published.ok, true)
@@ -101,7 +101,7 @@ describe('Bus streaming integration (daemon, virt)', function () {
 
     const published = await httpPostJson({
       port,
-      path: '/__tests__/publish',
+      path: '/api/v1/dev/publish',
       body: {
         bus: 'presence',
         event: {
@@ -109,8 +109,8 @@ describe('Bus streaming integration (daemon, virt)', function () {
           ts: Date.now(),
           source: 'wsStreamTest',
           payload: { n: 2 },
-        }
-      }
+        },
+      },
     })
 
     assert.equal(published.ok, true)
@@ -132,7 +132,7 @@ describe('Bus streaming integration (daemon, virt)', function () {
 
     const published = await httpPostJson({
       port,
-      path: '/__tests__/publish',
+      path: '/api/v1/dev/publish',
       body: {
         bus: 'presence',
         event: {
@@ -140,8 +140,8 @@ describe('Bus streaming integration (daemon, virt)', function () {
           ts: Date.now(),
           source: 'wsStreamTest',
           payload: { n: 3 },
-        }
-      }
+        },
+      },
     })
 
     assert.equal(published.ok, true)

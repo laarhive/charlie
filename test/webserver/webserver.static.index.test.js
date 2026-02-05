@@ -36,16 +36,17 @@ describe('WebServer static: directory index + trailing slash', function () {
   let baseDirAbs
   let testDirAbs
 
-  const baseUrl = '/__tests__/static'
-  const testUrl = `${baseUrl}/test`
+  const baseUrl = '/dev/__tests__/static'
+  const testUrl = `${baseUrl}/static-index-fixture`
 
   before(async () => {
-    const webServerFile = fileURLToPath(new URL('../src/transport/webServer.js', import.meta.url))
+    const webServerFile = fileURLToPath(new URL('../../src/transport/webServer.js', import.meta.url))
     const webServerDir = path.dirname(webServerFile)
+
     publicRoot = path.resolve(webServerDir, '../../../public')
 
-    baseDirAbs = path.join(publicRoot, '__tests__', 'static')
-    testDirAbs = path.join(baseDirAbs, 'test')
+    baseDirAbs = path.join(publicRoot, 'dev', '__tests__', 'static')
+    testDirAbs = path.join(baseDirAbs, 'static-index-fixture')
 
     await fs.mkdir(testDirAbs, { recursive: true })
 
@@ -59,10 +60,9 @@ describe('WebServer static: directory index + trailing slash', function () {
 
     server = new WebServer({
       logger: { notice() {}, error() {} },
-      buses: { tasker: { publish() {} } },
-      busStream: null,
-      rpcRouter: { handle: async () => null },
       port,
+      api: {},
+      streamHub: null,
     })
 
     server.start()
@@ -76,7 +76,6 @@ describe('WebServer static: directory index + trailing slash', function () {
       // ignore
     }
 
-    // Cleanup only what we created; keep parent dirs if you want to add more tests later
     try {
       await fs.rm(testDirAbs, { recursive: true, force: true })
     } catch (e) {
@@ -84,14 +83,14 @@ describe('WebServer static: directory index + trailing slash', function () {
     }
   })
 
-  it('redirects /test to /test/', async () => {
+  it('redirects /static-index-fixture to /static-index-fixture/', async () => {
     const res = await httpGet(port, testUrl)
 
     assert.equal(res.status, 301)
     assert.equal(res.headers.location, `${testUrl}/`)
   })
 
-  it('serves index.html for /test/', async () => {
+  it('serves index.html for /static-index-fixture/', async () => {
     const res = await httpGet(port, `${testUrl}/`)
 
     assert.equal(res.status, 200)
@@ -99,7 +98,7 @@ describe('WebServer static: directory index + trailing slash', function () {
     assert.match(res.body, /static-index-fixture/)
   })
 
-  it('serves the same index via /test/index.html', async () => {
+  it('serves the same index via /static-index-fixture/index.html', async () => {
     const res = await httpGet(port, `${testUrl}/index.html`)
 
     assert.equal(res.status, 200)
