@@ -13,7 +13,7 @@ import TaskerConversationAdapter from '../conversation/taskerConversationAdapter
 import ControlService from './controlService.js'
 
 import DeviceManager from '../devices/deviceManager.js'
-import BusStream from '../transport/ws/busStream.js'
+import makeServerSurface from './serverSurface/makeServerSurface.js'
 
 export const makeContext = function makeContext({ logger, config, mode }) {
   const clock = new Clock()
@@ -64,13 +64,21 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     logger,
   })
 
-  const busStream = new BusStream({ logger, buses })
+  const serverSurface = makeServerSurface({
+    logger,
+    buses,
+    config,
+    deviceManager,
+    core,
+    clock,
+    mode,
+  })
 
   const webServer = new WebServer({
     logger,
-    buses,
-    busStream,
     port: serverPort,
+    api: serverSurface.api,
+    streamHub: serverSurface.streamHub,
   })
 
   webServer.start()
@@ -82,17 +90,11 @@ export const makeContext = function makeContext({ logger, config, mode }) {
       t.dispose()
     }
 
-    if (webServer) {
-      webServer.dispose()
-    }
-
-    busStream.dispose()
-
+    serverSurface.dispose()
+    webServer.dispose()
     deviceManager.dispose()
-
     core.dispose()
     scheduler.dispose()
-
     disposeAll(domainControllers)
   }
 
@@ -105,12 +107,8 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     domainControllers,
     core,
     config,
-
     deviceManager,
-    busStream,
-    webServer,
     control,
-
     dispose,
   }
 }

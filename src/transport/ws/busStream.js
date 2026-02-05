@@ -1,14 +1,30 @@
-// src/core/busStream.js
+// src/transport/ws/busStream.js
 
 /**
- * Shared bus subscription fanout for multiple "clients" (WebSocket connections, CLI, etc.).
+ * Shared bus subscription fanout for multiple "clients"
+ * (WebSocket stream connections, CLI tools, internal observers).
  *
- * - Subscribes at most once per bus (shared).
+ * Responsibilities:
+ * - Subscribes at most once per bus (shared subscription).
  * - Fans out events to attached clients that selected that bus.
- * - Supports selection modes:
- *   - default: main (if available)
- *   - explicit bus list: ['main', 'button']
- *   - all: everything in the registry
+ * - Handles only *streaming / observability* concerns.
+ *
+ * Important note about WebSocket usage:
+ * - This class does NOT decide whether a WebSocket connection is stream or RPC.
+ * - The WebSocket router enforces that:
+ *     - `/ws?…`  => stream mode
+ *     - `/ws`    => RPC mode (streaming not attached)
+ * - `parseQuery()` may still accept an empty string and resolve a default
+ *   selection, but empty-query WebSocket connections are rejected at the router
+ *   level and will never reach this class.
+ *
+ * Selection modes supported by this class:
+ * - default selection (used by non-WS clients or internal callers):
+ *     resolves to `main` if available
+ * - explicit bus list:
+ *     ['main', 'button']
+ * - all:
+ *     every subscribe-capable bus in the registry
  *
  * Event shape forwarded to clients:
  *   { bus: <busName>, event: <eventObject> }

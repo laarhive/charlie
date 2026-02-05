@@ -4,13 +4,16 @@ import WebSocket from 'ws'
 /**
  * Charlie bus streaming WebSocket client.
  *
- * Connects to the daemon's streaming endpoint and emits server-pushed bus events.
+ * Connects to the daemon's WebSocket endpoint in *stream mode* and emits server-pushed bus events.
  *
  * Endpoint:
  * - ws://<host>:<port>/ws
  *
+ * Mode selection:
+ * - `/ws?…`  => stream mode (supported)
+ * - `/ws`    => RPC mode (currently not supported; connection will be closed by the server)
+ *
  * Bus selection is done via query params at connect time:
- * - /ws               -> default: main
  * - /ws?main&button   -> main + button
  * - /ws?all           -> all buses
  *
@@ -26,7 +29,7 @@ import WebSocket from 'ws'
  * - This client is streaming-only. It does not support RPC requests.
  *
  * @example
- * const stream = new CharlieStreamClient({ logger, url: 'ws://127.0.0.1:8787/ws?all' })
+ * const stream = new BusStreamWsClient({ logger, url: 'ws://127.0.0.1:8787/ws?all' })
  * stream.onBusEvent(({ bus, event }) => console.log(bus, event.type))
  * await stream.connect()
  */
@@ -57,21 +60,25 @@ export class BusStreamWsClient {
     }
 
     this.#ws = new WebSocket(this.#url)
+    const ws = this.#ws
 
-    this.#ws.on('open', () => {
+    ws.on('open', () => {
       this.#logger.notice('ws_connected', { url: this.#url })
     })
 
-    this.#ws.on('close', () => {
+    ws.on('close', () => {
       this.#logger.notice('ws_disconnected', { url: this.#url })
-      this.#ws = null
+
+      if (this.#ws === ws) {
+        this.#ws = null
+      }
     })
 
-    this.#ws.on('error', (e) => {
+    ws.on('error', (e) => {
       this.#logger.error('ws_error', { url: this.#url, error: String(e?.message || e) })
     })
 
-    this.#ws.on('message', (raw) => {
+    ws.on('message', (raw) => {
       this.#onMessage(raw)
     })
 
@@ -87,12 +94,12 @@ export class BusStreamWsClient {
       }
 
       const cleanup = () => {
-        this.#ws.off('open', onOpen)
-        this.#ws.off('error', onErr)
+        ws.off('open', onOpen)
+        ws.off('error', onErr)
       }
 
-      this.#ws.on('open', onOpen)
-      this.#ws.on('error', onErr)
+      ws.on('open', onOpen)
+      ws.on('error', onErr)
     })
   }
 
