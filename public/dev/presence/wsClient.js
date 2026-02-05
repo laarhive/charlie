@@ -1,4 +1,4 @@
-// public/debug/presence/wsClient.js
+// public/dev/presence/wsClient.js
 export class WsClient {
   #url
   #ws

@@ -1,4 +1,4 @@
-// public/debug/presence/transform.js
+// public/dev/presence/transform.js
 export class TransformService {
   #azimuthDeg
   #yawOffsetsDeg

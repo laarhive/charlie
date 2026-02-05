@@ -1,4 +1,4 @@
-// public/debug/presence/config.js
+// public/dev/presence/config.js
 export const getDefaultUiConfig = function getDefaultUiConfig() {
   return {
     wsPath: '/ws?presenceInternal&presence&main',

@@ -1,4 +1,4 @@
-// public/debug/presence/ld2450.js
+// public/dev/presence/ld2450.js
 export const parseLd2450Detections = function parseLd2450Detections(frame) {
   const slots = Array.isArray(frame?.targets) ? frame.targets : []
 

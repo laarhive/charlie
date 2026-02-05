@@ -1,4 +1,4 @@
-// public/debug/radar/state.js
+// public/dev/radar/state.js
 import TransformService from '../presence/transform.js'
 import { parseLd2450Detections } from '../presence/ld2450.js'
 

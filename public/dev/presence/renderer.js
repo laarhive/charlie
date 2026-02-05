@@ -1,4 +1,4 @@
-// public/debug/radar/renderer.js
+// public/dev/radar/renderer.js
 const degToRad = function degToRad(deg) {
   return (deg * Math.PI) / 180
 }
