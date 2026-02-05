@@ -1,3 +1,4 @@
+// public/debug/presence/wsClient.js
 export class WsClient {
   #url
   #ws

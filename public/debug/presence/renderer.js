@@ -1,3 +1,4 @@
+// public/debug/radar/renderer.js
 const degToRad = function degToRad(deg) {
   return (deg * Math.PI) / 180
 }
@@ -88,13 +89,11 @@ export class PresenceRenderer {
     ctx.strokeStyle = 'rgba(255,255,255,0.18)'
     ctx.lineWidth = 1.5
 
-    // +X (North) points up on screen
     ctx.beginPath()
     ctx.moveTo(cx, 0)
     ctx.lineTo(cx, this.#canvas.height)
     ctx.stroke()
 
-    // +Y (East) points right on screen
     ctx.beginPath()
     ctx.moveTo(0, cy)
     ctx.lineTo(this.#canvas.width, cy)
@@ -119,7 +118,6 @@ export class PresenceRenderer {
     const rMaxMm = Number(this.#cfg.layout.rMaxMm) || 3000
     const rMaxPx = rMaxMm * scale
 
-    // tube circle
     ctx.save()
     ctx.strokeStyle = 'rgba(255,255,255,0.25)'
     ctx.lineWidth = 1
@@ -128,7 +126,6 @@ export class PresenceRenderer {
     ctx.stroke()
     ctx.restore()
 
-    // rMax circle
     ctx.save()
     ctx.strokeStyle = 'rgba(255,255,255,0.08)'
     ctx.lineWidth = 1
@@ -137,15 +134,12 @@ export class PresenceRenderer {
     ctx.stroke()
     ctx.restore()
 
-    // radars + FOV
     for (let i = 0; i < az.length; i += 1) {
       const phi = Number(az[i])
       if (!Number.isFinite(phi)) continue
 
       const rad = degToRad(phi)
 
-      // world position on tube: t = R*[cos(phi), sin(phi)]
-      // screen: x = +X maps to up (negative y screen), y = +Y maps to right
       const txMm = tubeRadiusMm * Math.cos(rad)
       const tyMm = tubeRadiusMm * Math.sin(rad)
 
@@ -176,12 +170,6 @@ export class PresenceRenderer {
     const a0 = degToRad(wrapDeg(phiDeg - half))
     const a1 = degToRad(wrapDeg(phiDeg + half))
 
-    // Convert world bearing deg (clockwise from North) into screen angle:
-    // world bearing 0° (North) should point up => screen angle -90°? (canvas uses 0 along +X right)
-    // We bypass by converting world (X,Y) direction to screen via:
-    // screenX = +Y, screenY = -X
-    // For an angle theta in world: dir = [cos(theta), sin(theta)]
-    // screen angle is atan2(screenY, screenX) = atan2(-cos(theta), sin(theta))
     const toScreenAngle = function toScreenAngle(thetaRad) {
       const x = Math.cos(thetaRad)
       const y = Math.sin(thetaRad)
@@ -210,7 +198,9 @@ export class PresenceRenderer {
 
   #drawMeasurements({ ctx, cx, cy, scale, measurements }) {
     ctx.save()
-    ctx.fillStyle = 'rgba(255,255,255,0.75)'
+
+    // distinct from tracks
+    ctx.fillStyle = 'rgba(255,255,255,0.70)'
 
     for (const m of measurements) {
       const xMm = Number(m.xMm)
@@ -248,12 +238,10 @@ export class PresenceRenderer {
       ctx.arc(sx, sy, 6, 0, Math.PI * 2)
       ctx.fill()
 
-      // velocity arrow
       const vx = Number(t.vxMmS)
       const vy = Number(t.vyMmS)
 
       if (Number.isFinite(vx) && Number.isFinite(vy)) {
-        // world vx -> screen -y ; world vy -> screen +x
         const ex = sx + (vy * velScale * 0.01)
         const ey = sy - (vx * velScale * 0.01)
 
@@ -273,3 +261,5 @@ export class PresenceRenderer {
     }
   }
 }
+
+export default PresenceRenderer

@@ -1,3 +1,4 @@
+// public/debug/presence/main.js
 import { getDefaultUiConfig } from './config.js'
 import { WsClient } from './wsClient.js'
 import { PresenceUiState } from './state.js'
