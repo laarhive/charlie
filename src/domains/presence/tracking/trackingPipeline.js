@@ -133,6 +133,70 @@ export class TrackingPipeline {
     }
   }
 
+  #shouldAcceptRadarSwitch(tr, m) {
+    if (tr.lastRadarId == null || tr.lastRadarId === m.radarId) {
+      return true
+    }
+
+    const marginDeg = Number(this.#cfg?.tracking?.handover?.bearingSwitchMarginDeg ?? 8)
+
+    const q = this.#cfg?.quality || {}
+    const fullDeg = Number(q.edgeBearingFullDeg ?? 30)
+    const cutoffDeg = Number(q.edgeBearingCutoffDeg ?? 45)
+
+    const newLocal = m?.prov?.localMm
+    const oldLocal = tr?.debugLast?.lastMeas?.localMm
+
+    if (!newLocal || !oldLocal) {
+      return true
+    }
+
+    const absNew = Math.abs(Math.atan2(Number(newLocal.xMm), Number(newLocal.yMm)) * 180 / Math.PI)
+    const absOld = Math.abs(Math.atan2(Number(oldLocal.xMm), Number(oldLocal.yMm)) * 180 / Math.PI)
+
+    // Escape hatch: if we're effectively at the edge on the current radar
+    // and the new radar is clearly central, switch immediately.
+    if (Number.isFinite(cutoffDeg) && Number.isFinite(fullDeg)) {
+      const EDGE = cutoffDeg - 2
+      const CENTER = fullDeg + 2
+
+      if (absOld >= EDGE && absNew <= CENTER) {
+        return true
+      }
+    }
+
+    // Normal hysteresis: only switch if new radar is clearly better.
+    return (absNew + marginDeg) < absOld
+  }
+
+  #findFallbackMeasIdxSameRadar(tr, measurements, unassignedSet, measVarMm2ByRadarId) {
+    const radarId = tr.lastRadarId
+    if (radarId == null) return null
+
+    const gateD2Max = Number(this.#cfg?.tracking?.association?.gateD2Max ?? 9.21)
+
+    let bestIdx = null
+    let bestD2 = Infinity
+
+    for (const idx of unassignedSet) {
+      const m = measurements[idx]
+      if (!m || m.radarId !== radarId) continue
+
+      const varMm2 = measVarMm2ByRadarId.get(m.radarId) ?? 1
+
+      const dx = m.xMm - tr.xMm
+      const dy = m.yMm - tr.yMm
+      const d2 = ((dx * dx) + (dy * dy)) / Math.max(1, varMm2)
+
+      if (d2 <= gateD2Max && d2 < bestD2) {
+        bestD2 = d2
+        bestIdx = idx
+      }
+    }
+
+    return bestIdx
+  }
+
   #tick() {
     const now = this.#clock.nowMs()
     const mode = this.#mode()
@@ -199,12 +263,30 @@ export class TrackingPipeline {
       measVarMm2ByRadarId,
     })
 
+    const unassignedSet = new Set(unassignedMeas)
+
     // 3) update assigned tracks
     for (const [trackId, measIdx] of assignments.entries()) {
       const tr = this.#tracksById.get(trackId)
       if (!tr) continue
 
-      const m = measurements[measIdx]
+      let m = measurements[measIdx]
+
+      // check bearing quality to arbitrate handover
+      if (!this.#shouldAcceptRadarSwitch(tr, m)) {
+        const fbIdx = this.#findFallbackMeasIdxSameRadar(tr, measurements, unassignedSet, measVarMm2ByRadarId)
+
+        if (fbIdx == null) {
+          continue
+        }
+
+        // consume it so it won't spawn a new track
+        unassignedSet.delete(fbIdx)
+
+        // swap to fallback measurement (same radar)
+        m = measurements[fbIdx]
+      }
+
       const varMm2 = measVarMm2ByRadarId.get(m.radarId) ?? 1
       const sigmaMm = Math.sqrt(Math.max(1, varMm2))
 

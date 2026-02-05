@@ -65,6 +65,10 @@
     maxDtMs: 400,
     dropTimeoutMs: 1500,
 
+    handover: {
+      bearingSwitchMarginDeg: 8,
+    },
+
     kf: {
       procNoiseAccelMmS2: 1200,
       measNoiseBaseMm: 160,
