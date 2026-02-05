@@ -35,7 +35,7 @@ export class WebServer {
 
     this.#wsRouter = new WsRouter({
       logger,
-      busStream: streamHub,
+      streamHub,
     })
 
     this.#registerRoutes()

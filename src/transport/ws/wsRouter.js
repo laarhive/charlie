@@ -19,9 +19,7 @@ export class WsRouter {
         const isStream = rawQuery.trim().length > 0
 
         const select = isStream
-          ? (this.#streamHub?.parseQuery
-            ? this.#streamHub.parseQuery(rawQuery)
-            : { buses: ['main'] })
+          ? (this.#streamHub?.parseQuery ? this.#streamHub.parseQuery(rawQuery) : { buses: ['main'] })
           : null
 
         res.upgrade(
@@ -42,11 +40,7 @@ export class WsRouter {
         if (ws.__mode === 'rpc') {
           this.#wsSend(ws, {
             type: 'ws:welcome',
-            payload: {
-              ok: true,
-              features: { rpc: false, streaming: false },
-              note: 'rpc_not_supported_yet',
-            },
+            payload: { ok: true, features: { streaming: true, rpc: false }, note: 'rpc_not_supported_yet' },
           })
 
           try {
@@ -58,38 +52,31 @@ export class WsRouter {
           return
         }
 
-        const clientId = `ws_stream:${Date.now()}:${Math.random().toString(16).slice(2)}`
-        ws.__clientId = clientId
-
-        try {
-          ws.__detachStream = this.#streamHub.attachClient({
-            id: clientId,
-            select: ws.__select,
-            onEvent: ({ bus, event }) => {
-              this.#wsSend(ws, { type: 'bus.event', payload: { bus, event } })
-            },
-          })
-        } catch (e) {
-          this.#logger?.error?.('ws_stream_attach_failed', {
-            clientId,
-            error: String(e?.message || e),
-            code: e?.code || null,
-            select: ws.__select,
-          })
-
+        if (!this.#streamHub || typeof this.#streamHub.attachClient !== 'function') {
           this.#wsSend(ws, {
             type: 'ws:error',
-            payload: { ok: false, error: String(e?.code || 'ATTACH_FAILED') },
+            payload: { ok: false, error: 'stream_hub_unavailable' },
           })
 
           try {
-            ws.end(1011, 'attach_failed')
-          } catch (err) {
+            ws.end(1011, 'stream_hub_unavailable')
+          } catch (e) {
             // ignore
           }
 
           return
         }
+
+        const clientId = `ws_stream:${Date.now()}:${Math.random().toString(16).slice(2)}`
+        ws.__clientId = clientId
+
+        ws.__detachStream = this.#streamHub.attachClient({
+          id: clientId,
+          select: ws.__select,
+          onEvent: ({ bus, event }) => {
+            this.#wsSend(ws, { type: 'bus.event', payload: { bus, event } })
+          },
+        })
 
         this.#wsSend(ws, {
           type: 'ws:welcome',
@@ -100,17 +87,14 @@ export class WsRouter {
       },
 
       close: (ws) => {
-        const mode = ws.__mode
-        const clientId = ws.__clientId || null
-
         this.#disposeStreamClient(ws)
 
-        if (mode === 'stream') {
-          this.#logger.notice('ws_stream_close', { clientId })
+        if (ws.__mode === 'stream') {
+          this.#logger.notice('ws_stream_close', { clientId: ws.__clientId || null })
         }
       },
 
-      message: (ws, message, isBinary) => {
+      message: () => {
         // stream: ignore inbound
         // rpc: unsupported (connection already closed)
       },
