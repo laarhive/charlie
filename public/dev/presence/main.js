@@ -1,8 +1,8 @@
 // public/dev/presence/main.js
-import { getDefaultUiConfig } from './config.js'
 import { WsClient } from './wsClient.js'
 import { PresenceUiState } from './state.js'
 import { PresenceRenderer } from './renderer.js'
+import { loadUiConfig } from './config.js'
 
 const byId = function byId(id) {
   return document.getElementById(id)
@@ -43,8 +43,7 @@ azimuths: [${cfg.layout.radarAzimuthDeg.join(', ')}]
 tubeDiameterMm: ${cfg.layout.tubeDiameterMm}
 tubeRadiusMm: ${tubeR}
 fovDeg: ${cfg.layout.radarFovDeg}
-rMaxMm: ${cfg.layout.rMaxMm}
-ws: ${cfg.wsPath}`
+rMaxMm: ${cfg.layout.rMaxMm}`
 
   const tracks = state.getTracks()
   const lines = tracks
@@ -71,8 +70,9 @@ meas: ${stats.measCount}  tracks: ${stats.trackCount}
 ${perRadar || ''}`
 }
 
-const main = function main() {
-  const cfg = getDefaultUiConfig()
+const main = async function main() {
+  const cfgUi = await loadUiConfig()
+  const cfgPresence = cfgUi.presence
 
   const canvas = byId('canvas')
   const wsStatus = byId('wsStatus')
@@ -85,21 +85,21 @@ const main = function main() {
   const selScale = byId('selScale')
   const btnReconnect = byId('btnReconnect')
 
-  const state = new PresenceUiState({ cfg })
-  const renderer = new PresenceRenderer({ canvas, cfg })
+  const state = new PresenceUiState({ cfg: cfgPresence })
+  const renderer = new PresenceRenderer({ canvas, cfg: cfgPresence })
 
   const applyControls = function applyControls() {
-    cfg.draw.showGrid = Boolean(chkGrid.checked)
-    cfg.draw.showFov = Boolean(chkFov.checked)
-    cfg.draw.showMeasurements = Boolean(chkMeas.checked)
-    cfg.draw.showTracks = Boolean(chkTracks.checked)
+    cfgPresence.draw.showGrid = Boolean(chkGrid.checked)
+    cfgPresence.draw.showFov = Boolean(chkFov.checked)
+    cfgPresence.draw.showMeasurements = Boolean(chkMeas.checked)
+    cfgPresence.draw.showTracks = Boolean(chkTracks.checked)
 
     const scale = Number(selScale.value)
     if (Number.isFinite(scale) && scale > 0) {
-      cfg.draw.scalePxPerMm = scale
+      cfgPresence.draw.scalePxPerMm = scale
     }
 
-    renderer.setConfig(cfg)
+    renderer.setConfig(cfgPresence)
   }
 
   const tick = function tick() {
@@ -113,13 +113,13 @@ const main = function main() {
     const s = state.getStats()
     statLine.textContent = `meas=${s.measCount} tracks=${s.trackCount}`
 
-    renderSidebar({ cfg, state })
+    renderSidebar({ cfg: cfgPresence, state })
 
     requestAnimationFrame(tick)
   }
 
   const ws = new WsClient({
-    url: makeWsUrl(cfg.wsPath),
+    url: makeWsUrl(cfgUi.wsPath),
     onStatus: ({ state: st }) => setPill(wsStatus, st),
     onMessage: (msg) => {
       if (msg?.type !== 'bus.event') return

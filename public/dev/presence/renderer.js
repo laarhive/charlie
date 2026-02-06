@@ -119,7 +119,7 @@ export class PresenceRenderer {
     const tubeRadiusMm = tubeDiameterMm / 2
     const tubeRpx = tubeRadiusMm * scale
 
-    const rMaxMm = Number(this.#cfg.layout.rMaxMm) || 3000
+    const rMaxMm = Number(this.#cfg.draw.rMaxMm) || 3000
     const rMaxPx = rMaxMm * scale
 
     ctx.save()

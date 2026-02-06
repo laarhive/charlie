@@ -1,0 +1,17 @@
+// public/dev/radar/config.json5
+{
+  wsPath: '/ws?presenceInternal&presence&main',
+  srvConfigPath: '/api/v1/config',
+
+  presence: {
+    draw: {
+      rMaxMm: 3000,
+      scalePxPerMm: 0.10,
+      showGrid: true,
+      showFov: true,
+      showMeasurements: true,
+      showTracks: true,
+      velocityArrowScale: 8, /* px per (mm/s) after rounding; tune later */
+    }
+  },
+}
