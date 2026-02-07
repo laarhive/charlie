@@ -125,10 +125,10 @@ Observed event shape (as observed, not enforced):
 ```js
 {
   bus: string,
-  type: string,
-  ts: number,
-  source: string,
-  payload: object
+    type: string,
+    ts: number,
+    source: string,
+    payload: object
 }
 ```
 
@@ -146,6 +146,7 @@ deviceManager.inject(deviceId, payload)
 
 - `payload` is `raw.payload`
 - `raw` is never modified
+- `deviceId` is resolved from the event’s `stream`
 
 ---
 
@@ -171,6 +172,8 @@ deviceManager.unblockDevices({ token })
 Blocking semantics:
 - blocking MUST NOT prevent `inject(payload)`
 - blocking suppresses hardware acquisition and emissions only
+- blocking is token-scoped; multiple tokens may block the same device
+- a device resumes its prior operational state only when all block tokens are released
 
 ---
 
@@ -254,7 +257,8 @@ Blocking semantics:
     Required. Buses subscribed during recording.
 
   - `meta.filter?: object`  
-    Optional. Snapshot of filter configuration.
+    Optional. Snapshot of filter configuration at record time.  
+    Filter semantics are recorder-defined and may evolve across versions.
 
 - `timeline: object`  
   Required. Currently `{ unit: "ms" }`.
@@ -306,29 +310,8 @@ Stream is derived at record time using the first matching rule:
 3. `raw.source`
 4. `raw.type`
 
-#### Example 1 — LD2450 radar frame
-
-```js
-raw.payload.publishAs === "LD2450A"
-→ stream = "LD2450A"
-```
-
-#### Example 2 — controller association event
-
-```js
-raw.payload.publishAs === undefined
-raw.payload.deviceId === undefined
-raw.source === "presenceController"
-→ stream = "presenceController"
-```
-
-#### Example 3 — generic system event
-
-```js
-raw.source === undefined
-raw.type === "system.tick"
-→ stream = "system.tick"
-```
+Note: controller-originated events typically derive streams from `raw.source`,
+while device-originated events derive streams from `raw.payload.publishAs`.
 
 Rules:
 - stream must be a non-empty string
@@ -338,41 +321,9 @@ Rules:
 
 ## 7. Player
 
-### 7.1 Playback assumptions
-
-- `events[]` is already sorted by ascending `tMs`
-- events are dispatched strictly in ascending `tMs`
-- equal `tMs` preserves original order
-
----
-
 ### 7.2 Routing and dispatch
 
 Routing is playback policy, provided at `play.start`.
-
-#### Canonical routing object
-
-```json5
-routing: {
-  defaultSink: "bus",
-  sinksByStream: {
-    LD2450A: "device",
-    LD2410A: "device"
-  }
-}
-```
-
-Fields:
-- `routing: object`  
-  Required at `play.start`.
-
-- `routing.defaultSink: "device" | "bus"`  
-  Required. Used when a stream is not explicitly mapped.
-
-- `routing.sinksByStream?: object`  
-  Optional. Per-stream overrides:
-  - keys are stream names
-  - values are `"device"` or `"bus"`
 
 Dispatch rule:
 - determine `sink = routing.sinksByStream[stream] ?? routing.defaultSink`
@@ -411,12 +362,10 @@ All operations are expressed as:
 
 ## 9. Operation-based CLI
 
-The CLI is a **thin wrapper** over the operation-based API.
-
 ### 9.1 Macro command execution
 
 ```bash
-recording <macro-file.json5>
+recording start <macro-file.json5>
 ```
 
 - Executes the macro file verbatim
