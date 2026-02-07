@@ -22,6 +22,10 @@ export class DeviceManager {
 
   #unsubMain
 
+  #blockTokenSeq
+  #blockTokensByDeviceId
+  #blockedDeviceIdsByToken
+
   constructor({ logger, mainBus, buses, clock, config }) {
     this.#logger = logger
     this.#mainBus = mainBus
@@ -38,6 +42,10 @@ export class DeviceManager {
     this.#stateById = new Map()
 
     this.#unsubMain = null
+
+    this.#blockTokenSeq = 0
+    this.#blockTokensByDeviceId = new Map()
+    this.#blockedDeviceIdsByToken = new Map()
   }
 
   start() {
@@ -110,6 +118,9 @@ export class DeviceManager {
     this.#deviceById.clear()
     this.#deviceConfigById.clear()
     this.#stateById.clear()
+
+    this.#blockTokensByDeviceId.clear()
+    this.#blockedDeviceIdsByToken.clear()
   }
 
   list() {
@@ -170,7 +181,6 @@ export class DeviceManager {
 
     try {
       inst.unblock?.()
-      // Do NOT set active here. Device will publish real state (active/degraded).
       return { ok: true }
     } catch (e) {
       this.#logger.error('device_unblock_failed', { deviceId: id, error: e?.message || String(e) })
@@ -182,6 +192,80 @@ export class DeviceManager {
       })
       return { ok: false, error: deviceErrorCodes.startFailed }
     }
+  }
+
+  blockDevices({ deviceIds, reason, owner } = {}) {
+    const ids = Array.isArray(deviceIds)
+      ? deviceIds.map((x) => String(x || '').trim()).filter(Boolean)
+      : []
+
+    if (!ids.length) {
+      return { ok: false, error: 'missing_deviceIds' }
+    }
+
+    const r = String(reason || '').trim() || 'manual'
+    const o = String(owner || '').trim() || 'unknown'
+
+    this.#blockTokenSeq += 1
+    const token = `block:${Date.now()}:${this.#blockTokenSeq}`
+
+    const blocked = new Set()
+
+    for (const id of ids) {
+      const cfg = this.#deviceConfigById.get(id)
+      if (!cfg) continue
+
+      const current = this.#stateById.get(id)
+      if (current === 'manualBlocked') {
+        continue
+      }
+
+      let tokens = this.#blockTokensByDeviceId.get(id)
+      if (!tokens) {
+        tokens = new Set()
+        this.#blockTokensByDeviceId.set(id, tokens)
+      }
+
+      const wasEmpty = tokens.size === 0
+      tokens.add(token)
+
+      blocked.add(id)
+
+      if (wasEmpty) {
+        // First token takes effect -> use existing semantics
+        this.block(id, r)
+      } else {
+        // Already blocked by other tokens; no-op
+      }
+    }
+
+    if (blocked.size) {
+      this.#blockedDeviceIdsByToken.set(token, blocked)
+    }
+
+    return { ok: true, token }
+  }
+
+  unblockDevices({ token } = {}) {
+    const t = String(token || '').trim()
+    if (!t) return { ok: false, error: 'missing_token' }
+
+    const ids = this.#blockedDeviceIdsByToken.get(t)
+    if (!ids || !ids.size) return { ok: true }
+
+    for (const id of ids) {
+      const tokens = this.#blockTokensByDeviceId.get(id)
+      if (!tokens) continue
+
+      tokens.delete(t)
+      if (tokens.size === 0) {
+        this.#blockTokensByDeviceId.delete(id)
+        this.unblock(id, 'token')
+      }
+    }
+
+    this.#blockedDeviceIdsByToken.delete(t)
+    return { ok: true }
   }
 
   inject(deviceId, payload) {
@@ -256,7 +340,6 @@ export class DeviceManager {
 
     try {
       inst.start?.()
-      // Do NOT set active here. Device will publish real state (active/degraded).
       return true
     } catch (e) {
       const msg = e?.message || String(e)

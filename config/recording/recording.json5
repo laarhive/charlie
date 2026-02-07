@@ -1,0 +1,4 @@
+// config/recording/recording.json5
+{
+  recordingsDir: '/.recordings'
+}

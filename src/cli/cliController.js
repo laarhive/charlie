@@ -3,13 +3,9 @@ import readline from 'node:readline'
 import makeCliCompleter from './cliCompleter.js'
 import { printHelp } from './cliHelp.js'
 import eventTypes from '../core/eventTypes.js'
+import formatError from '../core/errorFormat.js'
+import { handleRecording } from './recording/cliRecording.js'
 
-/**
- * Local terminal CLI controller (readline UX).
- *
- * Enabled only when the daemon is started with `--interactive`.
- * This CLI runs in-process and calls runtime services via `getContext()`.
- */
 export class CliController {
   #logger
   #parser
@@ -38,9 +34,7 @@ export class CliController {
   }
 
   start() {
-    if (this.#rl) {
-      return
-    }
+    if (this.#rl) return
 
     this.#refreshCache()
 
@@ -54,14 +48,20 @@ export class CliController {
     this.#rl.on('line', (line) => {
       const cmd = this.#parser.parse(line)
 
-      try {
-        this.#handleCommand(cmd)
-      } catch (e) {
-        console.log(String(e?.message || e))
-      }
-
-      this.#updatePrompt()
-      this.#rl.prompt()
+      Promise.resolve()
+        .then(async () => {
+          await this.#handleCommand(cmd)
+        })
+        .catch((e) => {
+          const fe = formatError(e)
+          this.#logger?.error?.('cli_command_failed', { error: fe })
+          console.log(fe?.message || 'error')
+          if (fe?.stack) console.log(fe.stack)
+        })
+        .finally(() => {
+          this.#updatePrompt()
+          this.#rl.prompt()
+        })
     })
 
     this.#rl.on('close', () => {
@@ -75,10 +75,7 @@ export class CliController {
   }
 
   dispose() {
-    if (!this.#rl) {
-      return
-    }
-
+    if (!this.#rl) return
     this.#rl.close()
     this.#rl = null
   }
@@ -90,7 +87,6 @@ export class CliController {
       err.code = 'INTERNAL_ERROR'
       throw err
     }
-
     return ctx
   }
 
@@ -113,16 +109,15 @@ export class CliController {
   }
 
   #getCompletionContext() {
+    const ctx = this.#ctx()
+
     return {
       config: this.#cache.config ?? {},
-      buses: {},
-      taps: {},
-      core: {},
-      clock: {},
+      recordingService: ctx?.recordingService ?? null,
     }
   }
 
-  #handleCommand(cmd) {
+  async #handleCommand(cmd) {
     if (cmd.kind === 'empty') return
 
     if (cmd.kind === 'help') {
@@ -139,30 +134,13 @@ export class CliController {
       process.exit(0)
     }
 
-    if (cmd.kind === 'injectOn') {
-      this.#injectOn()
-      return
-    }
+    if (cmd.kind === 'injectOn') return this.#injectOn()
+    if (cmd.kind === 'injectOff') return this.#injectOff()
+    if (cmd.kind === 'injectStatus') return this.#injectStatus()
 
-    if (cmd.kind === 'injectOff') {
-      this.#injectOff()
-      return
-    }
+    if (cmd.kind === 'coreState') return this.#coreState()
 
-    if (cmd.kind === 'injectStatus') {
-      this.#injectStatus()
-      return
-    }
-
-    if (cmd.kind === 'coreState') {
-      this.#coreState()
-      return
-    }
-
-    if (cmd.kind === 'configPrint') {
-      this.#configPrint()
-      return
-    }
+    if (cmd.kind === 'configPrint') return this.#configPrint()
 
     if (cmd.kind === 'configLoad') {
       this.#reloadConfig(cmd.filename)
@@ -170,68 +148,25 @@ export class CliController {
       return
     }
 
-    if (cmd.kind === 'presence') {
-      this.#guardInject(() => this.#injectPresence(cmd.zone, cmd.present))
-      return
-    }
+    if (cmd.kind === 'presence') return this.#guardInject(() => this.#injectPresence(cmd.zone, cmd.present))
+    if (cmd.kind === 'vibration') return this.#guardInject(() => this.#injectVibration(cmd.level))
+    if (cmd.kind === 'button') return this.#guardInject(() => this.#injectButton(cmd.pressType))
 
-    if (cmd.kind === 'vibration') {
-      this.#guardInject(() => this.#injectVibration(cmd.level))
-      return
-    }
+    if (cmd.kind === 'clockNow') return this.#clockNow()
+    if (cmd.kind === 'clockStatus') return this.#clockStatus()
+    if (cmd.kind === 'clockFreeze') return this.#clockFreeze()
+    if (cmd.kind === 'clockResume') return this.#clockResume()
+    if (cmd.kind === 'clockAdvance') return this.#clockAdvance(cmd.ms)
+    if (cmd.kind === 'clockSet') return this.#clockSet(cmd.dateStr, cmd.timeStr)
 
-    if (cmd.kind === 'button') {
-      this.#guardInject(() => this.#injectButton(cmd.pressType))
-      return
-    }
+    if (cmd.kind === 'deviceList') return this.#deviceList()
+    if (cmd.kind === 'deviceBlock') return this.#deviceBlock(cmd.deviceId)
+    if (cmd.kind === 'deviceUnblock') return this.#deviceUnblock(cmd.deviceId)
+    if (cmd.kind === 'deviceInject') return this.#deviceInject(cmd.deviceId, cmd.payload)
 
-    if (cmd.kind === 'clockNow') {
-      this.#clockNow()
-      return
-    }
-
-    if (cmd.kind === 'clockStatus') {
-      this.#clockStatus()
-      return
-    }
-
-    if (cmd.kind === 'clockFreeze') {
-      this.#clockFreeze()
-      return
-    }
-
-    if (cmd.kind === 'clockResume') {
-      this.#clockResume()
-      return
-    }
-
-    if (cmd.kind === 'clockAdvance') {
-      this.#clockAdvance(cmd.ms)
-      return
-    }
-
-    if (cmd.kind === 'clockSet') {
-      this.#clockSet(cmd.dateStr, cmd.timeStr)
-      return
-    }
-
-    if (cmd.kind === 'deviceList') {
-      this.#deviceList()
-      return
-    }
-
-    if (cmd.kind === 'deviceBlock') {
-      this.#deviceBlock(cmd.deviceId)
-      return
-    }
-
-    if (cmd.kind === 'deviceUnblock') {
-      this.#deviceUnblock(cmd.deviceId)
-      return
-    }
-
-    if (cmd.kind === 'deviceInject') {
-      this.#deviceInject(cmd.deviceId, cmd.payload)
+    if (cmd.kind === 'recording') {
+      const ctx = this.#ctx()
+      await handleRecording({ ctx, logger: this.#logger }, cmd)
       return
     }
 
@@ -404,7 +339,8 @@ export class CliController {
       this.#setContext({ config })
       this.#logger.notice('config_loaded', { configFile: filename })
     } catch (e) {
-      this.#logger.error('config_load_failed', { configFile: filename, error: String(e?.message || e) })
+      const fe = formatError(e)
+      this.#logger.error('config_load_failed', { configFile: filename, error: fe })
     }
   }
 
@@ -578,9 +514,7 @@ export class CliController {
     const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr)
     const tm = /^(\d{2}):(\d{2})$/.exec(timeStr)
 
-    if (!dm || !tm) {
-      return null
-    }
+    if (!dm || !tm) return null
 
     const year = Number(dm[1])
     const month = Number(dm[2])
@@ -588,16 +522,16 @@ export class CliController {
     const hour = Number(tm[1])
     const minute = Number(tm[2])
 
-    if ([year, month, day, hour, minute].some((n) => Number.isNaN(n))) {
-      return null
-    }
+    if ([year, month, day, hour, minute].some((n) => Number.isNaN(n))) return null
 
     return { year, month, day, hour, minute }
   }
 
   #updatePrompt() {
-    const { clock } = this.#getContext()
-    const glyph = clock.isFrozen() ? '❄' : '▶'
+    const ctx = this.#ctx()
+    const clock = ctx?.clock
+
+    const glyph = clock?.isFrozen?.() ? '❄' : '▶'
     const inj = this.#injectEnabled ? '✓' : '×'
     this.#rl.setPrompt(`charlie(${glyph} inject:${inj})> `)
   }

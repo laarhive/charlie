@@ -1,0 +1,17 @@
+{
+  op: 'record.start',
+
+  params: {
+    busNames: ['presence'],
+    duration: '1m',
+    outFileBase: 'front-approach',
+
+    filter: {
+      deviceIds: ['LD2450A', 'LD2410A']
+    },
+
+    meta: {
+      mode: 'front-approach'
+    }
+  }
+}

@@ -1,7 +1,15 @@
 // src/app/serverSurface/makeServerApi.js
 import eventTypes from '../../core/eventTypes.js'
 
-export const makeServerApi = function makeServerApi({ buses, config, deviceManager, core, clock, mode }) {
+export const makeServerApi = function makeServerApi({
+                                                      buses,
+                                                      config,
+                                                      deviceManager,
+                                                      core,
+                                                      clock,
+                                                      mode,
+                                                      recordingService,
+                                                    }) {
   const getConfig = () => {
     return config || {}
   }
@@ -56,11 +64,25 @@ export const makeServerApi = function makeServerApi({ buses, config, deviceManag
     target.publish(normalized)
   }
 
+  const recording = async (body) => {
+    if (!recordingService?.handle) {
+      const err = new Error('RECORDING_SERVICE_MISSING')
+      err.code = 'INTERNAL_ERROR'
+      throw err
+    }
+
+    return await recordingService.handle({
+      op: body?.op,
+      params: body?.params,
+    })
+  }
+
   return {
     getConfig,
     taskerSimStart,
     taskerSimStop,
     testPublish,
+    recording,
   }
 }
 

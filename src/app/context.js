@@ -14,6 +14,7 @@ import ControlService from './controlService.js'
 
 import DeviceManager from '../devices/deviceManager.js'
 import makeServerSurface from './serverSurface/makeServerSurface.js'
+import RecordingService from '../recording/recordingService.js'
 
 export const makeContext = function makeContext({ logger, config, mode }) {
   const clock = new Clock()
@@ -64,6 +65,14 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     logger,
   })
 
+  const recordingService = RecordingService({
+    logger,
+    buses,
+    deviceManager,
+    clock,
+    config,
+  })
+
   const serverSurface = makeServerSurface({
     logger,
     buses,
@@ -72,6 +81,7 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     core,
     clock,
     mode,
+    recordingService,
   })
 
   const webServer = new WebServer({
@@ -109,6 +119,7 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     config,
     deviceManager,
     control,
+    recordingService,
     dispose,
   }
 }

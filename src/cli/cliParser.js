@@ -1,21 +1,16 @@
 // src/cli/cliParser.js
+import { parseRecording } from './recording/cliRecording.js'
+
 export class CliParser {
   parse(line) {
     const trimmed = String(line || '').trim()
-    if (!trimmed) {
-      return { kind: 'empty' }
-    }
+    if (!trimmed) return { kind: 'empty' }
 
     const parts = trimmed.split(/\s+/g)
     const [a, b, c, ...rest] = parts
 
-    if (a === 'help') {
-      return { kind: 'help' }
-    }
-
-    if (a === 'exit' || a === 'quit') {
-      return { kind: 'exit' }
-    }
+    if (a === 'help') return { kind: 'help' }
+    if (a === 'exit' || a === 'quit') return { kind: 'exit' }
 
     if (a === 'inject') {
       if (b === 'on') return { kind: 'injectOn' }
@@ -88,16 +83,11 @@ export class CliParser {
     if (a === 'config') {
       if (b === 'load') {
         const filename = c
-        if (!filename) {
-          return { kind: 'error', message: 'usage: config load <filename>' }
-        }
-
+        if (!filename) return { kind: 'error', message: 'usage: config load <filename>' }
         return { kind: 'configLoad', filename }
       }
 
-      if (b === 'print') {
-        return { kind: 'configPrint' }
-      }
+      if (b === 'print') return { kind: 'configPrint' }
 
       return { kind: 'error', message: 'usage: config load <filename>|print' }
     }
@@ -108,43 +98,36 @@ export class CliParser {
     }
 
     if (a === 'device') {
-      if (b === 'list') {
-        return { kind: 'deviceList' }
-      }
+      if (b === 'list') return { kind: 'deviceList' }
 
       if (b === 'block') {
         const deviceId = c
-        if (!deviceId) {
-          return { kind: 'error', message: 'usage: device block <deviceId>' }
-        }
-
+        if (!deviceId) return { kind: 'error', message: 'usage: device block <deviceId>' }
         return { kind: 'deviceBlock', deviceId }
       }
 
       if (b === 'unblock') {
         const deviceId = c
-        if (!deviceId) {
-          return { kind: 'error', message: 'usage: device unblock <deviceId>' }
-        }
-
+        if (!deviceId) return { kind: 'error', message: 'usage: device unblock <deviceId>' }
         return { kind: 'deviceUnblock', deviceId }
       }
 
       if (b === 'inject') {
         const deviceId = c
-        if (!deviceId) {
-          return { kind: 'error', message: 'usage: device inject <deviceId> <payload...>' }
-        }
+        if (!deviceId) return { kind: 'error', message: 'usage: device inject <deviceId> <payload...>' }
 
         const payload = rest.join(' ').trim()
-        if (!payload) {
-          return { kind: 'error', message: 'usage: device inject <deviceId> <payload...>' }
-        }
+        if (!payload) return { kind: 'error', message: 'usage: device inject <deviceId> <payload...>' }
 
         return { kind: 'deviceInject', deviceId, payload }
       }
 
       return { kind: 'error', message: 'usage: device list|block|unblock|inject <deviceId> <payload...>' }
+    }
+
+    if (a === 'recording') {
+      const rec = parseRecording(parts)
+      return rec || { kind: 'error', message: 'usage: recording status|start|record|load|play' }
     }
 
     return { kind: 'error', message: 'unknown command, type: help' }

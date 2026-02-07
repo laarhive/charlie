@@ -1,63 +1,51 @@
 // src/cli/cliCompleter.js
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { projectRoot } from './cliPaths.js'
+import { recordingCompleterNode } from './recording/cliRecording.js'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const projectRoot = path.resolve(__dirname, '../..')
 const configDir = path.resolve(projectRoot, 'config')
 
-const splitTokens = function splitTokens(line) {
+const splitTokens = (line) => {
   const endsWithSpace = /\s$/.test(line)
   const tokens = line.trim().length ? line.trim().split(/\s+/g) : []
 
-  if (endsWithSpace) {
-    tokens.push('')
-  }
-
+  if (endsWithSpace) tokens.push('')
   return tokens
 }
 
-const uniq = function uniq(list) {
-  return Array.from(new Set(list))
-}
+const uniq = (list) => Array.from(new Set(list))
 
-const filterPrefix = function filterPrefix(options, prefix) {
+const filterPrefix = (options, prefix) => {
   const p = String(prefix || '')
   return options.filter((o) => o.startsWith(p))
 }
 
-const listConfigFiles = function listConfigFiles(prefix) {
+const listConfigFiles = (prefix) => {
   try {
-    const files = fs.readdirSync(configDir)
-      .filter((f) => f.endsWith('.json') || f.endsWith('.json5'))
-
+    const files = fs.readdirSync(configDir).filter((f) => f.endsWith('.json5'))
     return filterPrefix(files, prefix)
   } catch {
     return []
   }
 }
 
-const listDeviceIds = function listDeviceIds(getContext, prefix) {
+const listDeviceIds = (getContext, prefix) => {
   try {
     const ctx = getContext()
     const devices = Array.isArray(ctx?.config?.devices) ? ctx.config.devices : []
     const ids = devices.map((d) => d?.id).filter(Boolean)
-
     return filterPrefix(uniq(ids), prefix)
   } catch {
     return []
   }
 }
 
-const listZones = function listZones(getContext, prefix) {
+const listZones = (getContext, prefix) => {
   try {
     const ctx = getContext()
-
     const zoneKeys = ctx?.config?.zones ? Object.keys(ctx.config.zones) : null
     const zones = zoneKeys && zoneKeys.length ? zoneKeys : ['front', 'back']
-
     return filterPrefix(uniq(zones), prefix)
   } catch {
     return filterPrefix(['front', 'back'], prefix)
@@ -66,30 +54,17 @@ const listZones = function listZones(getContext, prefix) {
 
 /*
   Node types:
-  - { options: string[] }               -> suggests options
-  - { dynamic: (ctx, prefix) => [] }    -> suggests dynamic options
-  - { children: { [token]: node }, options?: string[] } -> nested routing
-  - { sequence: [node, node, ...] }     -> fixed positions by depth
+  - { options: string[] }
+  - { dynamic: (getContext, prefix) => [] }
+  - { children: { [token]: node }, options?: string[] }
+  - { sequence: [node, node, ...] }
 */
-const optionsNode = function optionsNode(options) {
-  return { options: options || [] }
-}
-
-const dynamicNode = function dynamicNode(fn) {
-  return { dynamic: fn }
-}
-
-const sequenceNode = function sequenceNode(nodes) {
-  return { sequence: nodes || [] }
-}
-
-const childrenNode = function childrenNode(children, options) {
+const optionsNode = (options) => ({ options: options || [] })
+const dynamicNode = (fn) => ({ dynamic: fn })
+const sequenceNode = (nodes) => ({ sequence: nodes || [] })
+const childrenNode = (children, options) => {
   const c = children || {}
-
-  const computedOptions = Array.isArray(options) && options.length
-    ? options
-    : Object.keys(c)
-
+  const computedOptions = Array.isArray(options) && options.length ? options : Object.keys(c)
   return { children: c, options: computedOptions }
 }
 
@@ -105,7 +80,6 @@ const commandTree = childrenNode({
   ]),
 
   vibration: optionsNode(['low', 'high']),
-
   button: optionsNode(['short', 'long']),
 
   device: childrenNode({
@@ -128,6 +102,8 @@ const commandTree = childrenNode({
       ]),
     ]),
   }, ['list', 'block', 'unblock', 'inject']),
+
+  recording: recordingCompleterNode(),
 
   clock: childrenNode({
     now: optionsNode([]),
@@ -163,26 +139,17 @@ const commandTree = childrenNode({
   }, ['load', 'print']),
 })
 
-const getNodeSuggestions = function getNodeSuggestions(node, getContext, prefix) {
-  if (!node) {
-    return []
-  }
+const getNodeSuggestions = (node, getContext, prefix) => {
+  if (!node) return []
 
-  if (node.dynamic) {
-    return node.dynamic(getContext, prefix)
-  }
-
-  if (node.options) {
-    return filterPrefix(node.options, prefix)
-  }
+  if (node.dynamic) return node.dynamic(getContext, prefix)
+  if (node.options) return filterPrefix(node.options, prefix)
 
   return []
 }
 
-const traverseForSuggestions = function traverseForSuggestions({ root, tokens, getContext }) {
-  if (!root) {
-    return []
-  }
+const traverseForSuggestions = ({ root, tokens, getContext }) => {
+  if (!root) return []
 
   const currentPrefix = tokens[tokens.length - 1] || ''
   const parts = tokens.slice(0, -1)
@@ -246,7 +213,7 @@ const traverseForSuggestions = function traverseForSuggestions({ root, tokens, g
  * @param {object} args
  * @param {() => any} args.getContext Must return current app context
  */
-export const makeCliCompleter = function makeCliCompleter({ getContext }) {
+export const makeCliCompleter = ({ getContext }) => {
   return (line) => {
     const tokens = splitTokens(line)
     const suggestions = traverseForSuggestions({ root: commandTree, tokens, getContext })

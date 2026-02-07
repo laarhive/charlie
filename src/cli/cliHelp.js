@@ -1,5 +1,7 @@
 // src/cli/cliHelp.js
-export const printHelp = function printHelp({ mode }) {
+import { printRecordingHelp } from './recording/cliRecording.js'
+
+export const printHelp = ({ mode }) => {
   console.log('')
   console.log('Commands:')
   console.log('  inject on|off|status')
@@ -10,6 +12,8 @@ export const printHelp = function printHelp({ mode }) {
   console.log('  device inject <deviceId> <payload...>')
   console.log('  core state')
   console.log('  config print')
+
+  printRecordingHelp({ mode })
 
   if (mode === 'local') {
     console.log('  clock now|status|freeze|resume|+MS|set YYYY-MM-DD HH:MM')

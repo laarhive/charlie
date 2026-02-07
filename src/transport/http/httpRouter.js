@@ -23,6 +23,18 @@ export class HttpRouter {
       this.#httpIo.json(res, 200, { ok: true, data: this.#api.getConfig() })
     })
 
+    app.post('/api/v1/recording', (res, req) => {
+      this.#httpIo.readJsonBody(res, async (body) => {
+        try {
+          const data = await this.#api.recording(body)
+          this.#httpIo.json(res, 200, { ok: true, data })
+        } catch (e) {
+          const code = String(e?.code || 'ERROR')
+          this.#httpIo.json(res, 400, { ok: false, error: code })
+        }
+      })
+    })
+
     if (this.#enableDev) {
       this.#registerDev(app)
     }

@@ -10,7 +10,7 @@
       vibration: './controllers/vibration.json5',
       button: './controllers/button.json5',
     },
-
+    recording: './recording/recording.json5',
     tasker: './tasker/tasker.json5',
   },
 }

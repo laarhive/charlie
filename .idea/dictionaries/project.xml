@@ -3,6 +3,7 @@
     <words>
       <w>#gpiomon</w>
       <w>#gpioset</w>
+      <w>serialport</w>
     </words>
   </dictionary>
 </component>

@@ -10,8 +10,9 @@ export const makeServerSurface = function makeServerSurface({
                                                               core,
                                                               clock,
                                                               mode,
+                                                              recordingService,
                                                             }) {
-  const api = makeServerApi({ buses, config, deviceManager, core, clock, mode })
+  const api = makeServerApi({ buses, config, deviceManager, core, clock, mode, recordingService })
   const streamHub = new BusStream({ logger, buses })
 
   const dispose = () => {
