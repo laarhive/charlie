@@ -39,6 +39,8 @@ export default class LedController {
     }
   }
 
+  get streamKeyWho() { return this.#controllerId }
+
   start() {
     if (this.#unsubscribe) return
 
@@ -89,6 +91,7 @@ export default class LedController {
         logger: this.#logger,
         ledBus: this.#ledBus,
         clock: this.#clock,
+        controllerId: `${this.#controllerId}.ledScheduler`,
         ledId,
         config: this.#config,
       })

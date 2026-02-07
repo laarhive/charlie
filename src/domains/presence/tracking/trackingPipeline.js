@@ -2,6 +2,8 @@
 import domainEventTypes from '../../domainEventTypes.js'
 import { KalmanFilterCv2d } from './kalmanFilterCv2d.js'
 import { AssociationEngine } from './associationEngine.js'
+import { makeStreamKey } from '../../../core/eventBus.js'
+import { busIds } from '../../../app/buses.js'
 
 export class TrackingPipeline {
   #logger
@@ -53,6 +55,8 @@ export class TrackingPipeline {
       throw new Error('TrackingPipeline requires presenceInternalBus.subscribe+publish')
     }
   }
+
+  get streamKeyWho() { return `presenceController.trackingPipeline` }
 
   start() {
     if (!this.#enabled) {
@@ -409,6 +413,11 @@ export class TrackingPipeline {
       type: domainEventTypes.presence.globalTracks,
       ts: now,
       source: this.#controllerId,
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: domainEventTypes.presence.globalTracks,
+        where: busIds.presenceInternal,
+      }),
       payload: {
         ts: now,
         tracks: out,
@@ -508,6 +517,11 @@ export class TrackingPipeline {
       type: domainEventTypes.presence.globalTracks,
       ts: now,
       source: this.#controllerId,
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: domainEventTypes.presence.globalTracks,
+        where: busIds.presenceInternal,
+      }),
       payload: {
         ts: now,
         tracks: out,

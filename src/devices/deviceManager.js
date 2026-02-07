@@ -4,6 +4,8 @@ import ProtocolFactory from './protocols/protocolFactory.js'
 import makeDeviceInstance from './kinds/index.js'
 import UsbInventory from './usbInventory.js'
 import deviceErrorCodes from './deviceErrorCodes.js'
+import { makeStreamKey } from '../core/eventBus.js'
+import { busIds } from '../app/buses.js'
 
 export class DeviceManager {
   #logger
@@ -47,6 +49,8 @@ export class DeviceManager {
     this.#blockTokensByDeviceId = new Map()
     this.#blockedDeviceIdsByToken = new Map()
   }
+
+  get streamKeyWho() { return 'deviceManager' }
 
   start() {
     const devices = Array.isArray(this.#config?.devices) ? this.#config.devices : []
@@ -368,6 +372,11 @@ export class DeviceManager {
       type: eventTypes.system.hardware,
       ts: this.#clock.nowMs(),
       source: 'deviceManager',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: eventTypes.system.hardware,
+        where: busIds.main,
+      }),
       payload: {
         deviceId,
         publishAs,
@@ -527,6 +536,11 @@ export class DeviceManager {
       type: eventTypes.system.hardware,
       ts: this.#clock.nowMs(),
       source: 'deviceManager',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: eventTypes.system.hardware,
+        where: busIds.main,
+      }),
       payload: {
         subsystem: 'usb',
         action,

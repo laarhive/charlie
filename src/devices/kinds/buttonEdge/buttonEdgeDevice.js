@@ -56,6 +56,8 @@ import BaseDevice from '../../base/baseDevice.js'
 import domainEventTypes from '../../../domains/domainEventTypes.js'
 import deviceErrorCodes from '../../deviceErrorCodes.js'
 import { ok, err } from '../../deviceResult.js'
+import { makeStreamKey } from '../../../core/eventBus.js'
+import { busIds } from '../../../app/buses.js'
 
 export default class ButtonEdgeDevice extends BaseDevice {
   #logger
@@ -95,6 +97,8 @@ export default class ButtonEdgeDevice extends BaseDevice {
       throw new Error('buttonEdge requires main bus for system:hardware reporting')
     }
   }
+
+  get streamKeyWho() { return this.getId() }
 
   _startImpl() {
     if (this.isBlocked() || this.isDisposed()) return
@@ -230,6 +234,11 @@ export default class ButtonEdgeDevice extends BaseDevice {
       type: eventTypes.system.hardware,
       ts: this.#clock.nowMs(),
       source: 'buttonEdgeDevice',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: eventTypes.system.hardware,
+        where: busIds.main,
+      }),
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),
@@ -244,6 +253,11 @@ export default class ButtonEdgeDevice extends BaseDevice {
       type: domainEventTypes.button.edge,
       ts: this.#clock.nowMs(),
       source: 'buttonEdgeDevice',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: domainEventTypes.button.edge,
+        where: busIds.button,
+      }),
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { makeStreamKey } from './eventBus.js'
 
 export class TimeScheduler {
   #clock
@@ -20,6 +21,8 @@ export class TimeScheduler {
       this.#rescheduleAll()
     })
   }
+
+  get streamKeyWho() { return 'timeScheduler' }
 
   /**
    * Schedule an event at an absolute logical time.
@@ -159,6 +162,11 @@ export class TimeScheduler {
       type: timer.type,
       ts: this.#clock.nowMs(),
       source: 'time',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: timer.type,
+        where: this.#bus.getBusId(),
+      }),
       payload: {
         ...timer.payload,
         token: timer.token,

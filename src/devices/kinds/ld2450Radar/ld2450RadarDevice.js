@@ -6,6 +6,8 @@ import deviceErrorCodes from '../../deviceErrorCodes.js'
 import { ok, err } from '../../deviceResult.js'
 import { createLd2450StreamDecoder } from './ld2450Decode.js'
 import usbSerialErrorCodes from '../../protocols/usbSerial/usbSerialErrorCodes.js'
+import { makeStreamKey } from '../../../core/eventBus.js'
+import { busIds } from '../../../app/buses.js'
 
 export default class Ld2450RadarDevice extends BaseDevice {
   #logger
@@ -88,6 +90,8 @@ export default class Ld2450RadarDevice extends BaseDevice {
       this.rebind({ serialPath: initialPath })
     }
   }
+
+  get streamKeyWho() { return this.getId() }
 
   rebind({ serialPath }) {
     const sp = serialPath === null ? null : String(serialPath || '').trim()
@@ -244,6 +248,11 @@ export default class Ld2450RadarDevice extends BaseDevice {
       type: domainEventTypes.presence.ld2450,
       ts: this.#clock.nowMs(),
       source: 'ld2450RadarDevice',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: domainEventTypes.presence.ld2450,
+        where: busIds.presence,
+      }),
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),
@@ -258,6 +267,11 @@ export default class Ld2450RadarDevice extends BaseDevice {
       type: domainEventTypes.presence.ld2450,
       ts: this.#clock.nowMs(),
       source: 'ld2450RadarDevice',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: domainEventTypes.presence.ld2450,
+        where: busIds.presence,
+      }),
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),
@@ -360,6 +374,11 @@ export default class Ld2450RadarDevice extends BaseDevice {
       type: eventTypes.system.hardware,
       ts: this.#clock.nowMs(),
       source: 'ld2450RadarDevice',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: eventTypes.system.hardware,
+        where: busIds.main,
+      }),
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),

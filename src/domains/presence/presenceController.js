@@ -4,6 +4,8 @@ import domainEventTypes from '../domainEventTypes.js'
 import { Ld2450IngestAdapter } from './ingest/ld2450IngestAdapter.js'
 import { Ld2410IngestAdapter } from './ingest/ld2410IngestAdapter.js'
 import { TrackingPipeline } from './tracking/trackingPipeline.js'
+import { makeStreamKey } from '../../core/eventBus.js'
+import { busIds } from '../../app/buses.js'
 
 export class PresenceController {
   #logger
@@ -56,6 +58,8 @@ export class PresenceController {
       throw new Error('presenceController requires mainBus.publish')
     }
   }
+
+  get streamKeyWho() { return this.#controllerId }
 
   start() {
     if (!this.#enabled) {
@@ -144,6 +148,11 @@ export class PresenceController {
       type: eventTypes.presence.targets,
       ts: this.#clock.nowMs(),
       source: this.#controllerId,
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: eventTypes.presence.targets,
+        where: busIds.main,
+      }),
       payload: {
         targets: tracks
           .filter((t) => t && t.state === 'confirmed')

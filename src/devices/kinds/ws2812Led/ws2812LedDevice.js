@@ -5,6 +5,8 @@ import domainEventTypes from '../../../domains/domainEventTypes.js'
 import deviceErrorCodes from '../../deviceErrorCodes.js'
 import { ok, err } from '../../deviceResult.js'
 import usbSerialErrorCodes from '../../protocols/usbSerial/usbSerialErrorCodes.js'
+import { makeStreamKey } from '../../../core/eventBus.js'
+import { busIds } from '../../../app/buses.js'
 
 export default class Ws2812LedDevice extends BaseDevice {
   #logger
@@ -59,6 +61,8 @@ export default class Ws2812LedDevice extends BaseDevice {
       this.rebind({ serialPath: initialPath })
     }
   }
+
+   get streamKeyWho() { return this.getId() }
 
   rebind({ serialPath }) {
     const sp = serialPath === null ? null : String(serialPath || '').trim()
@@ -362,6 +366,11 @@ export default class Ws2812LedDevice extends BaseDevice {
       type: eventTypes.system.hardware,
       ts: this.#clock.nowMs(),
       source: 'ws2812LedDevice',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: eventTypes.system.hardware,
+        where: busIds.main,
+      }),
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),

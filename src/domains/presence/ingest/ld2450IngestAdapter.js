@@ -1,5 +1,9 @@
+// src/domains/presence/ingest/ld2450IngestAdapter.js
 import domainEventTypes from '../../domainEventTypes.js'
 import { TransformService } from '../transform/transformService.js'
+import { makeStreamKey } from '../../../core/eventBus.js'
+import eventTypes from '../../../core/eventTypes.js'
+import { busIds } from '../../../app/buses.js'
 
 export class Ld2450IngestAdapter {
   #logger
@@ -53,6 +57,8 @@ export class Ld2450IngestAdapter {
       throw new Error('Ld2450IngestAdapter requires presenceInternalBus.publish')
     }
   }
+
+  get streamKeyWho() { return 'ld2450IngestAdapter' }
 
   start() {
     if (this.#unsubscribe) return
@@ -195,6 +201,11 @@ export class Ld2450IngestAdapter {
       type: domainEventTypes.presence.ld2450Tracks,
       ts: this.#clock.nowMs(),
       source: this.#controllerId,
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: domainEventTypes.presence.ld2450Tracks,
+        where: busIds.presenceInternal,
+      }),
       payload: {
         ts: frameTs,
         tracks,

@@ -1,5 +1,7 @@
 import { expect } from 'chai'
 import eventTypes from '../../../src/core/eventTypes.js'
+import { busIds } from '../../../src/app/buses.js'
+import { makeStreamKey } from '../../../src/core/eventBus.js'
 
 export const runDeviceManagerUnitConformanceTests = function runDeviceManagerUnitConformanceTests({
                                                                                                     makeHarness,
@@ -48,6 +50,11 @@ export const runDeviceManagerUnitConformanceTests = function runDeviceManagerUni
       type: eventTypes.system.hardware,
       ts: h.clock.nowMs(),
       source: 'test',
+      streamKey: makeStreamKey({
+        who: 'test',
+        what: eventTypes.system.hardware,
+        where: busIds.main,
+      }),
       payload: {
         deviceId: h.expect.manualBlockedId,
         publishAs: 'x',
@@ -70,6 +77,11 @@ export const runDeviceManagerUnitConformanceTests = function runDeviceManagerUni
       type: eventTypes.system.hardware,
       ts: h.clock.nowMs(),
       source: 'test',
+      streamKey: makeStreamKey({
+        who: 'test',
+        what: eventTypes.system.hardware,
+        where: busIds.main,
+      }),
       payload: {
         deviceId: h.expect.manualBlockedId,
         publishAs: 'x',

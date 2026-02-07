@@ -1,7 +1,7 @@
 // src/app/domainControllers.js
 import PresenceController from '../domains/presence/PresenceController.js'
-import HitVibrationController from '../domains/vibration/hitVibrationController.js'
-import EdgeButtonController from '../domains/button/edgeButtonController.js'
+import VibrationController from '../domains/vibration/vibrationController.js'
+import ButtonController from '../domains/button/buttonController.js'
 import LedController from '../domains/led/ledController.js'
 
 const toRuntimeDevices = function toRuntimeDevices(devices) {
@@ -42,7 +42,7 @@ export const makeDomainControllers = function makeDomainControllers({ logger, bu
 
   {
     const controller = controllers?.vibration || {}
-    out.push(new HitVibrationController({
+    out.push(new VibrationController({
       logger,
       vibrationBus: buses.vibration,
       mainBus: buses.main,
@@ -55,12 +55,12 @@ export const makeDomainControllers = function makeDomainControllers({ logger, bu
 
   {
     const controller = controllers?.button || {}
-    out.push(new EdgeButtonController({
+    out.push(new ButtonController({
       logger,
       buttonBus: buses.button,
       mainBus: buses.main,
       clock,
-      controllerId: 'pushButtonController',
+      controllerId: 'buttonController',
       controller,
       devices: byDomain('button'),
     }))

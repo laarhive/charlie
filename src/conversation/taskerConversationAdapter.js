@@ -1,5 +1,7 @@
 // src/conversation/taskerConversationAdapter.js
 import eventTypes from '../core/eventTypes.js'
+import { makeStreamKey } from '../core/eventBus.js'
+import { busIds } from '../app/buses.js'
 
 /**
  * TaskerConversationAdapter posts to Tasker endpoints:
@@ -23,6 +25,8 @@ export class TaskerConversationAdapter {
     this.#taskerBus = taskerBus
     this.#config = config
   }
+
+  get streamKeyWho() { return 'taskerConversationAdapter' }
 
   async startConversation(payload) {
     return await this.#post('start', payload)
@@ -53,6 +57,11 @@ export class TaskerConversationAdapter {
       type: eventTypes.tasker.req,
       ts: started,
       source: 'taskerClient',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: eventTypes.tasker.req,
+        where: busIds.tasker,
+      }),
       payload: {
         direction: 'outbound',
         action,
@@ -79,6 +88,11 @@ export class TaskerConversationAdapter {
         type: eventTypes.tasker.res,
         ts: Date.now(),
         source: 'taskerClient',
+        streamKey: makeStreamKey({
+          who: this.streamKeyWho,
+          what: eventTypes.tasker.res,
+          where: busIds.tasker,
+        }),
         payload: {
           action,
           requestId,
@@ -96,6 +110,11 @@ export class TaskerConversationAdapter {
         type: eventTypes.tasker.err,
         ts: Date.now(),
         source: 'taskerClient',
+        streamKey: makeStreamKey({
+          who: this.streamKeyWho,
+          what: eventTypes.tasker.err,
+          where: busIds.tasker,
+        }),
         payload: {
           action,
           requestId,

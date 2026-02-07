@@ -64,6 +64,8 @@ import BaseDevice from '../../base/baseDevice.js'
 import Gpio from '../../../gpio/gpio.js'
 import deviceErrorCodes from '../../deviceErrorCodes.js'
 import { err } from '../../deviceResult.js'
+import { makeStreamKey } from '../../../core/eventBus.js'
+import { busIds } from '../../../app/buses.js'
 
 export default class GpioWatchdogLoopbackDevice extends BaseDevice {
   #logger
@@ -156,6 +158,8 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
     this.#tickTimer = null
     this.#toggling = false
   }
+
+  get streamKeyWho() { return this.getId() }
 
   _startImpl() {
     if (this.isBlocked() || this.isDisposed()) return
@@ -326,6 +330,11 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
       type: eventTypes.system.hardware,
       ts: this.#clock.nowMs(),
       source: 'gpioWatchdogLoopbackDevice',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: eventTypes.system.hardware,
+        where: busIds.main,
+      }),
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),

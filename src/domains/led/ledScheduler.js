@@ -1,11 +1,14 @@
 // src/domains/led/ledScheduler.js
 import domainEventTypes from '../domainEventTypes.js'
 import { createEffectRunner } from './ledEffects.js'
+import { makeStreamKey } from '../../core/eventBus.js'
+import { busIds } from '../../app/buses.js'
 
 export default class LedScheduler {
   #logger
   #ledBus
   #clock
+  #controllerId
   #ledId
   #config
   #active
@@ -13,10 +16,11 @@ export default class LedScheduler {
   #timer
   #lastRgb
 
-  constructor({ logger, ledBus, clock, ledId, config }) {
+  constructor({ logger, ledBus, clock, controllerId, ledId, config }) {
     this.#logger = logger
     this.#ledBus = ledBus
     this.#clock = clock
+    this.#controllerId = controllerId
     this.#ledId = ledId
     this.#config = config
     this.#active = null
@@ -24,6 +28,8 @@ export default class LedScheduler {
     this.#timer = null
     this.#lastRgb = [0, 0, 0]
   }
+
+  get streamKeyWho() { return this.#controllerId }
 
   dispose() {
     if (this.#timer) clearTimeout(this.#timer)
@@ -119,6 +125,11 @@ export default class LedScheduler {
       type: domainEventTypes.led.command,
       ts: this.#clock.nowMs(),
       source: 'ledScheduler',
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: domainEventTypes.led.command,
+        where: busIds.led,
+      }),
       payload: {
         ledId: this.#ledId,
         publishAs: null,

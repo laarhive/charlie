@@ -65,7 +65,7 @@
       dataBits: 8,
       stopBits: 1,
       parity: 'none',
-      //      highWaterMark: 2400,
+      highWaterMark: 2400,
     },
     modes: ['rpi4', 'win11'],
     state: 'active'

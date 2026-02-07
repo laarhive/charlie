@@ -1,5 +1,7 @@
 // src/app/serverSurface/makeServerApi.js
 import eventTypes from '../../core/eventTypes.js'
+import { makeStreamKey } from '../../core/eventBus.js'
+import { busIds } from '../buses.js'
 
 export const makeServerApi = function makeServerApi({
                                                       buses,
@@ -19,6 +21,11 @@ export const makeServerApi = function makeServerApi({
       type: eventTypes.tasker.req,
       ts: Date.now(),
       source: 'taskerSimServer',
+      streamKey: makeStreamKey({
+        who: 'taskerSimServer',
+        what: eventTypes.tasker.req,
+        where: busIds.tasker,
+      }),
       payload: { direction: 'inbound', action: 'start', body },
     })
   }
@@ -28,6 +35,11 @@ export const makeServerApi = function makeServerApi({
       type: eventTypes.tasker.req,
       ts: Date.now(),
       source: 'taskerSimServer',
+      streamKey: makeStreamKey({
+        who: 'taskerSimServer',
+        what: eventTypes.tasker.req,
+        where: busIds.tasker,
+      }),
       payload: { direction: 'inbound', action: 'stop', body },
     })
   }
@@ -52,6 +64,11 @@ export const makeServerApi = function makeServerApi({
       type: event?.type,
       ts: typeof event?.ts === 'number' ? event.ts : Date.now(),
       source: event?.source || 'testHook',
+      streamKey: makeStreamKey({
+        who: 'makeServerApi.testHook',
+        what: event?.type || 'makeServerApi.testHook.event',
+        where: busName,
+      }),
       payload: event?.payload ?? {},
     }
 

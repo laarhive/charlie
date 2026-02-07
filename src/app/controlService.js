@@ -1,4 +1,8 @@
 // src/app/controlService.js
+import { makeStreamKey } from '../core/eventBus.js'
+import eventTypes from '../core/eventTypes.js'
+import { busIds } from './buses.js'
+
 export default function ControlService ({ buses, deviceManager, logger }) {
   let injectEnabled = false
 
@@ -26,6 +30,11 @@ export default function ControlService ({ buses, deviceManager, logger }) {
       type,
       ts: Date.now(),
       source: source ?? 'ws',
+      streamKey: makeStreamKey({
+        who: 'controlService.injectEvent',
+        what: type,
+        where: bus,
+      }),
       payload: payload ?? {},
     })
 
