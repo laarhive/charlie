@@ -37,21 +37,26 @@ export const decodeLd2450TrackingFrames = function (buf, opts = {}) {
 
   let droppedBytes = 0
   let i = 0
-  let remainder = Buffer.alloc(0)
 
-  while (i <= buf.length - 4 && frames.length < maxFrames) {
+  while (i <= buf.length - REPORT_HEADER.length && frames.length < maxFrames) {
     const headerIdx = buf.indexOf(REPORT_HEADER, i)
 
     if (headerIdx === -1) {
-      droppedBytes = buf.length
-      return { frames, remainder: Buffer.alloc(0), droppedBytes, stats }
+      const keep = Math.min(buf.length, REPORT_HEADER.length - 1) // keep last 3 bytes
+      const remainder = keep > 0 ? buf.subarray(buf.length - keep) : Buffer.alloc(0)
+
+      droppedBytes = buf.length - remainder.length
+
+      return { frames, remainder, droppedBytes, stats }
     }
 
     stats.foundHeaders += 1
 
     if (headerIdx + FRAME_LEN > buf.length) {
-      droppedBytes = headerIdx
-      remainder = buf.subarray(headerIdx)
+      const remainder = buf.subarray(headerIdx)
+
+      droppedBytes = frames.length === 0 ? headerIdx : droppedBytes
+
       return { frames, remainder, droppedBytes, stats }
     }
 
@@ -87,6 +92,10 @@ export const decodeLd2450TrackingFrames = function (buf, opts = {}) {
 
     const present = targets.some((t) => t.valid)
 
+    if (frames.length === 0) {
+      droppedBytes = headerIdx
+    }
+
     frames.push({
       offset: headerIdx,
       raw: includeRaw ? Buffer.from(frameBuf) : undefined,
@@ -98,9 +107,9 @@ export const decodeLd2450TrackingFrames = function (buf, opts = {}) {
     i = headerIdx + FRAME_LEN
   }
 
-  droppedBytes = frames.length > 0 ? frames[0].offset : 0
+  const remainder = i < buf.length ? buf.subarray(i) : Buffer.alloc(0)
 
-  return { frames, remainder: Buffer.alloc(0), droppedBytes, stats }
+  return { frames, remainder, droppedBytes, stats }
 }
 
 export const createLd2450StreamDecoder = function (opts = {}) {
@@ -166,12 +175,10 @@ export const createLd2450StreamDecoder = function (opts = {}) {
       includeRaw,
     })
 
-    if (res.frames.length > 0) {
-      totalDropped += res.droppedBytes
+    totalDropped += res.droppedBytes
 
-      if (res.droppedBytes >= noiseLogThreshold) {
-        emitter.emit('error', { code: 'DROPPED_NOISE', droppedBytes: res.droppedBytes })
-      }
+    if (res.droppedBytes >= noiseLogThreshold) {
+      emitter.emit('error', { code: 'DROPPED_NOISE', droppedBytes: res.droppedBytes })
     }
 
     if (res.stats.badFooters > 0) {
@@ -208,8 +215,3 @@ export const createLd2450StreamDecoder = function (opts = {}) {
 
   return emitter
 }
-
-
-
-
-
