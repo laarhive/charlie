@@ -255,11 +255,22 @@ Validation
     },
 
     {
-      on: 'presence:exit',
+      on: 'presence:enter',
       target: { alias: 'status' },
       do: {
         effect: 'heartbeatCalm',
-        priority: 10,
+        priority: 20,
+        restore: false,
+        ttlMs: null,
+      }
+    },
+
+    {
+      on: 'presence:exit',
+      target: { alias: 'status' },
+      do: {
+        effect: 'breathePresence',
+        priority: 20,
         restore: false,
         ttlMs: null,
       }
