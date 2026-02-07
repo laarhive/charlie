@@ -430,3 +430,207 @@ with a single ordered timeline and a record-time-derived `stream` label.
 Recorded artifacts are immutable facts.  
 Playback behavior (routing, isolation, selection) is policy-driven and supplied
 at runtime, enabling flexible simulation and debugging without re-recording.
+
+
+## Appendix A — StreamKey-based Recording & Playback (Delta)
+
+This section documents the transition from **derived streams** to **explicit `streamKey` usage**
+in the recording and playback system.
+
+It is a delta to the original architecture, not a replacement.
+
+---
+
+## A.1 Motivation
+
+Earlier versions derived a `stream` label heuristically from observed events
+(e.g. `publishAs`, `deviceId`, `source`, `type`).
+
+This approach had limitations:
+- ambiguity across device/controller boundaries
+- fragile derivation rules
+- difficult validation
+- non-deterministic behavior when payloads evolve
+
+To resolve this, Charlie now uses an **explicit `streamKey`** published with every event.
+
+---
+
+## A.2 `streamKey` — authoritative event identity
+
+### Definition
+
+Every published event MUST include a `streamKey` field.
+
+```js
+streamKey: "who::what::where"
+```
+
+Where:
+
+| Segment | Meaning |
+|------|--------|
+| `who` | Publishing entity (device, controller, manager) |
+| `what` | Event semantic or raw type |
+| `where` | Bus identifier |
+
+Example:
+
+```js
+streamKey: "LD2450A::presenceRaw:ld2450::presence"
+```
+
+### Properties
+
+- `streamKey` is **mandatory**
+- it is **authoritative** for recording and playback
+- it is **stable across versions**
+- it is **not derived** by Recorder or Player
+- it is **validated** by the EventBus
+
+`streamKey` replaces all heuristic stream derivation logic.
+
+---
+
+## A.3 Relationship to existing fields
+
+| Field | Role |
+|----|----|
+| `streamKey` | deterministic routing / recording identity |
+| `source` | human-readable emitter identity |
+| `type` | semantic classification |
+| `payload.deviceId / publishAs` | domain-specific metadata |
+
+`source` is retained for debugging and backward compatibility.
+It may match `streamKey.who` but is not required to.
+
+---
+
+## A.4 Recording changes
+
+### Event capture
+
+Recorder now stores events exactly as observed:
+
+```js
+{
+  tMs,
+  streamKey,
+  raw: {
+    bus,
+    type,
+    ts,
+    source,
+    streamKey,
+    payload
+  }
+}
+```
+
+Notes:
+- `streamKey` is copied verbatim
+- Recorder no longer computes or modifies stream identity
+- ordering and timing behavior are unchanged
+
+---
+
+### Streams observed metadata
+
+Recorder stores a summary of observed streams in recording metadata:
+
+```js
+meta: {
+  streamsObserved: {
+    "LD2450A::presenceRaw:ld2450::presence": {
+      kind: "device"
+    },
+    "presenceController::presence:targets::main": {
+      kind: "controller"
+    }
+  }
+}
+```
+
+Rules:
+- `kind` is **best-effort metadata**
+- valid values include: `device`, `controller`, `system`, `unknown`
+- `kind` is informational only and MUST NOT affect playback behavior
+
+---
+
+## A.5 Playback routing changes
+
+### Routing by `streamKey`
+
+Playback routing is now defined exclusively via `streamKey`:
+
+```json5
+{
+  op: "play.start",
+  params: {
+    routingByStreamKey: {
+      "LD2450A::presenceRaw:ld2450::presence": "device",
+      "presenceController::*::main": "bus"
+    }
+  }
+}
+```
+
+Rules:
+- only streams explicitly listed are played
+- all other streams are discarded
+- no implicit selection exists
+- no secondary filters are applied
+
+### Sink resolution
+
+For each event:
+
+1. match `streamKey` against `routingByStreamKey`
+2. if no match → event is skipped
+3. otherwise route to:
+  - `device` → `deviceManager.inject(deviceId, payload)`
+  - `bus` → `bus.publish(raw)`
+
+---
+
+## A.6 Default playback behavior
+
+If not overridden:
+
+- default sink MAY be inferred from `streamsObserved[].kind`
+- this inference is **optional**
+- operators are expected to supply explicit routing for deterministic runs
+
+`kind` is a helper only — never a decision authority.
+
+---
+
+## A.7 Validation guarantees
+
+With `streamKey` enforced:
+
+- Recorder no longer needs to infer identity
+- Player no longer guesses routing intent
+- mis-published events fail fast at the bus boundary
+- recording files are self-describing
+- mixed recordings (device + controller + system) are deterministic
+
+---
+
+## A.8 Backward compatibility
+
+- Existing recordings without `streamKey` are considered legacy
+- New recordings MUST include `streamKey`
+- New code MUST NOT rely on derived stream logic
+
+---
+
+## A.9 Summary
+
+- `streamKey` is now the single source of truth for event identity
+- Recorder records, Player routes — neither interprets semantics
+- Routing decisions are explicit, declarative, and operator-controlled
+- Recording artifacts remain immutable and future-proof
+
+This completes the transition to deterministic, contract-driven replay.
