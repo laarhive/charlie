@@ -1,4 +1,3 @@
-// src/recording/recordingFormat.js
 import path from 'node:path'
 
 export const RECORDING_FORMAT = 'charlie.recording'
@@ -34,27 +33,50 @@ export const validateRecording = function validateRecording(recording) {
     if (!s) return fail('INVALID_META_BUSES', 'recording.meta.buses contains empty bus name')
   }
 
+  if (!isPlainObject(recording.timeline)) return fail('INVALID_TIMELINE', 'recording.timeline missing')
+  const unit = String(recording.timeline.unit || '').trim()
+  if (unit !== 'ms') return fail('INVALID_TIMELINE_UNIT', 'recording.timeline.unit must be "ms"')
+
+  if (!isPlainObject(recording.streamsObserved)) return fail('INVALID_STREAMS_OBSERVED', 'recording.streamsObserved missing')
+
   const events = Array.isArray(recording.events) ? recording.events : null
   if (!events) return fail('INVALID_EVENTS', 'recording.events missing')
 
   let lastT = -1
-  for (let i = 0; i < events.length; i += 1) {
-    const ev = events[i]
-    if (!isPlainObject(ev)) return fail('INVALID_EVENT', `event must be object at index ${i}`)
+  let lastI = -1
+
+  for (let idx = 0; idx < events.length; idx += 1) {
+    const ev = events[idx]
+    if (!isPlainObject(ev)) return fail('INVALID_EVENT', `event must be object at index ${idx}`)
+
+    const id = String(ev.id || '').trim()
+    if (!id) return fail('INVALID_EVENT_ID', `event.id missing at index ${idx}`)
+
+    const i = ev.i
+    if (typeof i !== 'number' || Number.isNaN(i) || i < 0) {
+      return fail('INVALID_EVENT_I', `invalid event.i at index ${idx}`)
+    }
+
+    if (i <= lastI) return fail('NON_MONOTONIC_I', `events must be strictly increasing by i (index ${idx})`)
+    lastI = i
 
     const tMs = ev.tMs
     if (typeof tMs !== 'number' || Number.isNaN(tMs) || tMs < 0) {
-      return fail('INVALID_TMS', `invalid tMs at index ${i}`)
+      return fail('INVALID_TMS', `invalid tMs at index ${idx}`)
     }
 
-    if (tMs < lastT) return fail('NON_MONOTONIC_TMS', `events must be monotonic by tMs (index ${i})`)
+    if (tMs < lastT) return fail('NON_MONOTONIC_TMS', `events must be monotonic by tMs (index ${idx})`)
     lastT = tMs
 
-    const stream = String(ev.stream || '').trim()
-    if (!stream) return fail('INVALID_STREAM', `event.stream missing at index ${i}`)
-
     const raw = ev.raw
-    if (!isPlainObject(raw)) return fail('INVALID_RAW', `event.raw missing at index ${i}`)
+    if (!isPlainObject(raw)) return fail('INVALID_RAW', `event.raw missing at index ${idx}`)
+
+    const streamKey = String(raw.streamKey || '').trim()
+    if (!streamKey) return fail('INVALID_STREAMKEY', `event.raw.streamKey missing at index ${idx}`)
+
+    if (!recording.streamsObserved[streamKey]) {
+      return fail('STREAMKEY_NOT_OBSERVED', `streamsObserved missing streamKey used by event at index ${idx}`)
+    }
   }
 
   return { ok: true }

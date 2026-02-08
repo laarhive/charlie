@@ -1,0 +1,15 @@
+{
+  op: "record.start",
+  params: {
+    busNames: ["presence"],
+    duration: "0.2s",
+    select: {
+      includeStreamKeys: [
+        "*::presenceRaw:*::presence",
+      ]
+    },
+    meta: {
+      note: "tracking calibration",
+    },
+  }
+}

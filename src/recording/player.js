@@ -1,59 +1,199 @@
-// src/recording/player.js
 import { validateRecording } from './recordingFormat.js'
 
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
-const normalizeRouting = (routing) => {
-  const r = isPlainObject(routing) ? routing : {}
+const parseStreamKey4 = (streamKey) => {
+  const s = String(streamKey || '').trim()
+  if (!s) return null
 
-  const defaultSink = String(r.defaultSink || 'bus').trim() || 'bus'
-  const sinksByStream = isPlainObject(r.sinksByStream) ? r.sinksByStream : {}
+  const parts = s.split('::')
+  if (parts.length < 3) return null
 
-  const map = new Map()
-  for (const [k, v] of Object.entries(sinksByStream)) {
-    const stream = String(k || '').trim()
-    const sink = String(v || '').trim()
-    if (!stream || !sink) continue
-    map.set(stream, sink)
-  }
+  // canonical: who::what::where::why
+  // but match ignores why -> match who/what/where
+  const who = String(parts[0] || '').trim()
+  const what = String(parts[1] || '').trim()
 
-  return { defaultSink, sinksByStream: map }
+  const where = (parts.length >= 4)
+    ? String(parts[2] || '').trim()
+    : String(parts[2] || '').trim()
+
+  const why = (parts.length >= 4)
+    ? String(parts[3] || '').trim()
+    : null
+
+  if (!who || !what || !where) return null
+  return { who, what, where, why }
 }
 
-const resolveSink = ({ stream, routing }) => {
-  const by = routing?.sinksByStream
-  if (by && by.has(stream)) return by.get(stream)
-  return routing?.defaultSink || 'bus'
+const patternToParts3 = (pattern) => {
+  const s = String(pattern || '').trim()
+  if (!s) return null
+
+  const parts = s.split('::')
+  if (parts.length < 3) return null
+
+  const who = String(parts[0] || '').trim()
+  const what = String(parts[1] || '').trim()
+  const where = String(parts[2] || '').trim()
+
+  if (!who || !what || !where) return null
+  return { who, what, where }
+}
+
+const matchSegment = (pattern, value) => {
+  const p = String(pattern || '')
+  const v = String(value || '')
+
+  let pi = 0
+  let vi = 0
+  let star = -1
+  let starVi = -1
+
+  while (vi < v.length) {
+    if (pi < p.length && (p[pi] === '?' || p[pi] === v[vi])) {
+      pi += 1
+      vi += 1
+      continue
+    }
+
+    if (pi < p.length && p[pi] === '*') {
+      star = pi
+      starVi = vi
+      pi += 1
+      continue
+    }
+
+    if (star !== -1) {
+      pi = star + 1
+      starVi += 1
+      vi = starVi
+      continue
+    }
+
+    return false
+  }
+
+  while (pi < p.length && p[pi] === '*') pi += 1
+  return pi === p.length
+}
+
+const matchStreamKey3 = ({ pattern, streamKey }) => {
+  const p = patternToParts3(pattern)
+  const sk = parseStreamKey4(streamKey)
+  if (!p || !sk) return false
+
+  if (!matchSegment(p.who, sk.who)) return false
+  if (!matchSegment(p.what, sk.what)) return false
+  if (!matchSegment(p.where, sk.where)) return false
+
+  return true
+}
+
+const normalizeRoutingByStreamKey = (routingByStreamKey) => {
+  const r = isPlainObject(routingByStreamKey) ? routingByStreamKey : null
+  if (!r) {
+    const err = new Error('missing_routingByStreamKey')
+    err.code = 'BAD_REQUEST'
+    throw err
+  }
+
+  const rules = []
+  for (const [k, v] of Object.entries(r)) {
+    const pattern = String(k || '').trim()
+    const sink = String(v || '').trim()
+
+    if (!pattern || !sink) continue
+    rules.push({ pattern, sink })
+  }
+
+  if (!rules.length) {
+    const err = new Error('empty_routingByStreamKey')
+    err.code = 'BAD_REQUEST'
+    throw err
+  }
+
+  return rules
+}
+
+const resolveSink = ({ streamKey, rules }) => {
+  for (const r of rules) {
+    if (matchStreamKey3({ pattern: r.pattern, streamKey })) {
+      return r.sink
+    }
+  }
+
+  return 'discard'
+}
+
+const normalizeInterval = ({ interval, maxIndex }) => {
+  if (!interval) return null
+
+  if (!Array.isArray(interval) || interval.length !== 2) {
+    const err = new Error('invalid_interval')
+    err.code = 'BAD_REQUEST'
+    throw err
+  }
+
+  const a = Number(interval[0])
+  const b = Number(interval[1])
+
+  if (!Number.isFinite(a) || !Number.isFinite(b)) {
+    const err = new Error('invalid_interval_bounds')
+    err.code = 'BAD_REQUEST'
+    throw err
+  }
+
+  const fromRaw = Math.floor(a)
+  const toRaw = Math.floor(b)
+
+  const from = Math.max(0, Math.min(maxIndex, fromRaw))
+  const to = Math.max(0, Math.min(maxIndex, toRaw))
+
+  if (from > to) {
+    const err = new Error('interval_from_gt_to')
+    err.code = 'BAD_REQUEST'
+    throw err
+  }
+
+  return { from, to }
 }
 
 export class Player {
   #logger
   #deviceManager
+  #buses
   #nowMs
   #setTimeout
   #clearTimeout
 
   #recording
   #events
+  #streamsObserved
 
   #state
   #speed
 
   #timer
-  #nextIndex
+  #nextPos
 
   #baseRealMs
   #baseLogicalMs
 
   #stats
 
-  #routing
+  #routingRules
+  #rewriteTs
+
   #isolation
   #blockToken
 
-  constructor({ logger, deviceManager, nowMs, setTimeoutFn, clearTimeoutFn }) {
+  #interval
+
+  constructor({ logger, deviceManager, buses, nowMs, setTimeoutFn, clearTimeoutFn }) {
     this.#logger = logger
     this.#deviceManager = deviceManager
+    this.#buses = buses || {}
 
     this.#nowMs = typeof nowMs === 'function' ? nowMs : () => Date.now()
     this.#setTimeout = typeof setTimeoutFn === 'function' ? setTimeoutFn : setTimeout
@@ -61,12 +201,13 @@ export class Player {
 
     this.#recording = null
     this.#events = []
+    this.#streamsObserved = {}
 
     this.#state = 'idle'
     this.#speed = 1
 
     this.#timer = null
-    this.#nextIndex = 0
+    this.#nextPos = 0
 
     this.#baseRealMs = 0
     this.#baseLogicalMs = 0
@@ -74,13 +215,19 @@ export class Player {
     this.#stats = {
       dispatched: 0,
       injected: 0,
+      published: 0,
+      skipped: 0,
       failed: 0,
       lastError: null,
     }
 
-    this.#routing = normalizeRouting(null)
+    this.#routingRules = []
+    this.#rewriteTs = false
+
     this.#isolation = null
     this.#blockToken = null
+
+    this.#interval = null
   }
 
   load(recording) {
@@ -95,19 +242,22 @@ export class Player {
 
     this.#recording = recording
     this.#events = Array.isArray(recording.events) ? recording.events : []
+    this.#streamsObserved = isPlainObject(recording.streamsObserved) ? recording.streamsObserved : {}
 
     this.#state = 'loaded'
-    this.#nextIndex = 0
+    this.#nextPos = 0
 
     this.#stats = {
       dispatched: 0,
       injected: 0,
+      published: 0,
+      skipped: 0,
       failed: 0,
       lastError: null,
     }
   }
 
-  start({ speed = 1, routing, isolation } = {}) {
+  start({ speed = 1, routingByStreamKey, rewriteTs = false, isolation, interval } = {}) {
     if (!this.#recording) {
       const err = new Error('recording_not_loaded')
       err.code = 'BAD_REQUEST'
@@ -123,8 +273,18 @@ export class Player {
       throw err
     }
 
-    this.#routing = normalizeRouting(routing)
+    this.#routingRules = normalizeRoutingByStreamKey(routingByStreamKey)
+    this.#rewriteTs = rewriteTs === true
+
     this.#isolation = isPlainObject(isolation) ? { ...isolation } : null
+
+    const maxIndex = this.#events.length
+      ? Math.max(...this.#events.map((e) => Number.isFinite(e?.i) ? e.i : -1))
+      : -1
+
+    this.#interval = (maxIndex >= 0)
+      ? normalizeInterval({ interval, maxIndex })
+      : null
 
     this.#maybeBlockDevices()
 
@@ -187,7 +347,7 @@ export class Player {
     this.#maybeUnblockDevices()
 
     this.#state = this.#recording ? 'loaded' : 'idle'
-    this.#nextIndex = 0
+    this.#nextPos = 0
 
     this.#baseRealMs = 0
     this.#baseLogicalMs = 0
@@ -195,7 +355,7 @@ export class Player {
 
   getSnapshot() {
     const total = this.#events.length
-    const idx = this.#nextIndex
+    const pos = this.#nextPos
 
     const positionMs = this.#state === 'playing'
       ? this.#logicalNowMs()
@@ -207,17 +367,21 @@ export class Player {
       state: this.#state,
       speed: this.#speed,
       totalEvents: total,
-      nextIndex: idx,
+      nextPos: pos,
       positionMs,
       totalMs,
+
       dispatched: this.#stats.dispatched,
       injected: this.#stats.injected,
+      published: this.#stats.published,
+      skipped: this.#stats.skipped,
       failed: this.#stats.failed,
       lastError: this.#stats.lastError,
-      routing: {
-        defaultSink: this.#routing.defaultSink,
-        sinksByStream: Object.fromEntries(this.#routing.sinksByStream.entries()),
-      },
+
+      rewriteTs: this.#rewriteTs,
+      interval: this.#interval ? { ...this.#interval } : null,
+
+      routingByStreamKey: this.#routingRules.map((r) => ({ ...r })),
       isolation: this.#blockToken ? { token: this.#blockToken } : null,
     }
   }
@@ -238,17 +402,32 @@ export class Player {
     this.#timer = null
   }
 
+  #inInterval(ev) {
+    if (!this.#interval) return true
+
+    const i = Number(ev?.i)
+    if (!Number.isFinite(i)) return false
+
+    return i >= this.#interval.from && i <= this.#interval.to
+  }
+
   #scheduleNext() {
     if (this.#state !== 'playing') return
 
-    while (this.#nextIndex < this.#events.length) {
+    while (this.#nextPos < this.#events.length) {
+      const ev = this.#events[this.#nextPos]
+      this.#nextPos += 1
+
+      if (!this.#inInterval(ev)) {
+        this.#stats.skipped += 1
+        continue
+      }
+
       const logicalNow = this.#logicalNowMs()
-      const next = this.#events[this.#nextIndex]
-      const dt = next.tMs - logicalNow
+      const dt = ev.tMs - logicalNow
 
       if (dt <= 0) {
-        this.#dispatch(next)
-        this.#nextIndex += 1
+        this.#dispatch(ev)
         continue
       }
 
@@ -263,43 +442,60 @@ export class Player {
     }
 
     this.#state = 'loaded'
+    if (this.#isolation?.unblockOnStop === true) {
+      this.#maybeUnblockDevices()
+    }
   }
 
   #dispatch(ev) {
     this.#stats.dispatched += 1
 
-    const stream = String(ev?.stream || '').trim()
-    const raw = ev?.raw
+    const raw0 = ev?.raw
+    const streamKey = String(raw0?.streamKey || '').trim()
+    if (!streamKey) {
+      this.#stats.failed += 1
+      this.#stats.lastError = 'MISSING_STREAMKEY'
+      return
+    }
 
-    const sink = resolveSink({ stream, routing: this.#routing })
+    const sink = resolveSink({ streamKey, rules: this.#routingRules })
+    if (sink === 'discard') {
+      this.#stats.skipped += 1
+      return
+    }
 
     if (sink === 'device') {
-      return this.#dispatchToDevice({ raw, stream })
+      return this.#dispatchToDevice({ raw: raw0, streamKey })
     }
 
     if (sink === 'bus') {
-      this.#stats.failed += 1
-      this.#stats.lastError = 'BUS_SINK_NOT_IMPLEMENTED'
-
-      this.#logger?.warning?.('player_bus_sink_not_implemented', { stream })
-      return
+      return this.#dispatchToBus({ raw: raw0, streamKey })
     }
 
     this.#stats.failed += 1
     this.#stats.lastError = 'UNKNOWN_SINK'
-
-    this.#logger?.warning?.('player_unknown_sink', { stream, sink })
+    this.#logger?.warning?.('player_unknown_sink', { sink, streamKey })
   }
 
-  #dispatchToDevice({ raw, stream }) {
+  #dispatchToDevice({ raw, streamKey }) {
     const payload = raw?.payload
-    const deviceId = String(payload?.deviceId || '').trim()
+    const publishAs = String(payload?.publishAs || '').trim()
+
+    if (!publishAs) {
+      this.#stats.failed += 1
+      this.#stats.lastError = 'MISSING_PUBLISHAS'
+      this.#logger?.warning?.('player_missing_publishAs', { streamKey })
+      return
+    }
+
+    const resolver = this.#deviceManager?.resolveDeviceIdByPublishAs
+    const deviceId = typeof resolver === 'function'
+      ? String(resolver.call(this.#deviceManager, publishAs) || '').trim()
+      : ''
 
     if (!deviceId) {
-      this.#stats.failed += 1
-      this.#stats.lastError = 'MISSING_DEVICE_ID'
-
-      this.#logger?.warning?.('player_missing_device_id', { stream })
+      this.#stats.skipped += 1
+      this.#logger?.warning?.('player_publishAs_not_resolved', { publishAs, streamKey })
       return
     }
 
@@ -311,7 +507,8 @@ export class Player {
 
         this.#logger?.warning?.('player_inject_failed', {
           deviceId,
-          stream,
+          publishAs,
+          streamKey,
           error: out?.error,
           message: out?.message,
         })
@@ -326,9 +523,43 @@ export class Player {
 
       this.#logger?.warning?.('player_inject_throw', {
         deviceId,
-        stream,
+        publishAs,
+        streamKey,
         error: e?.message || String(e),
       })
+    }
+  }
+
+  #dispatchToBus({ raw, streamKey }) {
+    const meta = this.#streamsObserved?.[streamKey]
+    const busId = String(meta?.bus || '').trim()
+
+    if (!busId) {
+      this.#stats.failed += 1
+      this.#stats.lastError = 'MISSING_STREAM_OBSERVED_BUS'
+      this.#logger?.warning?.('player_missing_stream_bus', { streamKey })
+      return
+    }
+
+    const bus = this.#buses?.[busId]
+    if (!bus || typeof bus.publish !== 'function') {
+      this.#stats.failed += 1
+      this.#stats.lastError = 'BUS_NOT_FOUND'
+      this.#logger?.warning?.('player_bus_not_found', { busId, streamKey })
+      return
+    }
+
+    const out = this.#rewriteTs
+      ? { ...raw, ts: this.#nowMs() }
+      : raw
+
+    try {
+      bus.publish(out)
+      this.#stats.published += 1
+    } catch (e) {
+      this.#stats.failed += 1
+      this.#stats.lastError = e?.code || 'BUS_PUBLISH_THROW'
+      this.#logger?.warning?.('player_bus_publish_throw', { busId, streamKey, error: e?.message || String(e) })
     }
   }
 
@@ -336,21 +567,54 @@ export class Player {
     if (!this.#isolation) return
     if (!this.#deviceManager?.blockDevices) return
 
+    const blockCfg = this.#isolation.blockDevices
+    if (blockCfg !== true && !Array.isArray(blockCfg)) return
+
     const owner = String(this.#isolation.owner || '').trim() || 'recordingPlayer'
     const reason = String(this.#isolation.reason || '').trim() || 'playback'
 
-    const deviceIds = new Set()
+    const publishAsSet = new Set()
 
-    for (const ev of this.#events) {
-      const stream = String(ev?.stream || '').trim()
-      const sink = resolveSink({ stream, routing: this.#routing })
-      if (sink !== 'device') continue
+    if (blockCfg === true) {
+      for (const ev of this.#events) {
+        if (!this.#inInterval(ev)) continue
 
-      const deviceId = String(ev?.raw?.payload?.deviceId || '').trim()
-      if (deviceId) deviceIds.add(deviceId)
+        const raw = ev?.raw
+        const streamKey = String(raw?.streamKey || '').trim()
+        if (!streamKey) continue
+
+        const sink = resolveSink({ streamKey, rules: this.#routingRules })
+        if (sink !== 'device') continue
+
+        const publishAs = String(raw?.payload?.publishAs || '').trim()
+        if (publishAs) publishAsSet.add(publishAs)
+      }
+    } else {
+      for (const x of blockCfg) {
+        const p = String(x || '').trim()
+        if (p) publishAsSet.add(p)
+      }
     }
 
-    const ids = [...deviceIds]
+    const publishAsArr = [...publishAsSet]
+    if (!publishAsArr.length) return
+
+    const resolver = this.#deviceManager?.resolveDeviceIdByPublishAs
+    const ids = []
+
+    for (const publishAs of publishAsArr) {
+      const deviceId = typeof resolver === 'function'
+        ? String(resolver.call(this.#deviceManager, publishAs) || '').trim()
+        : ''
+
+      if (!deviceId) {
+        this.#logger?.warning?.('player_block_publishAs_not_resolved', { publishAs })
+        continue
+      }
+
+      ids.push(deviceId)
+    }
+
     if (!ids.length) return
 
     try {

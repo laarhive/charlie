@@ -1,15 +1,18 @@
-// src/recording/recordingStore.js
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import JSON5 from 'json5'
 
 import { validateRecording, normalizeRecordingPath } from './recordingFormat.js'
+import { formatRecording } from './recordingFormatter.js'
+import { formattersByRawType } from './formattersByRawType.js'
 
 export class RecordingStore {
   #baseDir
+  #logger
 
-  constructor({ baseDir }) {
+  constructor({ baseDir, logger }) {
     this.#baseDir = String(baseDir || './recordings')
+    this.#logger = logger
   }
 
   getBaseDir() {
@@ -48,7 +51,13 @@ export class RecordingStore {
     const name = this.#ensureExt(rawName)
     const safePath = normalizeRecordingPath({ baseDir: base, nameOrPath: name })
 
-    const body = JSON5.stringify(recording, null, 2)
+    const body = formatRecording({
+      rec: recording,
+      formattersByRawType,
+      logger: this.#logger,
+      extrasPolicy: 'append',   // 'append' | 'omit' | 'comment'
+      verifyRoundTrip: true
+    })
     await fs.writeFile(safePath, body, 'utf8')
 
     return { ok: true, path: safePath }

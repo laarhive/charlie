@@ -71,6 +71,7 @@ export const makeContext = function makeContext({ logger, config, mode }) {
     deviceManager,
     clock,
     config,
+    mode,
   })
 
   const serverSurface = makeServerSurface({

@@ -13,7 +13,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const projectRoot = path.resolve(__dirname, '..', '..')
 
-const normalizeConfigRelPath = (p) => {
+const normalizeConfigRelPath = function normalizeConfigRelPath(p) {
   const raw = String(p || '').trim()
   if (!raw) return null
 
@@ -27,7 +27,7 @@ const normalizeConfigRelPath = (p) => {
   return raw
 }
 
-const resolveFromProjectRoot = (p) => {
+const resolveFromProjectRoot = function resolveFromProjectRoot(p) {
   const v = normalizeConfigRelPath(p)
   if (!v) return null
 
@@ -35,7 +35,7 @@ const resolveFromProjectRoot = (p) => {
   return path.resolve(projectRoot, v)
 }
 
-const parseDurationMs = (v) => {
+const parseDurationMs = function parseDurationMs(v) {
   if (v === undefined || v === null) return null
 
   if (typeof v === 'number') {
@@ -59,17 +59,30 @@ const parseDurationMs = (v) => {
   return null
 }
 
-export const RecordingService = function RecordingService({ logger, buses, deviceManager, clock, config }) {
+export const RecordingService = function RecordingService({ logger, buses, deviceManager, clock, config, mode }) {
   const recordingsDirCfg = String(config?.recording?.recordingsDir || './recordings')
   const recordingsDirAbs = resolveFromProjectRoot(recordingsDirCfg) || path.resolve(projectRoot, 'recordings')
 
   const cmdsDirAbs = path.resolve(recordingsDirAbs, 'cmds')
-  const store = new RecordingStore({ baseDir: recordingsDirAbs })
+  const store = new RecordingStore({ baseDir: recordingsDirAbs, logger })
+
+  const serviceMode = String(
+    mode ??
+    config?.mode ??
+    config?.runtime?.mode ??
+    ''
+  ).trim()
+
+  if (!serviceMode) {
+    const err = new Error('missing_service_mode')
+    err.code = 'BAD_REQUEST'
+    throw err
+  }
 
   let recorderSession = null
   let playerSession = null
 
-  const normalizeBusNames = (busNames) => {
+  const normalizeBusNames = function normalizeBusNames(busNames) {
     const raw = Array.isArray(busNames) ? busNames : []
 
     const out = raw
@@ -85,7 +98,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return Array.from(new Set(out))
   }
 
-  const nowLocalStamp = () => {
+  const nowLocalStamp = function nowLocalStamp() {
     const d = new Date()
 
     const yy = String(d.getFullYear() % 100).padStart(2, '0')
@@ -99,7 +112,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return `${yy}${mm}${dd}-${hh}${mi}${ss}`
   }
 
-  const sanitizeFileToken = (s, { maxLen = 48 } = {}) => {
+  const sanitizeFileToken = function sanitizeFileToken(s, { maxLen = 48 } = {}) {
     const raw = String(s || '').trim()
     if (!raw) return ''
 
@@ -110,13 +123,13 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return collapsed.slice(0, maxLen)
   }
 
-  const baseFromCmdFile = (cmdFile) => {
+  const baseFromCmdFile = function baseFromCmdFile(cmdFile) {
     const b = path.basename(String(cmdFile || '').trim())
     const noExt = b.replace(/\.json5$/i, '')
     return sanitizeFileToken(noExt, { maxLen: 64 }) || 'recording'
   }
 
-  const ensureJson5Name = (name, { what }) => {
+  const ensureJson5Name = function ensureJson5Name(name, { what }) {
     const s = String(name || '').trim()
     if (!s) {
       const err = new Error(`missing_${what}`)
@@ -133,7 +146,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return s
   }
 
-  const resolveInsideDir = (baseDir, nameOrRelPath, { what }) => {
+  const resolveInsideDir = function resolveInsideDir(baseDir, nameOrRelPath, { what }) {
     const name = ensureJson5Name(nameOrRelPath, { what })
 
     const rel = (name.startsWith('/') || name.startsWith('\\'))
@@ -152,7 +165,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return full
   }
 
-  const loadCmdFile = async (cmdFile) => {
+  const loadCmdFile = async function loadCmdFile(cmdFile) {
     const fullPath = resolveInsideDir(cmdsDirAbs, cmdFile, { what: 'cmdFile' })
 
     let txt
@@ -182,7 +195,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     }
   }
 
-  const requirePlayer = () => {
+  const requirePlayer = function requirePlayer() {
     if (!playerSession?.player) {
       const err = new Error('player_not_loaded')
       err.code = 'BAD_REQUEST'
@@ -192,7 +205,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return playerSession.player
   }
 
-  const getSnapshot = () => {
+  const getSnapshot = function getSnapshot() {
     const recSnap = recorderSession?.recorder?.getSnapshot ? recorderSession.recorder.getSnapshot() : null
     const playSnap = playerSession?.player?.getSnapshot ? playerSession.player.getSnapshot() : null
 
@@ -218,7 +231,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     }
   }
 
-  const recordStart = ({ busNames, duration, durationMs, outFileBase, meta, comment, filter } = {}) => {
+  const recordStart = ({ busNames, duration, durationMs, outFileBase, meta, comment, select } = {}) => {
     if (recorderSession?.state === 'recording') {
       const err = new Error('recording_already_running')
       err.code = 'CONFLICT'
@@ -241,13 +254,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     }
 
     const sessionMeta = meta && typeof meta === 'object' ? { ...meta } : {}
-
-    const mode = String(sessionMeta.mode || '').trim()
-    if (!mode) {
-      const err = new Error('missing_meta_mode')
-      err.code = 'BAD_REQUEST'
-      throw err
-    }
+    delete sessionMeta.mode
 
     const commentStr = String(comment || '').trim() || null
     const commentSuffix = commentStr ? sanitizeFileToken(commentStr, { maxLen: 48 }) : ''
@@ -260,9 +267,9 @@ export const RecordingService = function RecordingService({ logger, buses, devic
       buses,
       busNames: busesToUse,
       nowMs: () => Date.now(),
-      filter,
+      select,
       meta: {
-        mode,
+        mode: serviceMode,
         recordedAtClockMs: clock?.nowMs ? clock.nowMs() : Date.now(),
         comment: commentStr || undefined,
         commentSuffix: commentSuffix || undefined,
@@ -306,7 +313,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return getSnapshot()
   }
 
-  const recordStop = async ({ reason } = {}) => {
+  const recordStop = async function recordStop({ reason } = {}) {
     if (!recorderSession || recorderSession.state !== 'recording') {
       const err = new Error('recording_not_running')
       err.code = 'BAD_REQUEST'
@@ -340,7 +347,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     }
   }
 
-  const playLoad = async ({ path: p } = {}) => {
+  const playLoad = async function playLoad({ path: p } = {}) {
     const file = String(p || '').trim()
     if (!file) {
       const err = new Error('missing_path')
@@ -355,6 +362,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
         player: new Player({
           logger,
           deviceManager,
+          buses,
           nowMs: () => Date.now(),
         }),
         loadedPath: null,
@@ -370,12 +378,13 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return getSnapshot()
   }
 
-  const playStart = ({ speed, routing, isolation } = {}) => {
+  const playStart = function playStart({ speed, routingByStreamKey, rewriteTs, isolation } = {}) {
     const player = requirePlayer()
 
     player.start({
       speed: speed === undefined ? 1 : speed,
-      routing,
+      routingByStreamKey,
+      rewriteTs: rewriteTs === true,
       isolation,
     })
 
@@ -383,25 +392,25 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return getSnapshot()
   }
 
-  const playPause = () => {
+  const playPause = function playPause() {
     const player = requirePlayer()
     player.pause()
     return getSnapshot()
   }
 
-  const playResume = ({ speed } = {}) => {
+  const playResume = function playResume({ speed } = {}) {
     const player = requirePlayer()
     player.resume({ speed })
     return getSnapshot()
   }
 
-  const playStop = () => {
+  const playStop = function playStop() {
     const player = requirePlayer()
     player.stop()
     return getSnapshot()
   }
 
-  const doHandle = async ({ op, params } = {}) => {
+  const doHandle = async function doHandle({ op, params } = {}) {
     const kind = String(op || '').trim()
     const p = params && typeof params === 'object' ? params : {}
 
@@ -421,7 +430,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     throw err
   }
 
-  const handle = async ({ op, params } = {}) => {
+  const handle = async function handle({ op, params } = {}) {
     try {
       const data = await doHandle({ op, params })
       return { ok: true, data }
@@ -442,7 +451,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     }
   }
 
-  const handleCli = async (cmd) => {
+  const handleCli = async function handleCli(cmd) {
     const op = String(cmd?.op || '').trim()
     const params = cmd?.params && typeof cmd.params === 'object' ? cmd.params : {}
 
@@ -486,13 +495,17 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     if (op === 'play.start') {
       const p = params?.path
       const speed = params?.speed
-      const routing = params?.routing
+      const routingByStreamKey = params?.routingByStreamKey
+      const rewriteTs = params?.rewriteTs
       const isolation = params?.isolation
 
       const loaded = await handle({ op: 'play.load', params: { path: p } })
       if (!loaded?.ok) return loaded
 
-      return await handle({ op: 'play.start', params: { speed, routing, isolation } })
+      return await handle({
+        op: 'play.start',
+        params: { speed, routingByStreamKey, rewriteTs, isolation },
+      })
     }
 
     return await handle({ op, params })

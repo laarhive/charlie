@@ -22,6 +22,8 @@ export class DeviceManager {
   #deviceById
   #stateById
 
+  #deviceIdByPublishAs
+
   #unsubMain
 
   #blockTokenSeq
@@ -43,6 +45,8 @@ export class DeviceManager {
     this.#deviceById = new Map()
     this.#stateById = new Map()
 
+    this.#deviceIdByPublishAs = new Map()
+
     this.#unsubMain = null
 
     this.#blockTokenSeq = 0
@@ -52,12 +56,27 @@ export class DeviceManager {
 
   get streamKeyWho() { return 'deviceManager' }
 
+  resolveDeviceIdByPublishAs(publishAs) {
+    const key = String(publishAs || '').trim()
+    if (!key) return null
+    return this.#deviceIdByPublishAs.get(key) || null
+  }
+
   start() {
     const devices = Array.isArray(this.#config?.devices) ? this.#config.devices : []
 
+    this.#deviceConfigById.clear()
+    this.#deviceIdByPublishAs.clear()
+
+    this.#indexPublishAsMappings(devices)
+
     for (const cfg of devices) {
       if (!cfg?.id) continue
-      this.#deviceConfigById.set(cfg.id, cfg)
+
+      const id = String(cfg.id).trim()
+      if (!id) continue
+
+      this.#deviceConfigById.set(id, cfg)
     }
 
     this.#usbInventory.start()
@@ -122,6 +141,7 @@ export class DeviceManager {
     this.#deviceById.clear()
     this.#deviceConfigById.clear()
     this.#stateById.clear()
+    this.#deviceIdByPublishAs.clear()
 
     this.#blockTokensByDeviceId.clear()
     this.#blockedDeviceIdsByToken.clear()
@@ -236,16 +256,17 @@ export class DeviceManager {
       blocked.add(id)
 
       if (wasEmpty) {
-        // First token takes effect -> use existing semantics
         this.block(id, r)
       } else {
-        // Already blocked by other tokens; no-op
+        // already blocked; no-op
       }
     }
 
     if (blocked.size) {
       this.#blockedDeviceIdsByToken.set(token, blocked)
     }
+
+    this.#logger?.notice?.('device_block_tokens_added', { token, owner: o, reason: r, deviceIds: [...blocked] })
 
     return { ok: true, token }
   }
@@ -257,18 +278,32 @@ export class DeviceManager {
     const ids = this.#blockedDeviceIdsByToken.get(t)
     if (!ids || !ids.size) return { ok: true }
 
+    const fullyUnblocked = []
+    const stillBlocked = []
+
     for (const id of ids) {
       const tokens = this.#blockTokensByDeviceId.get(id)
       if (!tokens) continue
 
       tokens.delete(t)
+
       if (tokens.size === 0) {
         this.#blockTokensByDeviceId.delete(id)
         this.unblock(id, 'token')
+        fullyUnblocked.push(id)
+      } else {
+        stillBlocked.push(id)
       }
     }
 
     this.#blockedDeviceIdsByToken.delete(t)
+
+    this.#logger?.notice?.('device_block_tokens_removed', {
+      token: t,
+      fullyUnblocked,
+      stillBlocked,
+    })
+
     return { ok: true }
   }
 
@@ -289,6 +324,32 @@ export class DeviceManager {
       return { ok: true }
     } catch (e) {
       return { ok: false, error: deviceErrorCodes.injectFailed, message: e?.message || String(e) }
+    }
+  }
+
+  #indexPublishAsMappings(devices) {
+    this.#deviceIdByPublishAs.clear()
+
+    const raw = Array.isArray(devices) ? devices : []
+
+    for (const cfg of raw) {
+      if (!cfg?.id) continue
+
+      const id = String(cfg.id).trim()
+      if (!id) continue
+
+      const publishAs = String(cfg.publishAs ?? id).trim()
+      if (!publishAs) continue
+
+      const existing = this.#deviceIdByPublishAs.get(publishAs)
+      if (existing && existing !== id) {
+        const err = new Error('duplicate_publishAs')
+        err.code = 'CONFIG_INVALID'
+        err.detail = { publishAs, a: existing, b: id }
+        throw err
+      }
+
+      this.#deviceIdByPublishAs.set(publishAs, id)
     }
   }
 

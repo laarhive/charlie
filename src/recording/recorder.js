@@ -1,56 +1,147 @@
-// src/recording/recorder.js
 import { RECORDING_FORMAT, RECORDING_VERSION } from './recordingFormat.js'
+import { shortId } from '../utils/shortId.js'
 
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
-const deriveStream = (raw) => {
-  const p = isPlainObject(raw?.payload) ? raw.payload : null
+const parseStreamKey3 = (streamKey) => {
+  const s = String(streamKey || '').trim()
+  if (!s) return null
 
-  const a = String(p?.publishAs || '').trim()
-  if (a) return a
+  const parts = s.split('::')
+  if (parts.length < 3) return null
 
-  const b = String(p?.deviceId || '').trim()
-  if (b) return b
+  const who = String(parts[0] || '').trim()
+  const what = String(parts[1] || '').trim()
 
-  const c = String(raw?.source || '').trim()
-  if (c) return c
+  // key is who::what::where::why, but we match who::what::where and ignore why
+  // For 4 segments, "where" is segment 3. For 3 segments, it's segment 3.
+  const where = (parts.length >= 4)
+    ? String(parts[2] || '').trim()
+    : String(parts[2] || '').trim()
 
-  const d = String(raw?.type || '').trim()
-  if (d) return d
-
-  return ''
+  if (!who || !what || !where) return null
+  return { who, what, where }
 }
 
-const normalizeFilter = (filter) => {
-  const f = isPlainObject(filter) ? filter : {}
+const patternToParts3 = (pattern) => {
+  const s = String(pattern || '').trim()
+  if (!s) return null
+
+  const parts = s.split('::')
+  if (parts.length < 3) return null
+
+  const who = String(parts[0] || '').trim()
+  const what = String(parts[1] || '').trim()
+  const where = String(parts[2] || '').trim()
+
+  if (!who || !what || !where) return null
+  return { who, what, where }
+}
+
+const matchSegment = (pattern, value) => {
+  const p = String(pattern || '')
+  const v = String(value || '')
+
+  // '*' matches any (including empty, but our values are validated non-empty upstream)
+  // '?' matches exactly one char
+  let pi = 0
+  let vi = 0
+  let star = -1
+  let starVi = -1
+
+  while (vi < v.length) {
+    if (pi < p.length && (p[pi] === '?' || p[pi] === v[vi])) {
+      pi += 1
+      vi += 1
+      continue
+    }
+
+    if (pi < p.length && p[pi] === '*') {
+      star = pi
+      starVi = vi
+      pi += 1
+      continue
+    }
+
+    if (star !== -1) {
+      pi = star + 1
+      starVi += 1
+      vi = starVi
+      continue
+    }
+
+    return false
+  }
+
+  while (pi < p.length && p[pi] === '*') pi += 1
+  return pi === p.length
+}
+
+const matchStreamKey3 = ({ pattern, streamKey }) => {
+  const p = patternToParts3(pattern)
+  const sk = parseStreamKey3(streamKey)
+  if (!p || !sk) return false
+
+  if (!matchSegment(p.who, sk.who)) return false
+  if (!matchSegment(p.what, sk.what)) return false
+  if (!matchSegment(p.where, sk.where)) return false
+
+  return true
+}
+
+const normalizeSelect = (select) => {
+  const s = isPlainObject(select) ? select : {}
 
   const arr = (v) => (Array.isArray(v) ? v.map((x) => String(x || '').trim()).filter(Boolean) : [])
 
-  const includeStreams = arr(f.includeStreams)
-  const excludeStreams = arr(f.excludeStreams)
-  const includeTypes = arr(f.includeTypes)
-  const excludeTypes = arr(f.excludeTypes)
+  const includeStreamKeys = arr(s.includeStreamKeys)
+  const excludeStreamKeys = arr(s.excludeStreamKeys)
 
   return {
-    includeStreams: includeStreams.length ? new Set(includeStreams) : null,
-    excludeStreams: excludeStreams.length ? new Set(excludeStreams) : null,
-    includeTypes: includeTypes.length ? new Set(includeTypes) : null,
-    excludeTypes: excludeTypes.length ? new Set(excludeTypes) : null,
+    includeStreamKeys: includeStreamKeys.length ? includeStreamKeys : null,
+    excludeStreamKeys: excludeStreamKeys.length ? excludeStreamKeys : null,
   }
 }
 
-const passesFilter = ({ stream, raw, filter }) => {
-  if (!filter) return true
+const passesSelect = ({ raw, select }) => {
+  if (!select) return true
 
-  if (filter.includeStreams && !filter.includeStreams.has(stream)) return false
-  if (filter.excludeStreams && filter.excludeStreams.has(stream)) return false
+  const streamKey = String(raw?.streamKey || '').trim()
+  if (!streamKey) return false
 
-  const t = String(raw?.type || '').trim()
+  if (select.includeStreamKeys) {
+    let ok = false
+    for (const p of select.includeStreamKeys) {
+      if (matchStreamKey3({ pattern: p, streamKey })) {
+        ok = true
+        break
+      }
+    }
 
-  if (filter.includeTypes && !filter.includeTypes.has(t)) return false
-  if (filter.excludeTypes && filter.excludeTypes.has(t)) return false
+    if (!ok) return false
+  }
+
+  if (select.excludeStreamKeys) {
+    for (const p of select.excludeStreamKeys) {
+      if (matchStreamKey3({ pattern: p, streamKey })) {
+        return false
+      }
+    }
+  }
 
   return true
+}
+
+const deriveKindHint = (raw) => {
+  const p = isPlainObject(raw?.payload) ? raw.payload : null
+  const publishAs = String(p?.publishAs || '').trim()
+  if (publishAs) return 'device'
+
+  const source = String(raw?.source || '').trim().toLowerCase()
+  if (source.includes('controller')) return 'controller'
+  if (source.includes('manager')) return 'system'
+
+  return 'unknown'
 }
 
 export class Recorder {
@@ -69,9 +160,14 @@ export class Recorder {
 
   #events
   #meta
-  #filter
+  #select
 
-  constructor({ logger, buses, busNames, nowMs, meta, filter }) {
+  #sessionId
+  #eventSeq
+
+  #streamsObserved
+
+  constructor({ logger, buses, busNames, nowMs, meta, select }) {
     this.#logger = logger
     this.#buses = buses || {}
 
@@ -92,7 +188,12 @@ export class Recorder {
     this.#events = []
 
     this.#meta = isPlainObject(meta) ? { ...meta } : {}
-    this.#filter = normalizeFilter(filter)
+    this.#select = normalizeSelect(select)
+
+    this.#sessionId = shortId()
+    this.#eventSeq = 0
+
+    this.#streamsObserved = {}
   }
 
   start() {
@@ -104,6 +205,12 @@ export class Recorder {
     this.#t0Ms = this.#nowMs()
     this.#lastTMs = -1
     this.#warnedNonMonotonic = false
+
+    this.#sessionId = shortId()
+    this.#eventSeq = 0
+
+    this.#events = []
+    this.#streamsObserved = {}
 
     for (const busName of this.#busNames) {
       const b = this.#buses?.[busName]
@@ -119,9 +226,7 @@ export class Recorder {
       this.#unsubs.push(unsub)
     }
 
-    this.#logger?.notice?.('recorder_started', {
-      buses: this.#busNames,
-    })
+    this.#logger?.notice?.('recorder_started', { buses: this.#busNames })
   }
 
   stop() {
@@ -152,8 +257,26 @@ export class Recorder {
       busNames: [...this.#busNames],
       events: this.#events.length,
       lastTMs: this.#lastTMs,
+      sessionId: this.#sessionId,
       meta: { ...this.#meta },
     }
+  }
+
+  #observeStream({ streamKey, raw }) {
+    const sk = parseStreamKey3(streamKey)
+    if (!sk) return
+
+    const bus = sk.where
+    const kind = deriveKindHint(raw)
+
+    if (!this.#streamsObserved[streamKey]) {
+      this.#streamsObserved[streamKey] = { kind, bus }
+      return
+    }
+
+    // keep first observed kind, but ensure bus matches if it was set
+    const existing = this.#streamsObserved[streamKey]
+    if (!existing.bus) existing.bus = bus
   }
 
   #onEvent({ evt }) {
@@ -161,10 +284,11 @@ export class Recorder {
     if (!isPlainObject(evt)) return
 
     const raw = evt
-    const stream = deriveStream(raw)
-    if (!stream) return
 
-    if (!passesFilter({ stream, raw, filter: this.#filter })) return
+    const streamKey = String(raw?.streamKey || '').trim()
+    if (!streamKey) return
+
+    if (!passesSelect({ raw, select: this.#select })) return
 
     const now = this.#nowMs()
     let tMs = now - this.#t0Ms
@@ -184,16 +308,21 @@ export class Recorder {
     try {
       JSON.stringify(raw)
     } catch {
-      this.#logger?.warning?.('recorder_drop_non_serializable', { stream })
+      this.#logger?.warning?.('recorder_drop_non_serializable', { streamKey })
       return
     }
 
-    this.#events.push({ tMs, stream, raw })
+    this.#observeStream({ streamKey, raw })
+
+    const i = this.#eventSeq
+    const id = `${this.#sessionId}-${i}`
+    this.#eventSeq += 1
+
+    this.#events.push({ id, i, tMs, raw })
   }
 
   #buildRecording() {
     const recordedAtMs = this.#nowMs()
-
     const buses = Array.isArray(this.#busNames) ? [...this.#busNames] : []
 
     return {
@@ -205,6 +334,10 @@ export class Recorder {
         buses,
         ...this.#meta,
       },
+
+      timeline: { unit: 'ms' },
+
+      streamsObserved: { ...this.#streamsObserved },
 
       events: this.#events.slice(0),
     }
