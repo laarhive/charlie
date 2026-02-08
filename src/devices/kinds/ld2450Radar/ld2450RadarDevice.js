@@ -61,7 +61,6 @@ export default class Ld2450RadarDevice extends BaseDevice {
 
     this.#decoder = createLd2450StreamDecoder({
       validRule: 'resolution',
-      includeRaw: false,
       maxBufferBytes: 8192,
       emitStats: false,
       nowMs: () => this.#clock.nowMs(),
@@ -155,33 +154,15 @@ export default class Ld2450RadarDevice extends BaseDevice {
       return err(deviceErrorCodes.invalidInjectPayload)
     }
 
-    if (Buffer.isBuffer(payload)) {
-      this.#publishRaw(payload)
-      return ok()
-    }
-
     if (typeof payload === 'object') {
-      if (payload.frame && typeof payload.frame === 'object') {
-        this.#publishFrame(payload.frame)
+      const frame = (payload.frame && typeof payload.frame === 'object')
+        ? payload.frame
+        : payload
+
+      if (frame && typeof frame === 'object') {
+        this.#publishFrame(frame)
         return ok()
       }
-
-      const b64 = payload.base64
-      if (typeof b64 === 'string' && b64.length > 0) {
-        try {
-          const buf = Buffer.from(b64, 'base64')
-          if (buf.length === 0) {
-            return err(deviceErrorCodes.invalidInjectPayload)
-          }
-
-          this.#publishRaw(buf)
-          return ok()
-        } catch {
-          return err(deviceErrorCodes.invalidInjectPayload)
-        }
-      }
-
-      return err(deviceErrorCodes.invalidInjectPayload)
     }
 
     return err(deviceErrorCodes.invalidInjectPayload)

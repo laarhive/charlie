@@ -25,7 +25,6 @@ const isValidByRule = function (t, rule) {
 export const decodeLd2450TrackingFrames = function (buf, opts = {}) {
   const maxFrames = Number.isFinite(opts.maxFrames) ? opts.maxFrames : Infinity
   const validRule = typeof opts.validRule === 'string' ? opts.validRule : 'resolution'
-  const includeRaw = opts.includeRaw === true
 
   const frames = []
   const stats = {
@@ -98,7 +97,6 @@ export const decodeLd2450TrackingFrames = function (buf, opts = {}) {
 
     frames.push({
       offset: headerIdx,
-      raw: includeRaw ? Buffer.from(frameBuf) : undefined,
       targets,
       present,
     })
@@ -121,7 +119,6 @@ export const createLd2450StreamDecoder = function (opts = {}) {
   let totalDropped = 0
 
   const validRule = typeof opts.validRule === 'string' ? opts.validRule : 'resolution'
-  const includeRaw = opts.includeRaw === true
   const maxFramesPerPush = Number.isFinite(opts.maxFramesPerPush) ? opts.maxFramesPerPush : Infinity
   const maxBufferBytes = Number.isFinite(opts.maxBufferBytes) ? opts.maxBufferBytes : 4096
   const noiseLogThreshold = Number.isFinite(opts.noiseLogThreshold) ? opts.noiseLogThreshold : 32
@@ -172,7 +169,6 @@ export const createLd2450StreamDecoder = function (opts = {}) {
     const res = decodeLd2450TrackingFrames(carry, {
       maxFrames: maxFramesPerPush,
       validRule,
-      includeRaw,
     })
 
     totalDropped += res.droppedBytes
