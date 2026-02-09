@@ -1,0 +1,53 @@
+// .recordings/cmds/rec-profile-presenceRaw.json5
+{
+  profile: 'led-bus',
+  record: {
+    op: 'record.start',
+    params: {
+      busNames: [
+        'led'
+      ],
+      duration: '60s',
+      select: {
+        includeStreamKeys: [
+          '*::*::*',
+        ]
+      },
+/*
+      fileBase: 'presenceRaw-calibration',
+      meta: {
+        note: 'tracking calibration',
+      },
+*/
+    },
+/*
+    dur10s: {
+      duration: '10s',
+      meta: {
+        note: 'tracking calibration for 10s',
+      }
+    }
+*/
+  },
+  play: {
+    op: 'play.start',
+    params: {
+      speed: 1,
+      routingByStreamKey: {
+        '*::presenceRaw:*::presence': 'device'
+      },
+      rewriteTs: true,
+      isolation: {
+        blockDevices: [],
+        unblockOnStop: true,
+      }
+    },
+    speed2: {
+      speed: 2
+    },
+
+    last: {
+      // play last file - hardcoded
+    },
+  }
+}
