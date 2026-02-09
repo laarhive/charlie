@@ -159,7 +159,6 @@ const renderValue = ({
                        indentUnit,
                        warn,
                        path = '$',
-                       preferInlineObject = false,
                        asObjectProp = false,
                      }) => {
   if (Array.isArray(value)) {
@@ -186,7 +185,6 @@ const renderValue = ({
         indentUnit,
         warn,
         path,
-        preferInlineObject,
       })
     }
 
@@ -208,7 +206,6 @@ const renderObject = ({
                         indentUnit,
                         warn,
                         path,
-                        preferInlineObject,
                       }) => {
   if (!isPlainObject(obj)) {
     warn(path, 'expected object')
@@ -224,7 +221,7 @@ const renderObject = ({
     ...Object.keys(obj).filter((k) => !layoutKeySet.has(k)),
   ]
 
-  const renderKeyValue = ({ k, childIndentLevel, childPreferInline }) => {
+  const renderKeyValue = ({ k, childIndentLevel }) => {
     const childSpec = isPlainObject(spec?.[k]) ? spec[k] : null
 
     return renderValue({
@@ -234,39 +231,8 @@ const renderObject = ({
       indentUnit,
       warn,
       path: `${path}.${k}`,
-      preferInlineObject: childPreferInline,
       asObjectProp: true,
     })
-  }
-
-  const tryInlineAll = () => {
-    const parts = []
-    const seen = new Set()
-
-    for (const k of orderedKeys) {
-      if (seen.has(k)) continue
-      if (!(k in obj)) continue
-      seen.add(k)
-
-      const rendered = renderKeyValue({
-        k,
-        childIndentLevel: indentLevel,
-        childPreferInline: true,
-      })
-
-      if (rendered === null) return null
-      if (rendered === OMIT) continue
-      if (rendered.includes('\n')) return null
-
-      parts.push(`${formatKey(k)}: ${rendered}`)
-    }
-
-    return parts
-  }
-
-  if (preferInlineObject) {
-    const parts = tryInlineAll()
-    if (parts) return `{ ${parts.join(', ')} }`
   }
 
   const ind = indentOf(indentLevel, indentUnit)
@@ -282,7 +248,6 @@ const renderObject = ({
     const rendered = renderKeyValue({
       k,
       childIndentLevel: indentLevel + 1,
-      childPreferInline: true,
     })
 
     if (rendered === null) return null
@@ -304,7 +269,6 @@ const renderObject = ({
       const rendered = renderKeyValue({
         k,
         childIndentLevel: indentLevel + 1,
-        childPreferInline: true,
       })
 
       if (rendered === null) return null
@@ -338,7 +302,8 @@ const renderObject = ({
     if (ok === null) return null
   }
 
-  for (const k of Object.keys(obj)) {
+  // append semantics: emit remaining keys in layout+append order
+  for (const k of orderedKeys) {
     const ok = emitSingleKey(k)
     if (ok === null) return null
   }
@@ -379,7 +344,6 @@ const renderArray = ({
         indentUnit,
         warn,
         path: `${path}[${i}]`,
-        preferInlineObject: true,
         asObjectProp: false,
       })
     }
@@ -452,7 +416,6 @@ const renderEvent = ({
     indentUnit,
     warn,
     path: '$event',
-    preferInlineObject: false,
     asObjectProp: false,
   })
 
@@ -586,7 +549,8 @@ export const formatRecording = ({
 
       const diff = findFirstDiff(a, b)
       if (diff) {
-        logger.notice(
+        const logFn = logger?.notice ?? logger?.warn ?? console.warn
+        logFn(
           `recording formatter: round-trip verification failed ${diff.path}: ${diff.reason}\n` +
           `  output: ${JSON.stringify(diff.a)}\n` +
           `  input:  ${JSON.stringify(diff.b)}`
@@ -595,6 +559,7 @@ export const formatRecording = ({
     } catch (e) {
       const msg = `recording formatter: round-trip verification error: ${e?.message ?? String(e)}`
       if (logger?.notice) logger.notice(msg)
+      else if (logger?.warn) logger.warn(msg)
       else console.warn(msg)
     }
   }

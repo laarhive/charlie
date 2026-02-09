@@ -65,6 +65,19 @@ export const formattersByRawType = {
       },
     },
   },
+
+  'ledRaw:command': {
+    __layout: [['id', 'i', 'tMs']],
+    raw: {
+      __layout: [['type', 'ts', 'source'], ['streamKey', 'bus']],
+      payload: {
+        __layout: [['ledId', 'publishAs', 'rgb']],
+        rgb: {
+          __array: 'inline',
+        },
+      },
+    },
+  },
 }
 
 export const formatter = {
