@@ -173,7 +173,7 @@ export class Recorder {
       ? busNames.map((x) => String(x || '').trim()).filter(Boolean)
       : []
 
-    this.#nowMs = typeof clock?.nowMs === 'function' ? clock?.nowMs : () => Date.now()
+    this.#nowMs = typeof clock?.nowMs === 'function' ? () => clock.nowMs() : () => Date.now()
 
     this.#started = false
     this.#stopped = false

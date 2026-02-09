@@ -198,7 +198,7 @@ export class Player {
     this.#deviceManager = deviceManager
     this.#buses = buses || {}
 
-    this.#nowMs = typeof clock?.nowMs === 'function' ? clock?.nowMs : () => Date.now()
+    this.#nowMs = typeof clock?.nowMs === 'function' ? () => clock.nowMs() : () => Date.now()
     this.#setTimeout = typeof setTimeoutFn === 'function' ? setTimeoutFn : setTimeout
     this.#clearTimeout = typeof clearTimeoutFn === 'function' ? clearTimeoutFn : clearTimeout
 
@@ -591,11 +591,13 @@ export class Player {
     const payload = isPlainObject(raw?.payload) ? { ...raw.payload } : {}
 
     if (type === 'presenceRaw:ld2450') {
+/*
       const frame = isPlainObject(payload?.frame) ? { ...payload.frame } : null
       if (frame) {
         frame.ts = nowMs
         payload.frame = frame
       }
+*/
     }
 
     const outRaw = isPlainObject(raw) ? { ...raw, ts: nowMs, payload } : { type, ts: nowMs, payload }

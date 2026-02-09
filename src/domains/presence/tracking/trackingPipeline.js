@@ -115,7 +115,7 @@ export class TrackingPipeline {
 
   #onLd2450Tracks(event) {
     const p = event?.payload || {}
-    const ts = Number(p.ts) || Number(event?.ts) || this.#clock.nowMs()
+    const ts = Number(event?.ts) || this.#clock.nowMs()
     const tracks = Array.isArray(p.tracks) ? p.tracks : []
 
     for (const t of tracks) {
@@ -331,7 +331,7 @@ export class TrackingPipeline {
       }
 
       tr.lastUpdateTs = now
-      tr.lastSeenTs = m.ts
+      tr.lastSeenTs = now
       tr.lastRadarId = m.radarId
       tr.lastZoneId = m.zoneId
       tr.updatedThisTick = true
@@ -720,7 +720,7 @@ export class TrackingPipeline {
 
       createdTs: now,
       firstSeenTs: now,
-      lastSeenTs: m.ts,
+      lastSeenTs: now,
       lastUpdateTs: now,
 
       confirmHits: 1,
