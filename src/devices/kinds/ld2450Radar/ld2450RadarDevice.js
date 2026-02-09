@@ -215,25 +215,6 @@ export default class Ld2450RadarDevice extends BaseDevice {
     this.#decoder.push(b)
   }
 
-  #publishRaw(buf) {
-    this.#domainBus.publish({
-      type: domainEventTypes.presence.ld2450,
-      ts: this.#clock.nowMs(),
-      source: 'ld2450RadarDevice',
-      streamKey: makeStreamKey({
-        who: this.streamKeyWho,
-        what: domainEventTypes.presence.ld2450,
-        where: busIds.presence,
-      }),
-      payload: {
-        deviceId: this.getId(),
-        publishAs: this.getPublishAs(),
-        base64: buf.toString('base64'),
-        bytes: buf.length,
-      },
-    })
-  }
-
   #publishFrame(frame) {
     this.#domainBus.publish({
       type: domainEventTypes.presence.ld2450,

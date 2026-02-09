@@ -185,7 +185,7 @@ export const createLd2450StreamDecoder = function (opts = {}) {
     for (const frame of res.frames) {
       totalFrames += 1
       emitter.emit('frame', {
-        ts: nowMs(),
+//        ts: nowMs(),
         ...frame,
       })
     }
