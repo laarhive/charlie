@@ -498,9 +498,14 @@ const renderEventsBlock = ({
 
     let eventText
     if (!isPlainObject(spec)) {
-      const msg = `recording format fallback (event i=${ev?.i ?? '?'}, id=${ev?.id ?? '?'}): no layout spec for raw.type=${rawType ?? 'undefined'}`
-      if (logger?.warn) logger.warn(msg)
-      else console.warn(msg)
+      const key = `no-spec::${rawType ?? 'undefined'}`
+      if (!warnedGlobal.has(key)) {
+        warnedGlobal.add(key)
+
+        const msg = `recording format fallback: no layout spec for raw.type=${rawType ?? 'undefined'}`
+        if (logger?.warn) logger.warn(msg)
+        else console.warn(msg)
+      }
 
       const pretty = JSON5.stringify(ev, null, indentUnit.length)
       eventText = pretty
