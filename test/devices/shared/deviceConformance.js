@@ -39,7 +39,7 @@ export const runDeviceConformanceTests = function runDeviceConformanceTests({
 
       const last = hw[hw.length - 1]
       expect(String(last.payload?.deviceId || '').length).to.be.greaterThan(0)
-      expect(String(last.payload?.publishAs || '').length).to.be.greaterThan(0)
+      expect(String(last.publishAs || '').length).to.be.greaterThan(0)
       expect(String(last.payload?.state || '').length).to.be.greaterThan(0)
 
       unsub()

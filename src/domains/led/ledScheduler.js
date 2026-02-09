@@ -132,7 +132,7 @@ export default class LedScheduler {
       }),
       payload: {
         ledId: this.#ledId,
-        publishAs: null,
+        publishAs: this.streamKeyWho,
         rgb,
       },
     })

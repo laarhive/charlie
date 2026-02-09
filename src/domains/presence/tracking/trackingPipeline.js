@@ -420,6 +420,7 @@ export class TrackingPipeline {
       }),
       payload: {
         ts: now,
+        publishAs: this.streamKeyWho,
         tracks: out,
         meta: {
           mode,
