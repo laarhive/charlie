@@ -1,3 +1,4 @@
+// src/recording/recordingFormat.js
 import path from 'node:path'
 
 export const RECORDING_FORMAT = 'charlie.recording'

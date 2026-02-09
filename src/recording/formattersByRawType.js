@@ -66,3 +66,22 @@ export const formattersByRawType = {
     },
   },
 }
+
+export const formatter = {
+  'presenceRaw:ld2450': {
+    __layout: [['id', 'i', 'tMs']],
+    raw: {
+      __layout: [['type', 'ts', 'source'], ['streamKey', 'bus']],
+      payload: {
+        __layout: [['deviceId', 'publishAs']],
+        frame: {
+          __layout: [['ts', 'offset'], ['present']],
+          targets: {
+            __array: 'multiline',
+            __layout: [['id', 'xMm', 'yMm', 'speedCms', 'resolutionMm', 'valid']],
+          },
+        },
+      },
+    },
+  },
+}

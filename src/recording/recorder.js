@@ -1,3 +1,4 @@
+// src/recording/recorder.js
 import { RECORDING_FORMAT, RECORDING_VERSION } from './recordingFormat.js'
 import { shortId } from '../utils/shortId.js'
 
@@ -12,9 +13,6 @@ const parseStreamKey3 = (streamKey) => {
 
   const who = String(parts[0] || '').trim()
   const what = String(parts[1] || '').trim()
-
-  // key is who::what::where::why, but we match who::what::where and ignore why
-  // For 4 segments, "where" is segment 3. For 3 segments, it's segment 3.
   const where = (parts.length >= 4)
     ? String(parts[2] || '').trim()
     : String(parts[2] || '').trim()
@@ -274,7 +272,6 @@ export class Recorder {
       return
     }
 
-    // keep first observed kind, but ensure bus matches if it was set
     const existing = this.#streamsObserved[streamKey]
     if (!existing.bus) existing.bus = bus
   }

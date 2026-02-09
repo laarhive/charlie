@@ -1,3 +1,4 @@
+<!-- docs/architecture/recording/event-template-format.md -->
 # Recording Event Template Format (JSON5 Template)
 
 This document defines the small template format used to pretty-print selected

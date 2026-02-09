@@ -59,11 +59,86 @@ const parseDurationMs = function parseDurationMs(v) {
   return null
 }
 
+const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
+
+const isControlledError = (e) => {
+  const c = String(e?.code || '').trim()
+  return Boolean(c) && c !== 'ERROR'
+}
+
+const stripStacksDeep = (fe) => {
+  if (!isPlainObject(fe)) return fe
+
+  const out = { ...fe }
+  if (out.stack) delete out.stack
+
+  if (out.cause && isPlainObject(out.cause)) {
+    out.cause = stripStacksDeep(out.cause)
+  }
+
+  return out
+}
+
+const mergeDeep = (base, override) => {
+  if (!isPlainObject(base)) return isPlainObject(override) ? { ...override } : override
+  if (!isPlainObject(override)) return override
+
+  const out = { ...base }
+  for (const [k, v] of Object.entries(override)) {
+    const bv = out[k]
+
+    if (isPlainObject(bv) && isPlainObject(v)) {
+      out[k] = mergeDeep(bv, v)
+      continue
+    }
+
+    out[k] = v
+  }
+
+  return out
+}
+
+const resolveVariantParams = ({ root, variantKey, what }) => {
+  const r = isPlainObject(root) ? root : null
+  if (!r) {
+    const err = new Error(`${what}_missing`)
+    err.code = 'BAD_REQUEST'
+    throw err
+  }
+
+  const params = isPlainObject(r.params) ? r.params : {}
+
+  if (variantKey === undefined || variantKey === null || String(variantKey).trim() === '') {
+    return { ...params }
+  }
+
+  const k = String(variantKey).trim()
+  const variant = r[k]
+
+  if (!isPlainObject(variant)) {
+    const err = new Error(`${what}_unknown_variant`)
+    err.code = 'BAD_REQUEST'
+    err.detail = { variantKey: k }
+    throw err
+  }
+
+  return mergeDeep(params, variant)
+}
+
+const listVariantKeys = (root) => {
+  if (!isPlainObject(root)) return []
+
+  const reserved = new Set(['op', 'params'])
+  return Object.keys(root)
+    .filter((k) => !reserved.has(k) && isPlainObject(root[k]))
+    .sort()
+}
+
 export const RecordingService = function RecordingService({ logger, buses, deviceManager, clock, config, mode }) {
   const recordingsDirCfg = String(config?.recording?.recordingsDir || './recordings')
   const recordingsDirAbs = resolveFromProjectRoot(recordingsDirCfg) || path.resolve(projectRoot, 'recordings')
 
-  const cmdsDirAbs = path.resolve(recordingsDirAbs, 'cmds')
+  const profilesDirAbs = path.resolve(recordingsDirAbs, 'profiles')
   const store = new RecordingStore({ baseDir: recordingsDirAbs, logger })
 
   const serviceMode = String(
@@ -81,6 +156,15 @@ export const RecordingService = function RecordingService({ logger, buses, devic
 
   let recorderSession = null
   let playerSession = null
+
+  let profileSession = null
+  // shape:
+  // {
+  //   path,
+  //   profileName,
+  //   recordRoot,
+  //   playRoot,
+  // }
 
   const normalizeBusNames = function normalizeBusNames(busNames) {
     const raw = Array.isArray(busNames) ? busNames : []
@@ -123,12 +207,6 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return collapsed.slice(0, maxLen)
   }
 
-  const baseFromCmdFile = function baseFromCmdFile(cmdFile) {
-    const b = path.basename(String(cmdFile || '').trim())
-    const noExt = b.replace(/\.json5$/i, '')
-    return sanitizeFileToken(noExt, { maxLen: 64 }) || 'recording'
-  }
-
   const ensureJson5Name = function ensureJson5Name(name, { what }) {
     const s = String(name || '').trim()
     if (!s) {
@@ -165,33 +243,71 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return full
   }
 
-  const loadCmdFile = async function loadCmdFile(cmdFile) {
-    const fullPath = resolveInsideDir(cmdsDirAbs, cmdFile, { what: 'cmdFile' })
+  const loadProfileFile = async function loadProfileFile(profileFile) {
+    const fullPath = resolveInsideDir(profilesDirAbs, profileFile, { what: 'profileFile' })
 
     let txt
     try {
       txt = await fs.readFile(fullPath, 'utf8')
     } catch (e) {
-      const err = new Error(`cmdFile_read_failed:${path.basename(fullPath)}`)
+      const err = new Error(`profileFile_read_failed:${path.basename(fullPath)}`)
       err.code = 'BAD_REQUEST'
       err.cause = e
       throw err
     }
 
+    let parsed
     try {
-      const parsed = JSON5.parse(txt)
-      if (!parsed || typeof parsed !== 'object') {
-        const err = new Error('cmdFile_invalid_root')
-        err.code = 'BAD_REQUEST'
-        throw err
-      }
-
-      return { path: fullPath, cmd: parsed }
+      parsed = JSON5.parse(txt)
     } catch (e) {
-      const err = new Error('cmdFile_invalid_json5')
+      const err = new Error('profileFile_invalid_json5')
       err.code = 'BAD_REQUEST'
       err.cause = e
       throw err
+    }
+
+    if (!isPlainObject(parsed)) {
+      const err = new Error('profileFile_invalid_root')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    const profileName = String(parsed.profile || '').trim()
+    if (!profileName) {
+      const err = new Error('profile_missing_profile_name')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    const record = isPlainObject(parsed.record) ? parsed.record : null
+    const play = isPlainObject(parsed.play) ? parsed.play : null
+
+    if (!record || !play) {
+      const err = new Error('profile_missing_record_or_play')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    const recordOp = String(record.op || '').trim()
+    const playOp = String(play.op || '').trim()
+
+    if (recordOp !== 'record.start') {
+      const err = new Error('profile_record_op_must_be_record_start')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    if (playOp !== 'play.start') {
+      const err = new Error('profile_play_op_must_be_play_start')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    return {
+      path: fullPath,
+      profileName,
+      recordRoot: record,
+      playRoot: play,
     }
   }
 
@@ -205,13 +321,35 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return playerSession.player
   }
 
+  const requireProfile = function requireProfile() {
+    if (!profileSession) {
+      const err = new Error('profile_not_loaded')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    return profileSession
+  }
+
   const getSnapshot = function getSnapshot() {
     const recSnap = recorderSession?.recorder?.getSnapshot ? recorderSession.recorder.getSnapshot() : null
     const playSnap = playerSession?.player?.getSnapshot ? playerSession.player.getSnapshot() : null
 
+    const recordVariants = profileSession?.recordRoot ? listVariantKeys(profileSession.recordRoot) : []
+    const playVariants = profileSession?.playRoot ? listVariantKeys(profileSession.playRoot) : []
+
     return {
       recordingsDir: store.getBaseDir(),
-      cmdsDir: cmdsDirAbs,
+      profilesDir: profilesDirAbs,
+
+      profile: profileSession ? {
+        loadedPath: profileSession.path,
+        profile: profileSession.profileName,
+        variants: {
+          record: recordVariants,
+          play: playVariants,
+        },
+      } : null,
 
       record: recorderSession ? {
         state: recorderSession.state,
@@ -231,7 +369,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     }
   }
 
-  const recordStart = ({ busNames, duration, durationMs, outFileBase, meta, comment, select } = {}) => {
+  const recordStart = function recordStart({ busNames, duration, durationMs, fileNameBase, meta, comment, select } = {}) {
     if (recorderSession?.state === 'recording') {
       const err = new Error('recording_already_running')
       err.code = 'CONFLICT'
@@ -259,8 +397,8 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     const commentStr = String(comment || '').trim() || null
     const commentSuffix = commentStr ? sanitizeFileToken(commentStr, { maxLen: 48 }) : ''
 
-    const outBaseRaw = String(outFileBase || '').trim() || 'recording'
-    const outBase = sanitizeFileToken(outBaseRaw, { maxLen: 64 }) || 'recording'
+    const baseRaw = String(fileNameBase || '').trim() || 'recording'
+    const outBase = sanitizeFileToken(baseRaw, { maxLen: 64 }) || 'recording'
 
     const recorder = new Recorder({
       logger,
@@ -306,7 +444,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     logger?.notice?.('recording_started', {
       buses: busesToUse,
       durationMs: dur,
-      outBase,
+      fileNameBase: outBase,
       comment: commentStr,
     })
 
@@ -330,7 +468,9 @@ export const RecordingService = function RecordingService({ logger, buses, devic
 
     const stamp = nowLocalStamp()
     const suffix = recorderSession.commentSuffix ? `-${recorderSession.commentSuffix}` : ''
-    const filename = `${recorderSession.outBase}-${stamp}${suffix}.json5`
+
+    const counter = await store.nextRecordingCounter()
+    const filename = `${counter}-${recorderSession.outBase}-${stamp}${suffix}.json5`
 
     const saved = await store.save({ filename, recording })
     recorderSession.lastSavedPath = saved.path
@@ -378,7 +518,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return getSnapshot()
   }
 
-  const playStart = function playStart({ speed, routingByStreamKey, rewriteTs, isolation } = {}) {
+  const playStart = function playStart({ speed, routingByStreamKey, rewriteTs, isolation, interval } = {}) {
     const player = requirePlayer()
 
     player.start({
@@ -386,6 +526,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
       routingByStreamKey,
       rewriteTs: rewriteTs === true,
       isolation,
+      interval,
     })
 
     logger?.notice?.('play_started', { speed: player.getSnapshot().speed })
@@ -410,15 +551,122 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     return getSnapshot()
   }
 
+  const profileLoad = async function profileLoad({ profileFile } = {}) {
+    const file = String(profileFile || '').trim()
+    if (!file) {
+      const err = new Error('missing_profileFile')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    const loaded = await loadProfileFile(file)
+
+    profileSession = {
+      path: loaded.path,
+      profileName: loaded.profileName,
+      recordRoot: loaded.recordRoot,
+      playRoot: loaded.playRoot,
+    }
+
+    logger?.notice?.('profile_loaded', { profile: loaded.profileName, path: loaded.path })
+    return getSnapshot()
+  }
+
+  const recordRecord = function recordRecord({ variantKey } = {}) {
+    const prof = requireProfile()
+
+    if (recorderSession?.state === 'recording') {
+      logger?.notice?.('recording_record_ignored_already_running', {
+        profile: prof.profileName,
+      })
+      return getSnapshot()
+    }
+
+    const p0 = resolveVariantParams({ root: prof.recordRoot, variantKey, what: 'profile_record' })
+
+    const fileNameBaseRaw = String(
+      p0.fileNameBase ?? prof.profileName ?? ''
+    ).trim()
+
+    const fileNameBase = sanitizeFileToken(fileNameBaseRaw, { maxLen: 64 }) || 'recording'
+
+    const meta0 = isPlainObject(p0.meta) ? { ...p0.meta } : {}
+    meta0.profileFile = path.basename(prof.path)
+    meta0.profile = prof.profileName
+    meta0.appliedRecordParams = { ...p0, fileNameBase, meta: undefined }
+    meta0.appliedRecordParams.meta = isPlainObject(p0.meta) ? { ...p0.meta } : {}
+
+    return recordStart({
+      ...p0,
+      fileNameBase,
+      meta: meta0,
+    })
+  }
+
+  const playLast = async function playLast({ variantKey } = {}) {
+    const prof = requireProfile()
+
+    const p0 = resolveVariantParams({ root: prof.playRoot, variantKey, what: 'profile_play' })
+
+    const recParams = resolveVariantParams({ root: prof.recordRoot, variantKey: null, what: 'profile_record' })
+    const recBaseRaw = String(recParams?.fileNameBase ?? prof.profileName ?? '').trim()
+    const outBase = sanitizeFileToken(recBaseRaw, { maxLen: 64 }) || 'recording'
+
+    const last = await store.findLastRecordingByCounter({ outBase })
+    if (!last?.ok || !last.path) {
+      const err = new Error('no_recordings_found_for_profile')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    await playLoad({ path: last.path })
+    return playStart({
+      speed: p0.speed,
+      routingByStreamKey: p0.routingByStreamKey,
+      rewriteTs: p0.rewriteTs,
+      isolation: p0.isolation,
+      interval: p0.interval,
+    })
+  }
+
+  const playPlay = async function playPlay({ variantKey, fileName } = {}) {
+    const prof = requireProfile()
+
+    const p0 = resolveVariantParams({ root: prof.playRoot, variantKey, what: 'profile_play' })
+
+    const overrideFile = String(fileName || '').trim()
+    const chosenFile = overrideFile || String(p0.fileName || '').trim()
+
+    if (!chosenFile) {
+      const err = new Error('missing_fileName')
+      err.code = 'BAD_REQUEST'
+      throw err
+    }
+
+    await playLoad({ path: chosenFile })
+    return playStart({
+      speed: p0.speed,
+      routingByStreamKey: p0.routingByStreamKey,
+      rewriteTs: p0.rewriteTs,
+      isolation: p0.isolation,
+      interval: p0.interval,
+    })
+  }
+
   const doHandle = async function doHandle({ op, params } = {}) {
     const kind = String(op || '').trim()
     const p = params && typeof params === 'object' ? params : {}
 
     if (kind === 'status') return getSnapshot()
 
+    if (kind === 'profile.load') return await profileLoad(p)
+
+    if (kind === 'record.record') return recordRecord(p)
     if (kind === 'record.start') return recordStart(p)
     if (kind === 'record.stop') return await recordStop(p)
 
+    if (kind === 'play.last') return await playLast(p)
+    if (kind === 'play.play') return await playPlay(p)
     if (kind === 'play.load') return await playLoad(p)
     if (kind === 'play.start') return playStart(p)
     if (kind === 'play.pause') return playPause()
@@ -433,9 +681,14 @@ export const RecordingService = function RecordingService({ logger, buses, devic
   const handle = async function handle({ op, params } = {}) {
     try {
       const data = await doHandle({ op, params })
+
+      logger?.info?.('recording_op_ok', { op: String(op || '').trim() || 'unknown' })
+
       return { ok: true, data }
     } catch (e) {
-      const fe = formatError(e)
+      const fe0 = formatError(e)
+      const controlled = isControlledError(e)
+      const fe = controlled ? stripStacksDeep(fe0) : fe0
       const code = String(e?.code || 'ERROR')
 
       logger?.error?.('recording_op_failed', {
@@ -455,42 +708,11 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     const op = String(cmd?.op || '').trim()
     const params = cmd?.params && typeof cmd.params === 'object' ? cmd.params : {}
 
-    if (op === 'record.start') {
-      const cmdFile = params?.cmdFile
-      const cliComment = params?.comment
+    if (op === 'profile.load') return await handle({ op, params })
 
-      const loaded = await loadCmdFile(cmdFile)
-
-      const root = loaded?.cmd && typeof loaded.cmd === 'object' ? loaded.cmd : {}
-      const fileOp = String(root?.op || '').trim()
-
-      if (fileOp && fileOp !== 'record.start') {
-        const err = new Error('cmdFile_op_mismatch')
-        err.code = 'BAD_REQUEST'
-        throw err
-      }
-
-      const fileParams = (root?.params && typeof root.params === 'object')
-        ? root.params
-        : root
-
-      const merged = {
-        ...fileParams,
-
-        comment: (cliComment !== null && cliComment !== undefined)
-          ? String(cliComment || '').trim() || null
-          : fileParams.comment,
-
-        outFileBase: fileParams.outFileBase ?? baseFromCmdFile(cmdFile),
-
-        meta: {
-          ...(fileParams.meta && typeof fileParams.meta === 'object' ? fileParams.meta : {}),
-          cmdFile: path.basename(loaded.path),
-        },
-      }
-
-      return await handle({ op: 'record.start', params: merged })
-    }
+    if (op === 'record.record') return await handle({ op, params })
+    if (op === 'play.last') return await handle({ op, params })
+    if (op === 'play.play') return await handle({ op, params })
 
     if (op === 'play.start') {
       const p = params?.path
@@ -498,13 +720,14 @@ export const RecordingService = function RecordingService({ logger, buses, devic
       const routingByStreamKey = params?.routingByStreamKey
       const rewriteTs = params?.rewriteTs
       const isolation = params?.isolation
+      const interval = params?.interval
 
       const loaded = await handle({ op: 'play.load', params: { path: p } })
       if (!loaded?.ok) return loaded
 
       return await handle({
         op: 'play.start',
-        params: { speed, routingByStreamKey, rewriteTs, isolation },
+        params: { speed, routingByStreamKey, rewriteTs, isolation, interval },
       })
     }
 
@@ -516,7 +739,6 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     handle,
     handleCli,
 
-    baseFromCmdFile,
     sanitizeFileToken,
   }
 }

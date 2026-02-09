@@ -1,3 +1,4 @@
+// src/recording/player.js
 import { validateRecording } from './recordingFormat.js'
 
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
