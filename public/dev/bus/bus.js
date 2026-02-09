@@ -258,8 +258,8 @@
         const typeStr = event?.type || ''
         const sourceStr = event?.source || ''
 
-        const line = `[${bus}] ${typeStr} ${event?.ts || ''} ${sourceStr} ${payloadStr}`
-        const searchText = `${bus} ${typeStr} ${sourceStr} ${payloadStr}`.toLowerCase()
+        const line = `[${event?.streamKey || ''}] ${payloadStr}`
+        const searchText = `${bus} ${typeStr} ${sourceStr} ${payloadStr} ${event?.streamKey}`.toLowerCase()
 
         pushLine({ ts, line, searchText })
         return
