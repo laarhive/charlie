@@ -96,7 +96,7 @@ export const decodeLd2450TrackingFrames = function (buf, opts = {}) {
     }
 
     frames.push({
-      offset: headerIdx,
+      // offset: headerIdx,
       targets,
       present,
     })
