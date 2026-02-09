@@ -328,7 +328,7 @@ export class Recorder {
 
       meta: {
         recordedAtMs,
-        buses,
+        busNames: buses,
         ...this.#meta,
       },
 

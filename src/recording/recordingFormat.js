@@ -26,12 +26,14 @@ export const validateRecording = function validateRecording(recording) {
   const mode = String(recording.meta.mode || '').trim()
   if (!mode) return fail('INVALID_META_MODE', 'recording.meta.mode missing')
 
-  const buses = Array.isArray(recording.meta.buses) ? recording.meta.buses : null
-  if (!buses || !buses.length) return fail('INVALID_META_BUSES', 'recording.meta.buses missing')
+  const busNames = Array.isArray(recording.meta.busNames) ? recording.meta.busNames : null
+  if (!busNames || !busNames.length) {
+    return fail('INVALID_META_BUSNAMES', 'recording.meta.busNames missing')
+  }
 
-  for (const b of buses) {
+  for (const b of busNames) {
     const s = String(b || '').trim()
-    if (!s) return fail('INVALID_META_BUSES', 'recording.meta.buses contains empty bus name')
+    if (!s) return fail('INVALID_META_BUSNAMES', 'recording.meta.busNames contains empty bus name')
   }
 
   if (!isPlainObject(recording.timeline)) return fail('INVALID_TIMELINE', 'recording.timeline missing')
