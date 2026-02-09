@@ -1,7 +1,9 @@
 // src/recording/player.js
 import { validateRecording } from './recordingFormat.js'
+import { isPlainObject } from '../utils/isPlainObject.js'
 
-const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
+const graceMs = 3
+const maxDispatchPerSchedule = 1000
 
 const parseStreamKey4 = (streamKey) => {
   const s = String(streamKey || '').trim()
@@ -220,6 +222,10 @@ export class Player {
       skipped: 0,
       failed: 0,
       lastError: null,
+
+      lateTotal: 0,
+      lateMsTotal: 0,
+      lateMsMax: 0,
     }
 
     this.#routingRules = []
@@ -255,6 +261,10 @@ export class Player {
       skipped: 0,
       failed: 0,
       lastError: null,
+
+      lateTotal: 0,
+      lateMsTotal: 0,
+      lateMsMax: 0,
     }
   }
 
@@ -379,6 +389,10 @@ export class Player {
       failed: this.#stats.failed,
       lastError: this.#stats.lastError,
 
+      lateTotal: this.#stats.lateTotal,
+      lateMsTotal: this.#stats.lateMsTotal,
+      lateMsMax: this.#stats.lateMsMax,
+
       rewriteTs: this.#rewriteTs,
       interval: this.#interval ? { ...this.#interval } : null,
 
@@ -412,27 +426,66 @@ export class Player {
     return i >= this.#interval.from && i <= this.#interval.to
   }
 
+  #noteLateness(ev) {
+    const tMs = Number(ev?.tMs)
+    if (!Number.isFinite(tMs)) return
+
+    const lateRaw = Math.max(0, this.#logicalNowMs() - tMs)
+
+    // always track max lateness, even if under grace
+    this.#stats.lateMsMax = Math.max(this.#stats.lateMsMax, lateRaw)
+
+    if (lateRaw > graceMs) {
+      this.#stats.lateTotal += 1
+      this.#stats.lateMsTotal += lateRaw
+    }
+  }
+
   #scheduleNext() {
     if (this.#state !== 'playing') return
 
+    let dispatchedThisCall = 0
+
     while (this.#nextPos < this.#events.length) {
-      const ev = this.#events[this.#nextPos]
-      this.#nextPos += 1
-
-      if (!this.#inInterval(ev)) {
-        this.#stats.skipped += 1
-        continue
-      }
-
       const logicalNow = this.#logicalNowMs()
-      const dt = ev.tMs - logicalNow
 
-      if (dt <= 0) {
+      // drain all due events (including same tMs)
+      while (this.#nextPos < this.#events.length) {
+        const ev = this.#events[this.#nextPos]
+
+        if (!this.#inInterval(ev)) {
+          this.#nextPos += 1
+          this.#stats.skipped += 1
+          continue
+        }
+
+        const dt = ev.tMs - logicalNow
+        if (dt > 0) break
+
+        this.#nextPos += 1
+        this.#noteLateness(ev)
         this.#dispatch(ev)
-        continue
+
+        dispatchedThisCall += 1
+        if (dispatchedThisCall >= maxDispatchPerSchedule) {
+          this.#timer = this.#setTimeout(() => {
+            this.#timer = null
+            this.#scheduleNext()
+          }, 0)
+
+          return
+        }
       }
 
-      const delayReal = Math.ceil(dt / this.#speed)
+      if (this.#nextPos >= this.#events.length) break
+
+      const evNext = this.#events[this.#nextPos]
+
+      // if next is out of interval, loop and count it as skipped in the drain
+      if (!this.#inInterval(evNext)) continue
+
+      const dtNext = evNext.tMs - logicalNow
+      const delayReal = Math.ceil(dtNext / this.#speed)
 
       this.#timer = this.#setTimeout(() => {
         this.#timer = null

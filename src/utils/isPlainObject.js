@@ -13,7 +13,7 @@
  * isPlainObject([]) // false
  * isPlainObject(null) // false
  */
-const isPlainObject = function (value) {
+export const isPlainObject = function (value) {
   if (value === null || typeof value !== 'object') {
     return false
   }
