@@ -165,7 +165,7 @@ export class Recorder {
 
   #streamsObserved
 
-  constructor({ logger, buses, busNames, nowMs, meta, select }) {
+  constructor({ logger, buses, busNames, clock, meta, select }) {
     this.#logger = logger
     this.#buses = buses || {}
 
@@ -173,7 +173,7 @@ export class Recorder {
       ? busNames.map((x) => String(x || '').trim()).filter(Boolean)
       : []
 
-    this.#nowMs = typeof nowMs === 'function' ? nowMs : () => Date.now()
+    this.#nowMs = typeof clock?.nowMs === 'function' ? clock?.nowMs : () => Date.now()
 
     this.#started = false
     this.#stopped = false

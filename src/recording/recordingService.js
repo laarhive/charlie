@@ -404,7 +404,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
       logger,
       buses,
       busNames: busesToUse,
-      nowMs: () => Date.now(),
+      clock,
       select,
       meta: {
         mode: serviceMode,
@@ -503,7 +503,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
           logger,
           deviceManager,
           buses,
-          nowMs: () => Date.now(),
+          clock,
         }),
         loadedPath: null,
       }

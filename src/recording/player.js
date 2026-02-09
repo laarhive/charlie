@@ -193,12 +193,12 @@ export class Player {
 
   #interval
 
-  constructor({ logger, deviceManager, buses, nowMs, setTimeoutFn, clearTimeoutFn }) {
+  constructor({ logger, deviceManager, buses, clock, setTimeoutFn, clearTimeoutFn }) {
     this.#logger = logger
     this.#deviceManager = deviceManager
     this.#buses = buses || {}
 
-    this.#nowMs = typeof nowMs === 'function' ? nowMs : () => Date.now()
+    this.#nowMs = typeof clock?.nowMs === 'function' ? clock?.nowMs : () => Date.now()
     this.#setTimeout = typeof setTimeoutFn === 'function' ? setTimeoutFn : setTimeout
     this.#clearTimeout = typeof clearTimeoutFn === 'function' ? clearTimeoutFn : clearTimeout
 
@@ -532,7 +532,8 @@ export class Player {
   }
 
   #dispatchToDevice({ raw, streamKey }) {
-    const payload = raw?.payload
+    const norm = this.#normalizeForInjection(raw)
+    const payload = norm?.payload
     const publishAs = String(payload?.publishAs || '').trim()
 
     if (!publishAs) {
@@ -582,6 +583,23 @@ export class Player {
         error: e?.message || String(e),
       })
     }
+  }
+
+  #normalizeForInjection(raw) {
+    const nowMs = this.#nowMs()
+    const type = String(raw?.type || '')
+    const payload = isPlainObject(raw?.payload) ? { ...raw.payload } : {}
+
+    if (type === 'presenceRaw:ld2450') {
+      const frame = isPlainObject(payload?.frame) ? { ...payload.frame } : null
+      if (frame) {
+        frame.ts = nowMs
+        payload.frame = frame
+      }
+    }
+
+    const outRaw = isPlainObject(raw) ? { ...raw, ts: nowMs, payload } : { type, ts: nowMs, payload }
+    return outRaw
   }
 
   #dispatchToBus({ raw, streamKey }) {
