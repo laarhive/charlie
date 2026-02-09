@@ -49,7 +49,7 @@ export class EventBus {
 
   constructor({ busId, strict = true } = {}) {
     this.#emitter = new EventEmitter()
-    this.#busId = assertNonEmptyString('busId', busId)
+    // this.#busId = assertNonEmptyString('busId', busId)
     this.#strict = strict === true
   }
 

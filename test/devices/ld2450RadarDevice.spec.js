@@ -75,37 +75,14 @@ runUsbSerialDeviceConformanceTests({
 })
 
 describe('Ld2450RadarDevice – device-specific', function () {
-  it('inject(Buffer) returns ok and publishes base64+bytes payload', function () {
+  it('inject accepts emitted payload shape (payload.frame) and re-emits', function () {
     const h = makeHarness()
 
     const domainEvents = []
     const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
 
-    const buf = Buffer.from([0x01, 0x02, 0x03, 0x04])
-
-    const res = h.device.inject(buf)
-    expect(res.ok).to.equal(true)
-
-    expect(domainEvents.length).to.equal(1)
-    expect(domainEvents[0].type).to.equal(domainEventTypes.presence.ld2450)
-
-    expect(domainEvents[0].payload.deviceId).to.equal('LD2450A')
-    expect(domainEvents[0].payload.publishAs).to.equal('LD2450A')
-    expect(domainEvents[0].payload.bytes).to.equal(buf.length)
-    expect(domainEvents[0].payload.base64).to.equal(buf.toString('base64'))
-
-    unsub()
-    h.device.dispose()
-  })
-
-  it('inject accepts emitted payload shape (base64/bytes) and re-emits', function () {
-    const h = makeHarness()
-
-    const domainEvents = []
-    const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
-
-    const buf = Buffer.from([0xaa, 0xbb, 0xcc])
-    const first = h.device.inject(buf)
+    const payload = { frame: { ts: 123, targets: [] } }
+    const first = h.device.inject(payload)
     expect(first.ok).to.equal(true)
     expect(domainEvents.length).to.equal(1)
 
@@ -114,27 +91,6 @@ describe('Ld2450RadarDevice – device-specific', function () {
 
     expect(second.ok).to.equal(true)
     expect(domainEvents.length).to.equal(2)
-
-    unsub()
-    h.device.dispose()
-  })
-
-  it('inject({ base64 }) returns ok and publishes base64+bytes payload', function () {
-    const h = makeHarness()
-
-    const domainEvents = []
-    const unsub = h.domainBus.subscribe((e) => domainEvents.push(e))
-
-    const buf = Buffer.from([0x10, 0x20, 0x30])
-    const b64 = buf.toString('base64')
-
-    const res = h.device.inject({ base64: b64 })
-    expect(res.ok).to.equal(true)
-
-    expect(domainEvents.length).to.equal(1)
-    expect(domainEvents[0].type).to.equal(domainEventTypes.presence.ld2450)
-    expect(domainEvents[0].payload.bytes).to.equal(buf.length)
-    expect(domainEvents[0].payload.base64).to.equal(b64)
 
     unsub()
     h.device.dispose()
@@ -149,7 +105,8 @@ describe('Ld2450RadarDevice – device-specific', function () {
     h.device.start()
     h.device.block('test')
 
-    const res = h.device.inject(Buffer.from([0x01]))
+    const payload = { frame: { ts: 123, targets: [] } }
+    const res = h.device.inject(payload)
     expect(res.ok).to.equal(true)
 
     expect(domainEvents.length).to.equal(1)

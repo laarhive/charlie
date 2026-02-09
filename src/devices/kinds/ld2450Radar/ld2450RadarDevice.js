@@ -8,6 +8,7 @@ import { createLd2450StreamDecoder } from './ld2450Decode.js'
 import usbSerialErrorCodes from '../../protocols/usbSerial/usbSerialErrorCodes.js'
 import { makeStreamKey } from '../../../core/eventBus.js'
 import { busIds } from '../../../app/buses.js'
+import isPlainObject from '../../../utils/isPlainObject.js'
 
 export default class Ld2450RadarDevice extends BaseDevice {
   #logger
@@ -150,19 +151,9 @@ export default class Ld2450RadarDevice extends BaseDevice {
   }
 
   inject(payload) {
-    if (payload === undefined || payload === null) {
-      return err(deviceErrorCodes.invalidInjectPayload)
-    }
-
-    if (typeof payload === 'object') {
-      const frame = (payload.frame && typeof payload.frame === 'object')
-        ? payload.frame
-        : payload
-
-      if (frame && typeof frame === 'object') {
-        this.#publishFrame(frame)
-        return ok()
-      }
+    if (isPlainObject(payload?.frame)) {
+      this.#publishFrame(payload?.frame)
+      return ok()
     }
 
     return err(deviceErrorCodes.invalidInjectPayload)
