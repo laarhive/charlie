@@ -84,7 +84,7 @@ Electrical implementation details are not prescribed.
 
 ### 3.1 External Reset Button Connector
 
-- A **2-pin connector** shall be provided for an external reset button.
+- Provide a **2-pin connector** for an external reset button.
 - This connector shall be **electrically connected to the Raspberry Pi RUN (reset) line** described in §2.2.
 - Activating the connector shall trigger a Raspberry Pi reset.
 
@@ -95,7 +95,7 @@ Purpose:
 
 ### 3.2 External I²C Device Connectors
 
-- **3–4 external I²C connectors** shall be provided.
+- Provide **at least 2**, and **up to 4**, external I²C connectors.
 - All connectors shall share the **same I²C bus**.
 - Each I²C connector shall expose the following lines:
   - SDA (data)
@@ -110,10 +110,10 @@ Purpose:
 
 ### 3.3 General-Purpose GPIO Expansion
 
-- **3–4 GPIO expansion connectors** shall be provided for future use.
+- Provide **at least 2**, and **up to 4**, GPIO expansion connectors.
 - These connectors are reserved for **undefined future peripherals**.
 
-Two connector layouts are permitted.
+Two connector layouts are preferred.
 
 #### Option A – Minimal GPIO Connector (2-pin)
 
@@ -141,7 +141,7 @@ Purpose:
 
 ### 3.4 UART Expansion Connector (optional)
 
-- One optional UART expansion connector may be provided.
+- Provide one optional UART expansion connector.
 - The connector shall expose UART0:
   - TX
   - RX
@@ -156,11 +156,11 @@ Purpose:
 
 ### 3.5 SPI Expansion Connector (optional)
 
-- One optional SPI expansion connector may be provided.
+- Provide one optional SPI expansion connector.
 - The connector shall expose SPI0:
   - MOSI
   - MISO
-  - SCK 
+  - SCK
   - CS0
   - GND
 
