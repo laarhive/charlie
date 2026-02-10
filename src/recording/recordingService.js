@@ -158,13 +158,6 @@ export const RecordingService = function RecordingService({ logger, buses, devic
   let playerSession = null
 
   let profileSession = null
-  // shape:
-  // {
-  //   path,
-  //   profileName,
-  //   recordRoot,
-  //   playRoot,
-  // }
 
   const normalizeBusNames = function normalizeBusNames(busNames) {
     const raw = Array.isArray(busNames) ? busNames : []
@@ -369,6 +362,24 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     }
   }
 
+  const getStatusSnapshot = function getStatusSnapshot() {
+    const snap = getSnapshot()
+
+    const recordState = String(snap?.record?.state || 'idle')
+    const playState = String(snap?.play?.state || 'idle')
+
+    const out = {}
+
+    if (recordState !== 'idle') out.record = snap.record
+    if (playState !== 'idle') out.play = snap.play
+
+    if (!out.record && !out.play) {
+      return { state: 'idle' }
+    }
+
+    return out
+  }
+
   const recordStart = function recordStart({ busNames, duration, durationMs, fileNameBase, meta, comment, select } = {}) {
     if (recorderSession?.state === 'recording') {
       const err = new Error('recording_already_running')
@@ -441,6 +452,8 @@ export const RecordingService = function RecordingService({ logger, buses, devic
       }, dur)
     }
 
+    const snap = getSnapshot()
+
     logger?.notice?.('recording_started', {
       buses: busesToUse,
       durationMs: dur,
@@ -448,7 +461,13 @@ export const RecordingService = function RecordingService({ logger, buses, devic
       comment: commentStr,
     })
 
-    return getSnapshot()
+    logger?.notice?.('recording_started_snapshot', {
+      record: snap.record,
+      play: snap.play,
+      profile: snap.profile,
+    })
+
+    return snap
   }
 
   const recordStop = async function recordStop({ reason } = {}) {
@@ -475,15 +494,23 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     const saved = await store.save({ filename, recording })
     recorderSession.lastSavedPath = saved.path
 
+    const snap = getSnapshot()
+
     logger?.notice?.('recording_stopped', {
       reason: reason || 'manual',
       path: recorderSession.lastSavedPath,
       filename,
     })
 
+    logger?.notice?.('recording_stopped_snapshot', {
+      record: snap.record,
+      play: snap.play,
+      profile: snap.profile,
+    })
+
     return {
       savedPath: recorderSession.lastSavedPath,
-      snapshot: getSnapshot(),
+      snapshot: snap,
     }
   }
 
@@ -527,10 +554,33 @@ export const RecordingService = function RecordingService({ logger, buses, devic
       rewriteTs: rewriteTs === true,
       isolation,
       interval,
+      onEnd: ({ reason, snapshot }) => {
+        const snap = getSnapshot()
+
+        logger?.notice?.('play_ended', {
+          reason,
+          playerSnapshot: snapshot,
+          loadedPath: playerSession?.loadedPath || null,
+        })
+
+        logger?.notice?.('play_ended_snapshot', {
+          play: snap.play,
+          record: snap.record,
+          profile: snap.profile,
+        })
+      },
     })
 
+    const snap = getSnapshot()
+
     logger?.notice?.('play_started', { speed: player.getSnapshot().speed })
-    return getSnapshot()
+    logger?.notice?.('play_started_snapshot', {
+      play: snap.play,
+      record: snap.record,
+      profile: snap.profile,
+    })
+
+    return snap
   }
 
   const playPause = function playPause() {
@@ -548,7 +598,16 @@ export const RecordingService = function RecordingService({ logger, buses, devic
   const playStop = function playStop() {
     const player = requirePlayer()
     player.stop()
-    return getSnapshot()
+
+    const snap = getSnapshot()
+
+    logger?.notice?.('play_stopped_snapshot', {
+      play: snap.play,
+      record: snap.record,
+      profile: snap.profile,
+    })
+
+    return snap
   }
 
   const profileLoad = async function profileLoad({ profileFile } = {}) {
@@ -657,7 +716,7 @@ export const RecordingService = function RecordingService({ logger, buses, devic
     const kind = String(op || '').trim()
     const p = params && typeof params === 'object' ? params : {}
 
-    if (kind === 'status') return getSnapshot()
+    if (kind === 'status') return getStatusSnapshot()
 
     if (kind === 'profile.load') return await profileLoad(p)
 
@@ -679,20 +738,34 @@ export const RecordingService = function RecordingService({ logger, buses, devic
   }
 
   const handle = async function handle({ op, params } = {}) {
+    const opName = String(op || '').trim() || 'unknown'
+    const snapshotBefore = getSnapshot()
+
     try {
       const data = await doHandle({ op, params })
+      const snapshotAfter = getSnapshot()
 
-      logger?.info?.('recording_op_ok', { op: String(op || '').trim() || 'unknown' })
+      logger?.info?.('recording_op_ok', { op: opName })
 
-      return { ok: true, data }
+      return {
+        ok: true,
+        data,
+        opStatus: {
+          op: opName,
+          snapshotBefore,
+          snapshotAfter,
+        },
+      }
     } catch (e) {
       const fe0 = formatError(e)
       const controlled = isControlledError(e)
       const fe = controlled ? stripStacksDeep(fe0) : fe0
       const code = String(e?.code || 'ERROR')
 
+      const snapshotAfter = getSnapshot()
+
       logger?.error?.('recording_op_failed', {
-        op: String(op || ''),
+        op: opName,
         error: fe,
       })
 
@@ -700,6 +773,11 @@ export const RecordingService = function RecordingService({ logger, buses, devic
         ok: false,
         error: code,
         detail: fe,
+        opStatus: {
+          op: opName,
+          snapshotBefore,
+          snapshotAfter,
+        },
       }
     }
   }

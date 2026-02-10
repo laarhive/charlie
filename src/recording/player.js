@@ -193,6 +193,8 @@ export class Player {
 
   #interval
 
+  #onEnd
+
   constructor({ logger, deviceManager, buses, clock, setTimeoutFn, clearTimeoutFn }) {
     this.#logger = logger
     this.#deviceManager = deviceManager
@@ -235,6 +237,8 @@ export class Player {
     this.#blockToken = null
 
     this.#interval = null
+
+    this.#onEnd = null
   }
 
   load(recording) {
@@ -268,7 +272,7 @@ export class Player {
     }
   }
 
-  start({ speed = 1, routingByStreamKey, rewriteTs = false, isolation, interval } = {}) {
+  start({ speed = 1, routingByStreamKey, rewriteTs = false, isolation, interval, onEnd } = {}) {
     if (!this.#recording) {
       const err = new Error('recording_not_loaded')
       err.code = 'BAD_REQUEST'
@@ -296,6 +300,8 @@ export class Player {
     this.#interval = (maxIndex >= 0)
       ? normalizeInterval({ interval, maxIndex })
       : null
+
+    this.#onEnd = typeof onEnd === 'function' ? onEnd : null
 
     this.#maybeBlockDevices()
 
@@ -354,6 +360,8 @@ export class Player {
   }
 
   stop() {
+    const wasPlaying = this.#state === 'playing' || this.#state === 'paused'
+
     this.#clearTimer()
     this.#maybeUnblockDevices()
 
@@ -362,6 +370,10 @@ export class Player {
 
     this.#baseRealMs = 0
     this.#baseLogicalMs = 0
+
+    if (wasPlaying) {
+      this.#fireOnEnd({ reason: 'stop' })
+    }
   }
 
   getSnapshot() {
@@ -398,6 +410,22 @@ export class Player {
 
       routingByStreamKey: this.#routingRules.map((r) => ({ ...r })),
       isolation: this.#blockToken ? { token: this.#blockToken } : null,
+    }
+  }
+
+  #fireOnEnd({ reason }) {
+    if (!this.#onEnd) return
+
+    const fn = this.#onEnd
+    this.#onEnd = null
+
+    try {
+      fn({
+        reason: String(reason || 'unknown'),
+        snapshot: this.getSnapshot(),
+      })
+    } catch (e) {
+      this.#logger?.warning?.('player_onEnd_throw', { error: e?.message || String(e) })
     }
   }
 
@@ -499,6 +527,8 @@ export class Player {
     if (this.#isolation?.unblockOnStop === true) {
       this.#maybeUnblockDevices()
     }
+
+    this.#fireOnEnd({ reason: 'eof' })
   }
 
   #dispatch(ev) {
@@ -591,13 +621,13 @@ export class Player {
     const payload = isPlainObject(raw?.payload) ? { ...raw.payload } : {}
 
     if (type === 'presenceRaw:ld2450') {
-/*
-      const frame = isPlainObject(payload?.frame) ? { ...payload.frame } : null
-      if (frame) {
-        frame.ts = nowMs
-        payload.frame = frame
-      }
-*/
+      /*
+            const frame = isPlainObject(payload?.frame) ? { ...payload.frame } : null
+            if (frame) {
+              frame.ts = nowMs
+              payload.frame = frame
+            }
+      */
     }
 
     const outRaw = isPlainObject(raw) ? { ...raw, ts: nowMs, payload } : { type, ts: nowMs, payload }
