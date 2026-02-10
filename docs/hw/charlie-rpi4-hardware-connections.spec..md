@@ -89,7 +89,7 @@ Electrical implementation details are not prescribed.
 - Activating the connector shall trigger a Raspberry Pi reset.
 
 Purpose:
-- Manual reset without enclosure disassembly.
+- Manual reset without enclosure disassembly
 
 ---
 
@@ -102,6 +102,9 @@ Purpose:
   - SCL (clock)
   - GND (ground)
   - Power (3.3 V preferred; 5 V optional)
+
+Purpose:
+- Connection of external sensors and peripherals
 
 ---
 
@@ -131,6 +134,39 @@ Two connector layouts are permitted.
 - Pin ordering is implementation-defined but must be **consistent across all GPIO connectors**.
 - GPIO connectors must not assume any predefined function at this stage.
 
+Purpose:
+- Future digital I/O expansion
+
+---
+
+### 3.4 UART Expansion Connector (optional)
+
+- One optional UART expansion connector may be provided.
+- The connector shall expose UART0:
+  - TX
+  - RX
+  - GND
+  - 3.3 V
+
+Purpose:
+- Debug console access
+- Diagnostic and recovery interface
+
+---
+
+### 3.5 SPI Expansion Connector (optional)
+
+- One optional SPI expansion connector may be provided.
+- The connector shall expose SPI0:
+  - MOSI
+  - MISO
+  - SCK 
+  - CS0
+  - GND
+
+Purpose:
+- High-speed peripheral communication
+
 ---
 
 ## 4. Connector Requirements
@@ -142,13 +178,13 @@ Two connector layouts are permitted.
 
 Recommended connector family:
 - **JST-XH (2.54 mm)**
+- All external connectors should use the same connector family where practical
 
 ---
 
 ## 5. Non-Goals
 
 This document does not define:
-- GPIO pin numbers
 - Electrical limits or protection circuitry
 - Pull-ups, resistors, or level shifting
 - Firmware behavior
