@@ -187,5 +187,4 @@ Recommended connector family:
 This document does not define:
 - Electrical limits or protection circuitry
 - Pull-ups, resistors, or level shifting
-- Firmware behavior
 - Device-specific wiring
