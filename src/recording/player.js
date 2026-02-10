@@ -308,8 +308,11 @@ export class Player {
     this.#speed = s
     this.#state = 'playing'
 
+    // interval start should be a hard seek, not "skip and count"
+    this.#nextPos = 0
+    const seek = this.#seekToIntervalStart()
     this.#baseRealMs = this.#nowMs()
-    this.#baseLogicalMs = 0
+    this.#baseLogicalMs = seek.baseLogicalMs
 
     this.#scheduleNext()
   }
@@ -454,13 +457,50 @@ export class Player {
     return i >= this.#interval.from && i <= this.#interval.to
   }
 
+  #pastIntervalEnd(ev) {
+    if (!this.#interval) return false
+
+    const i = Number(ev?.i)
+    if (!Number.isFinite(i)) return false
+
+    return i > this.#interval.to
+  }
+
+  #seekToIntervalStart() {
+    if (!this.#interval) return { baseLogicalMs: 0 }
+
+    const from = this.#interval.from
+    let pos = 0
+
+    while (pos < this.#events.length) {
+      const ev = this.#events[pos]
+      const i = Number(ev?.i)
+
+      if (!Number.isFinite(i)) {
+        pos += 1
+        continue
+      }
+
+      if (i >= from) break
+      pos += 1
+    }
+
+    this.#nextPos = pos
+
+    // align logical clock to the first in-interval event time (if exists)
+    const first = this.#events[this.#nextPos]
+    const tMs = Number(first?.tMs)
+    const baseLogicalMs = Number.isFinite(tMs) ? tMs : 0
+
+    return { baseLogicalMs }
+  }
+
   #noteLateness(ev) {
     const tMs = Number(ev?.tMs)
     if (!Number.isFinite(tMs)) return
 
     const lateRaw = Math.max(0, this.#logicalNowMs() - tMs)
 
-    // always track max lateness, even if under grace
     this.#stats.lateMsMax = Math.max(this.#stats.lateMsMax, lateRaw)
 
     if (lateRaw > graceMs) {
@@ -475,24 +515,47 @@ export class Player {
     let dispatchedThisCall = 0
 
     while (this.#nextPos < this.#events.length) {
+      const ev = this.#events[this.#nextPos]
+
+      // hard stop once we are past interval end
+      if (this.#pastIntervalEnd(ev)) {
+        this.#state = 'loaded'
+        if (this.#isolation?.unblockOnStop === true) {
+          this.#maybeUnblockDevices()
+        }
+
+        this.#fireOnEnd({ reason: 'interval_end' })
+        return
+      }
+
       const logicalNow = this.#logicalNowMs()
 
       // drain all due events (including same tMs)
       while (this.#nextPos < this.#events.length) {
-        const ev = this.#events[this.#nextPos]
+        const e0 = this.#events[this.#nextPos]
 
-        if (!this.#inInterval(ev)) {
+        if (this.#pastIntervalEnd(e0)) {
+          this.#state = 'loaded'
+          if (this.#isolation?.unblockOnStop === true) {
+            this.#maybeUnblockDevices()
+          }
+
+          this.#fireOnEnd({ reason: 'interval_end' })
+          return
+        }
+
+        // with seek, we should not see pre-interval here, but keep safety
+        if (!this.#inInterval(e0)) {
           this.#nextPos += 1
-          this.#stats.skipped += 1
           continue
         }
 
-        const dt = ev.tMs - logicalNow
+        const dt = e0.tMs - logicalNow
         if (dt > 0) break
 
         this.#nextPos += 1
-        this.#noteLateness(ev)
-        this.#dispatch(ev)
+        this.#noteLateness(e0)
+        this.#dispatch(e0)
 
         dispatchedThisCall += 1
         if (dispatchedThisCall >= maxDispatchPerSchedule) {
@@ -509,8 +572,21 @@ export class Player {
 
       const evNext = this.#events[this.#nextPos]
 
-      // if next is out of interval, loop and count it as skipped in the drain
-      if (!this.#inInterval(evNext)) continue
+      if (this.#pastIntervalEnd(evNext)) {
+        this.#state = 'loaded'
+        if (this.#isolation?.unblockOnStop === true) {
+          this.#maybeUnblockDevices()
+        }
+
+        this.#fireOnEnd({ reason: 'interval_end' })
+        return
+      }
+
+      // if next is out-of-interval, advance without counting
+      if (!this.#inInterval(evNext)) {
+        this.#nextPos += 1
+        continue
+      }
 
       const dtNext = evNext.tMs - logicalNow
       const delayReal = Math.ceil(dtNext / this.#speed)

@@ -156,7 +156,6 @@ export const RecordingService = function RecordingService({ logger, buses, devic
 
   let recorderSession = null
   let playerSession = null
-
   let profileSession = null
 
   const normalizeBusNames = function normalizeBusNames(busNames) {
@@ -790,7 +789,22 @@ export const RecordingService = function RecordingService({ logger, buses, devic
 
     if (op === 'record.record') return await handle({ op, params })
     if (op === 'play.last') return await handle({ op, params })
-    if (op === 'play.play') return await handle({ op, params })
+
+    // FIX: `recording play <token>`:
+    // - if <token> matches a play variant in the loaded profile, treat it as variantKey and play last
+    // - else treat it as filename (legacy behavior)
+    if (op === 'play.play') {
+      const token = String(params?.fileName || '').trim()
+
+      if (token && profileSession?.playRoot) {
+        const playVariants = listVariantKeys(profileSession.playRoot)
+        if (playVariants.includes(token)) {
+          return await handle({ op: 'play.last', params: { variantKey: token } })
+        }
+      }
+
+      return await handle({ op, params })
+    }
 
     if (op === 'play.start') {
       const p = params?.path
