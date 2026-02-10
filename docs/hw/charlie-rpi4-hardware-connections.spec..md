@@ -45,9 +45,9 @@ Design principles:
 
 ### 2.2 RUN / Reset Line Extension
 
-- The Raspberry Pi **RUN (reset) line** shall be routed to the HAT as a **2-wire connection**.
+- The Raspberry Pi **RUN (reset) line** shall be routed to the HAT as a **single wire connection**.
 - The connection must **not be permanently soldered at both ends**.
-- At least **one 2-pin connector** must exist in the RUN line path.
+- At least **one connector** must exist in the RUN line path.
 - A single soldered connection on the Raspberry Pi PCB is permitted, as the RUN line is not exposed on a header.
 - The HAT must be removable **without any desoldering**.
 
@@ -87,6 +87,9 @@ Electrical implementation details are not prescribed.
 - Provide a **2-pin connector** for an external reset button.
 - This connector shall be **electrically connected to the Raspberry Pi RUN (reset) line** described in §2.2.
 - Activating the connector shall trigger a Raspberry Pi reset.
+- The connector shall expose the following lines:
+  - RUN (reset) line
+  - GND 
 
 Purpose:
 - Manual reset without enclosure disassembly
