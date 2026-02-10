@@ -17,13 +17,8 @@
         <label><input id="chkMeas" type="checkbox" checked /> Measurements</label>
         <label><input id="chkTracks" type="checkbox" checked /> Tracks</label>
 
-        <label class="sep">Scale</label>
-        <select id="selScale">
-            <option value="0.10">0.10 px/mm (10px=10cm)</option>
-            <option value="0.20" selected>0.20 px/mm (20px=10cm)</option>
-            <option value="0.30">0.30 px/mm (30px=10cm)</option>
-            <option value="0.50">0.50 px/mm (50px=10cm)</option>
-        </select>
+        <label class="sep">Range (m)</label>
+        <input id="inpRangeM" type="number" min="0.1" step="0.1" value="3.0" />
 
         <button id="btnReconnect">Reconnect</button>
     </div>

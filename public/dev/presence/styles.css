@@ -122,3 +122,13 @@ button {
 button:hover {
     background: #1a2b44;
 }
+
+.controls input[type="number"] {
+    width: 90px;
+    background: #162235;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 8px;
+}
+

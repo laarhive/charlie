@@ -43,7 +43,7 @@ azimuths: [${cfg.layout.radarAzimuthDeg.join(', ')}]
 tubeDiameterMm: ${cfg.layout.tubeDiameterMm}
 tubeRadiusMm: ${tubeR}
 fovDeg: ${cfg.layout.radarFovDeg}
-rMaxMm: ${cfg.layout.rMaxMm}`
+rMaxMm: ${cfg.draw.rMaxMm}`
 
   const tracks = state.getTracks()
   const lines = tracks
@@ -82,8 +82,10 @@ const main = async function main() {
   const chkFov = byId('chkFov')
   const chkMeas = byId('chkMeas')
   const chkTracks = byId('chkTracks')
-  const selScale = byId('selScale')
+  const inpRangeM = byId('inpRangeM')
   const btnReconnect = byId('btnReconnect')
+  const initialRangeM = (Number(cfgPresence?.draw?.rMaxMm) || 3000) / 1000
+  inpRangeM.value = String(Math.round(initialRangeM * 10) / 10)
 
   const state = new PresenceUiState({ cfg: cfgPresence })
   const renderer = new PresenceRenderer({ canvas, cfg: cfgPresence })
@@ -94,9 +96,17 @@ const main = async function main() {
     cfgPresence.draw.showMeasurements = Boolean(chkMeas.checked)
     cfgPresence.draw.showTracks = Boolean(chkTracks.checked)
 
-    const scale = Number(selScale.value)
-    if (Number.isFinite(scale) && scale > 0) {
-      cfgPresence.draw.scalePxPerMm = scale
+    const rangeM = Number(inpRangeM.value)
+    if (Number.isFinite(rangeM) && rangeM > 0) {
+      const rMaxMm = rangeM * 1000
+      cfgPresence.draw.rMaxMm = rMaxMm
+
+      // Keep the range circle constant on-screen size:
+      // pick a fixed pixel radius based on canvas size.
+      const marginPx = 40
+      const rMaxPx = Math.max(120, (Math.min(canvas.width, canvas.height) / 2) - marginPx)
+
+      cfgPresence.draw.scalePxPerMm = rMaxPx / rMaxMm
     }
 
     renderer.setConfig(cfgPresence)

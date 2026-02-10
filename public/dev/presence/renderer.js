@@ -20,6 +20,14 @@ export class PresenceRenderer {
   #trackColorOrder = []
   #maxTrackColors = 30
 
+  /* raw measurement palette: 4 radars x 3 target slots (nuanced) */
+  #measPalette = [
+    ['rgba(0, 255, 255, 0.85)', 'rgba(0, 255, 255, 0.55)', 'rgba(0, 255, 255, 0.30)'],   // R0
+    ['rgba(255, 64, 64, 0.85)', 'rgba(255, 64, 64, 0.55)', 'rgba(255, 64, 64, 0.30)'],   // R1
+    ['rgba(0, 255, 140, 0.85)', 'rgba(0, 255, 140, 0.55)', 'rgba(0, 255, 140, 0.30)'],   // R2
+    ['rgba(255, 210, 0, 0.85)', 'rgba(255, 210, 0, 0.55)', 'rgba(255, 210, 0, 0.30)'],   // R3
+  ]
+
   constructor({ canvas, cfg }) {
     this.#canvas = canvas
     this.#ctx = canvas.getContext('2d')
@@ -200,11 +208,28 @@ export class PresenceRenderer {
     ctx.restore()
   }
 
+  #measSlotIndex = (localId) => {
+    const n = Number(localId)
+    if (!Number.isFinite(n)) return 0
+
+    // common LD2450 target ids are 1..3, normalize to 0..2
+    const i = Math.round(n) - 1
+    if (i < 0) return 0
+    if (i > 2) return 2
+    return i
+  }
+
+  #measFillStyle = ({ radarId, localId }) => {
+    const r = Number(radarId)
+    const rid = Number.isFinite(r) ? r : 0
+    const palette = this.#measPalette[rid] || this.#measPalette[0]
+
+    const slot = this.#measSlotIndex(localId)
+    return palette[slot] || palette[0]
+  }
+
   #drawMeasurements({ ctx, cx, cy, scale, measurements }) {
     ctx.save()
-
-    // distinct from tracks
-    ctx.fillStyle = 'rgba(255,255,255,0.70)'
 
     for (const m of measurements) {
       const xMm = Number(m.xMm)
@@ -214,8 +239,10 @@ export class PresenceRenderer {
       const sx = cx + (yMm * scale)
       const sy = cy - (xMm * scale)
 
+      ctx.fillStyle = this.#measFillStyle(m)
+
       ctx.beginPath()
-      ctx.arc(sx, sy, 3, 0, Math.PI * 2)
+      ctx.arc(sx, sy, 3.5, 0, Math.PI * 2)
       ctx.fill()
     }
 
@@ -261,6 +288,22 @@ export class PresenceRenderer {
     return color
   }
 
+  #drawStar = ({ ctx, x, y, rOuter, rInner, points = 5 }) => {
+    const step = Math.PI / points
+
+    ctx.beginPath()
+    for (let i = 0; i < 2 * points; i += 1) {
+      const r = i % 2 === 0 ? rOuter : rInner
+      const a = -Math.PI / 2 + i * step
+      const px = x + Math.cos(a) * r
+      const py = y + Math.sin(a) * r
+      if (i === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+
+    ctx.closePath()
+  }
+
   #drawTracks({ ctx, cx, cy, scale, tracks }) {
     const velScale = Number(this.#cfg.draw.velocityArrowScale) || 8
 
@@ -274,11 +317,10 @@ export class PresenceRenderer {
 
       ctx.save()
 
-      const isTentative = String(t.state || '') === 'tentative'
       ctx.fillStyle = this.#getTrackFillStyle(t)
 
-      ctx.beginPath()
-      ctx.arc(sx, sy, 6, 0, Math.PI * 2)
+      // star instead of circle
+      this.#drawStar({ ctx, x: sx, y: sy, rOuter: 7, rInner: 3.5, points: 5 })
       ctx.fill()
 
       const vx = Number(t.vxMmS)
@@ -298,7 +340,7 @@ export class PresenceRenderer {
 
       ctx.font = '12px ui-monospace'
       ctx.fillStyle = 'rgba(255,255,255,0.7)'
-      ctx.fillText(String(t.id || '').slice(0, 18), sx + 8, sy - 8)
+      ctx.fillText(String(t.id || '').slice(0, 18), sx + 10, sy - 10)
 
       ctx.restore()
     }
