@@ -18,7 +18,11 @@ export class TrackingPipeline {
   #kf
   #assoc
 
-  #buffer
+  #latestByRadarId
+  #radarsExpectedSet
+  #radarsSeenEver
+
+  #lastTickMeasTsByRadarId
 
   #tracksById
   #seq
@@ -44,7 +48,11 @@ export class TrackingPipeline {
       gateD2Max: this.#cfg?.tracking?.association?.gateD2Max ?? 9.21,
     })
 
-    this.#buffer = []
+    this.#latestByRadarId = new Map()
+    this.#radarsExpectedSet = this.#buildExpectedRadarIdSet()
+    this.#radarsSeenEver = new Set()
+    this.#lastTickMeasTsByRadarId = new Map()
+
     this.#tracksById = new Map()
     this.#seq = 0
 
@@ -56,7 +64,7 @@ export class TrackingPipeline {
     }
   }
 
-  get streamKeyWho() { return `presenceController.trackingPipeline` }
+  get streamKeyWho() { return 'presenceController.trackingPipeline' }
 
   start() {
     if (!this.#enabled) {
@@ -92,7 +100,10 @@ export class TrackingPipeline {
       this.#timer = null
     }
 
-    this.#buffer = []
+    this.#latestByRadarId.clear()
+    this.#radarsSeenEver.clear()
+    this.#lastTickMeasTsByRadarId.clear()
+
     this.#tracksById.clear()
   }
 
@@ -109,14 +120,75 @@ export class TrackingPipeline {
   #getUpdateIntervalMs() {
     const ms = Number(this.#cfg?.tracking?.updateIntervalMs)
     if (Number.isFinite(ms) && ms > 0) return Math.floor(ms)
+    return 50
+  }
 
-    return 100
+  #getStaleMeasMaxMs() {
+    const ms = Number(this.#cfg?.tracking?.snapshot?.staleMeasMaxMs)
+    if (Number.isFinite(ms) && ms > 0) return Math.floor(ms)
+    return 250
+  }
+
+  #getRadarMissingTimeoutMs() {
+    const ms = Number(this.#cfg?.tracking?.snapshot?.radarMissingTimeoutMs)
+    if (Number.isFinite(ms) && ms > 0) return Math.floor(ms)
+    return 1500
+  }
+
+  #buildExpectedRadarIdSet() {
+    const set = new Set()
+
+    const layout = this.#cfg?.layout || {}
+    const list = Array.isArray(layout?.ld2450) ? layout.ld2450 : []
+
+    for (let radarId = 0; radarId < list.length; radarId += 1) {
+      const entry = list[radarId]
+      if (!entry) continue
+      if (entry.enabled !== true) continue
+      set.add(radarId)
+    }
+
+    return set
+  }
+
+  #stripProvenanceForTracking(prov, { debugEnabled }) {
+    if (!prov || typeof prov !== 'object') return null
+
+    if (debugEnabled) {
+      return prov
+    }
+
+    // Keep only what tracking logic depends on:
+    // - localMm: bearing gate + handover heuristic
+    // - publishAs/slotId/radarId/measTs: stable identity/timing (lightweight)
+    return {
+      publishAs: prov.publishAs ?? null,
+      radarId: prov.radarId ?? null,
+      slotId: prov.slotId ?? null,
+      measTs: prov.measTs ?? null,
+      localMm: prov.localMm ?? null,
+    }
   }
 
   #onLd2450Tracks(event) {
     const p = event?.payload || {}
-    const ts = Number(event?.ts) || this.#clock.nowMs()
+    const meta = p?.meta || {}
+
+    const debugEnabled = this.#debugEnabled()
+
+    const radarId = Number(meta.radarId)
+    if (!Number.isFinite(radarId)) return
+
+    const publishAs = String(meta.publishAs || '').trim()
+    const zoneId = String(meta.zoneId || '')
+
+    const measTs = Number(p.ts)
+    if (!Number.isFinite(measTs) || measTs <= 0) return
+
+    const recvTs = Number(event?.ts) || this.#clock.nowMs()
+
     const tracks = Array.isArray(p.tracks) ? p.tracks : []
+    const measurements = []
 
     for (const t of tracks) {
       const w = t?.world || {}
@@ -125,20 +197,209 @@ export class TrackingPipeline {
 
       if (!Number.isFinite(xMm) || !Number.isFinite(yMm)) continue
 
-      this.#buffer.push({
-        ts,
-        radarId: Number(t.radarId),
-        zoneId: String(t.zoneId || ''),
+      const prov = this.#stripProvenanceForTracking(t?.provenance || null, { debugEnabled })
+
+      measurements.push({
+        ts: measTs,
+        radarId,
+        zoneId,
         xMm,
         yMm,
-
-        prov: t?.provenance || null,
+        prov,
       })
     }
+
+    const prev = this.#latestByRadarId.get(radarId)
+    const prevMeasTs = Number(prev?.measTs) || 0
+    if (measTs < prevMeasTs) return
+
+    const entry = {
+      measTs,
+      recvTs,
+      radarId,
+      zoneId,
+      publishAs,
+      measurements,
+
+      detectionCount: measurements.length,
+      slotCount: Number(meta.slotCount) || null,
+    }
+
+    if (debugEnabled) {
+      entry.debug = {
+        slotCount: Number(meta.slotCount) || null,
+        detectionCount: Number(meta.detectionCount) || measurements.length,
+        slots: Array.isArray(p.slots) ? p.slots : null,
+      }
+    }
+
+    this.#latestByRadarId.set(radarId, entry)
+    this.#radarsSeenEver.add(radarId)
+  }
+
+  #makeSnapshot(now) {
+    const staleMeasMaxMs = this.#getStaleMeasMaxMs()
+    const radarMissingTimeoutMs = this.#getRadarMissingTimeoutMs()
+
+    const expected = this.#radarsExpectedSet
+    const expectedCount = expected.size
+    const seenTotal = this.#radarsSeenEver.size
+
+    let radarsFresh = 0
+    let radarsStale = 0
+    let radarsMissing = 0
+
+    let maxRadarAgeMs = 0
+    let minRadarAgeMs = Infinity
+    let maxRecvLagMs = 0
+
+    let framesFreshWithDetections = 0
+    let measIn = 0
+
+    let snapshotsAdvancedThisTick = false
+    let radarsAdvancedCount = 0
+
+    const measurements = []
+
+    const debugEnabled = this.#debugEnabled()
+    const debugRadars = debugEnabled ? [] : null
+
+    const expectedIds = expectedCount > 0 ? [...expected.values()] : [...this.#latestByRadarId.keys()]
+    const expectedSet = expectedCount > 0 ? expected : null
+
+    for (const radarId of expectedIds) {
+      const entry = this.#latestByRadarId.get(radarId)
+
+      if (!entry) {
+        radarsMissing += 1
+
+        if (debugEnabled) {
+          debugRadars.push({
+            radarId,
+            publishAs: null,
+            zoneId: null,
+            enabled: expectedSet ? true : null,
+            status: 'missing',
+            included: false,
+            measTs: null,
+            ageMs: null,
+            recvTs: null,
+            recvLagMs: null,
+            detectionCount: 0,
+            slotCount: null,
+          })
+        }
+
+        continue
+      }
+
+      const measTs = Number(entry.measTs) || 0
+      const recvTs = Number(entry.recvTs) || 0
+
+      const ageMs = Math.max(0, now - measTs)
+      const recvLagMs = (recvTs && measTs) ? Math.max(0, recvTs - measTs) : 0
+
+      const lastTickMeasTs = Number(this.#lastTickMeasTsByRadarId.get(radarId)) || 0
+      const advanced = measTs > lastTickMeasTs
+
+      if (advanced) {
+        snapshotsAdvancedThisTick = true
+        radarsAdvancedCount += 1
+      }
+
+      let status = 'fresh'
+      let included = true
+
+      if (ageMs > radarMissingTimeoutMs) {
+        status = 'missing'
+        included = false
+        radarsMissing += 1
+      } else if (ageMs > staleMeasMaxMs) {
+        status = 'stale'
+        included = false
+        radarsStale += 1
+      } else {
+        radarsFresh += 1
+      }
+
+      if (included) {
+        maxRadarAgeMs = Math.max(maxRadarAgeMs, ageMs)
+        minRadarAgeMs = Math.min(minRadarAgeMs, ageMs)
+        maxRecvLagMs = Math.max(maxRecvLagMs, recvLagMs)
+
+        const detCount = Number(entry.detectionCount) || 0
+        if (detCount > 0) framesFreshWithDetections += 1
+
+        measIn += detCount
+        if (Array.isArray(entry.measurements) && entry.measurements.length > 0) {
+          measurements.push(...entry.measurements)
+        }
+      }
+
+      if (debugEnabled) {
+        debugRadars.push({
+          radarId,
+          publishAs: entry.publishAs ?? null,
+          zoneId: entry.zoneId ?? null,
+          enabled: expectedSet ? true : null,
+          status,
+          included,
+          measTs,
+          ageMs,
+          recvTs: recvTs || null,
+          recvLagMs,
+          detectionCount: Number(entry.detectionCount) || 0,
+          slotCount: Number(entry.slotCount) || null,
+        })
+      }
+    }
+
+    if (!Number.isFinite(minRadarAgeMs)) minRadarAgeMs = 0
+
+    // Advance per-radar snapshot cursor only for enabled radars
+    for (const [radarId, entry] of this.#latestByRadarId.entries()) {
+      const enabled = this.#radarsExpectedSet.size > 0 ? this.#radarsExpectedSet.has(radarId) : true
+      if (!enabled) continue
+
+      const measTs = Number(entry?.measTs) || 0
+      const lastTickMeasTs = Number(this.#lastTickMeasTsByRadarId.get(radarId)) || 0
+      if (measTs > lastTickMeasTs) {
+        this.#lastTickMeasTsByRadarId.set(radarId, measTs)
+      }
+    }
+
+    const meta = {
+      tickIntervalMs: this.#getUpdateIntervalMs(),
+      staleMeasMaxMs,
+      radarMissingTimeoutMs,
+
+      radarsExpected: expectedCount || null,
+      radarsSeenTotal: seenTotal,
+
+      radarsFresh,
+      radarsStale,
+      radarsMissing,
+
+      framesFreshUsed: radarsFresh,
+      framesFreshWithDetections,
+
+      measIn,
+
+      maxRadarAgeMs,
+      minRadarAgeMs,
+      maxRecvLagMs,
+
+      snapshotsAdvancedThisTick,
+      radarsAdvancedCount,
+    }
+
+    const debug = debugEnabled ? { radars: debugRadars } : null
+
+    return { measurements, meta, debug }
   }
 
   #shouldAcceptRadarSwitch(tr, m) {
-    if (tr.lastRadarId == null || tr.lastRadarId === m.radarId) {
+    if (tr.lastRadarId === null || tr.lastRadarId === m.radarId) {
       return true
     }
 
@@ -158,8 +419,6 @@ export class TrackingPipeline {
     const absNew = Math.abs(Math.atan2(Number(newLocal.xMm), Number(newLocal.yMm)) * 180 / Math.PI)
     const absOld = Math.abs(Math.atan2(Number(oldLocal.xMm), Number(oldLocal.yMm)) * 180 / Math.PI)
 
-    // Escape hatch: if we're effectively at the edge on the current radar
-    // and the new radar is clearly central, switch immediately.
     if (Number.isFinite(cutoffDeg) && Number.isFinite(fullDeg)) {
       const EDGE = cutoffDeg - 2
       const CENTER = fullDeg + 2
@@ -169,7 +428,6 @@ export class TrackingPipeline {
       }
     }
 
-    // Normal hysteresis: only switch if new radar is clearly better.
     return (absNew + marginDeg) < absOld
   }
 
@@ -206,7 +464,9 @@ export class TrackingPipeline {
     const mode = this.#mode()
     const debugEnabled = this.#debugEnabled()
 
-    const rawMeasurements = this.#drainBuffer()
+    const snapshot = this.#makeSnapshot(now)
+
+    const rawMeasurements = snapshot.measurements
     const filtered = this.#filterMeasurements(rawMeasurements)
     const measurements = this.#dedupMeasurements(filtered)
 
@@ -215,9 +475,10 @@ export class TrackingPipeline {
     if (mode === 'passthrough') {
       this.#publishPassthrough(now, measurements, {
         debugEnabled,
-        bufferedMeas: rawMeasurements.length,
-        filteredMeas: filtered.length,
-        dedupedMeas: measurements.length,
+        snapshotMeta: snapshot.meta,
+        snapshotDebug: snapshot.debug,
+        measFiltered: filtered.length,
+        measDeduped: measurements.length,
       })
       return
     }
@@ -236,7 +497,6 @@ export class TrackingPipeline {
       tr.updatedThisTick = false
     }
 
-    // 1) predict (kf only)
     const liveTracks = []
     for (const tr of this.#tracksById.values()) {
       if (kfEnabled) {
@@ -253,7 +513,6 @@ export class TrackingPipeline {
       liveTracks.push(tr)
     }
 
-    // 2) associate
     const assocInput = liveTracks.map((t) => ({
       id: t.id,
       xMm: t.xMm,
@@ -269,25 +528,19 @@ export class TrackingPipeline {
 
     const unassignedSet = new Set(unassignedMeas)
 
-    // 3) update assigned tracks
     for (const [trackId, measIdx] of assignments.entries()) {
       const tr = this.#tracksById.get(trackId)
       if (!tr) continue
 
       let m = measurements[measIdx]
 
-      // check bearing quality to arbitrate handover
       if (!this.#shouldAcceptRadarSwitch(tr, m)) {
         const fbIdx = this.#findFallbackMeasIdxSameRadar(tr, measurements, unassignedSet, measVarMm2ByRadarId)
-
         if (fbIdx == null) {
           continue
         }
 
-        // consume it so it won't spawn a new track
         unassignedSet.delete(fbIdx)
-
-        // swap to fallback measurement (same radar)
         m = measurements[fbIdx]
       }
 
@@ -346,14 +599,12 @@ export class TrackingPipeline {
       }
     }
 
-    // 4) spawn gate
     for (const idx of unassignedMeas) {
       const m = measurements[idx]
       if (!this.#canSpawnNewTrack(m)) continue
       this.#createTrackFromMeasurement(m, now, { confirmEnabled, kfEnabled, mode })
     }
 
-    // 5) prune
     for (const tr of this.#tracksById.values()) {
       const sinceSeen = now - tr.lastSeenTs
       if (sinceSeen >= dropTimeoutMs) tr.drop = true
@@ -363,7 +614,6 @@ export class TrackingPipeline {
       if (tr.drop) this.#tracksById.delete(id)
     }
 
-    // 6) publish
     const out = []
     for (const tr of this.#tracksById.values()) {
       let vx = tr.vxMmS
@@ -409,6 +659,22 @@ export class TrackingPipeline {
       out.push(item)
     }
 
+    const meta = {
+      mode,
+
+      ...snapshot.meta,
+
+      measFiltered: filtered.length,
+      measDeduped: measurements.length,
+
+      activeTracks: out.length,
+      tickIntervalMs: this.#getUpdateIntervalMs(),
+    }
+
+    if (debugEnabled && snapshot.debug) {
+      meta.debug = snapshot.debug
+    }
+
     this.#presenceInternalBus.publish({
       type: domainEventTypes.presence.globalTracks,
       ts: now,
@@ -422,21 +688,13 @@ export class TrackingPipeline {
         ts: now,
         publishAs: this.streamKeyWho,
         tracks: out,
-        meta: {
-          mode,
-          bufferedMeas: rawMeasurements.length,
-          filteredMeas: filtered.length,
-          dedupedMeas: measurements.length,
-          activeTracks: out.length,
-          updateIntervalMs: this.#getUpdateIntervalMs(),
-        },
+        meta,
       },
     })
   }
 
   #filterMeasurements(measurements) {
     const q = this.#cfg?.quality || {}
-    const fullDeg = Number(q.edgeBearingFullDeg)
     const cutoffDeg = Number(q.edgeBearingCutoffDeg)
 
     const useBearingGate = Number.isFinite(cutoffDeg) && cutoffDeg > 0
@@ -451,7 +709,6 @@ export class TrackingPipeline {
       const x = Number(local?.xMm)
       const y = Number(local?.yMm)
 
-      // If we don't have local coords, don't drop it here.
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         out.push(m)
         continue
@@ -464,16 +721,13 @@ export class TrackingPipeline {
         continue
       }
 
-      // (optional later) soft weighting between fullDeg and cutoffDeg
-      // For now, keep it simple: hard cutoff only.
-
       out.push(m)
     }
 
     return out
   }
 
-  #publishPassthrough(now, measurements, { debugEnabled, bufferedMeas, filteredMeas, dedupedMeas }) {
+  #publishPassthrough(now, measurements, { debugEnabled, snapshotMeta, snapshotDebug, measFiltered, measDeduped }) {
     const out = []
 
     for (const m of measurements) {
@@ -514,6 +768,22 @@ export class TrackingPipeline {
       out.push(item)
     }
 
+    const meta = {
+      mode: 'passthrough',
+
+      ...snapshotMeta,
+
+      measFiltered: Number(measFiltered) || measurements.length,
+      measDeduped: Number(measDeduped) || measurements.length,
+
+      activeTracks: out.length,
+      tickIntervalMs: this.#getUpdateIntervalMs(),
+    }
+
+    if (debugEnabled && snapshotDebug) {
+      meta.debug = snapshotDebug
+    }
+
     this.#presenceInternalBus.publish({
       type: domainEventTypes.presence.globalTracks,
       ts: now,
@@ -525,15 +795,9 @@ export class TrackingPipeline {
       }),
       payload: {
         ts: now,
+        publishAs: this.streamKeyWho,
         tracks: out,
-        meta: {
-          mode: 'passthrough',
-          bufferedMeas: Number(bufferedMeas) || measurements.length,
-          filteredMeas: Number(filteredMeas) || measurements.length,
-          dedupedMeas: Number(dedupedMeas) || measurements.length,
-          activeTracks: out.length,
-          updateIntervalMs: this.#getUpdateIntervalMs(),
-        },
+        meta,
       },
     })
   }
@@ -670,12 +934,6 @@ export class TrackingPipeline {
     const gateD2 = ((dx * dx) + (dy * dy)) / Math.max(1, varMm2)
 
     return { gateD2, assigned: true }
-  }
-
-  #drainBuffer() {
-    const out = this.#buffer
-    this.#buffer = []
-    return out
   }
 
   #computeMeasVarByRadar(measurements) {

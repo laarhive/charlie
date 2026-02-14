@@ -61,9 +61,9 @@
     // - 'passthrough' => no association, no KF, deterministic IDs m:<publishAs>:<slotId>
     // - 'assocOnly'   => association + lifecycle, state = last measurement
     // - 'kf'          => association + KF (current full)
-    mode: 'assocOnly',
+    mode: 'kf',
 
-    updateIntervalMs: 100,
+    updateIntervalMs: 50,
     maxDtMs: 400,
     dropTimeoutMs: 1500,
 

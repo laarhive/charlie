@@ -142,7 +142,44 @@ export class PresenceController {
   #publishTargetsFromGlobalTracks(event) {
     const p = event?.payload || {}
     const tracks = Array.isArray(p.tracks) ? p.tracks : []
+    const meta = p?.meta || null
     const debugEnabled = this.#debugEnabled()
+
+    const out = tracks
+      .filter((t) => t && t.state === 'confirmed')
+      .map((t) => {
+        const item = {
+          id: t.id,
+
+          xMm: t.xMm,
+          yMm: t.yMm,
+
+          vxMmS: t.vxMmS,
+          vyMmS: t.vyMmS,
+          speedMmS: t.speedMmS,
+
+          ageMs: t.ageMs,
+          lastSeenMs: t.lastSeenMs,
+
+          sourceRadars: t.sourceRadars,
+        }
+
+        if (debugEnabled && t.debug) {
+          item.debug = t.debug
+        }
+
+        return item
+      })
+
+    const payload = {
+      targets: out,
+    }
+
+    // Forward snapshot/tick verification meta so the browser UI can verify snapshotting
+    // using only the main bus stream.
+    if (meta) {
+      payload.meta = debugEnabled ? meta : this.#stripTargetsMeta(meta)
+    }
 
     this.#mainBus.publish({
       type: eventTypes.presence.targets,
@@ -153,34 +190,19 @@ export class PresenceController {
         what: eventTypes.presence.targets,
         where: busIds.main,
       }),
-      payload: {
-        targets: tracks
-          .filter((t) => t && t.state === 'confirmed')
-          .map((t) => {
-            const out = {
-              id: t.id,
-
-              xMm: t.xMm,
-              yMm: t.yMm,
-
-              vxMmS: t.vxMmS,
-              vyMmS: t.vyMmS,
-              speedMmS: t.speedMmS,
-
-              ageMs: t.ageMs,
-              lastSeenMs: t.lastSeenMs,
-
-              sourceRadars: t.sourceRadars,
-            }
-
-            if (debugEnabled && t.debug) {
-              out.debug = t.debug
-            }
-
-            return out
-          }),
-      },
+      payload,
     })
+  }
+
+  #stripTargetsMeta(meta) {
+    if (!meta || typeof meta !== 'object') return meta
+
+    const out = { ...meta }
+
+    // Keep always-on snapshot counters, drop debug-heavy tables.
+    if (out.debug) delete out.debug
+
+    return out
   }
 }
 

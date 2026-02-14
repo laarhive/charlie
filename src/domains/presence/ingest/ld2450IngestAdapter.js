@@ -2,7 +2,6 @@
 import domainEventTypes from '../../domainEventTypes.js'
 import { TransformService } from '../transform/transformService.js'
 import { makeStreamKey } from '../../../core/eventBus.js'
-import eventTypes from '../../../core/eventTypes.js'
 import { busIds } from '../../../app/buses.js'
 
 export class Ld2450IngestAdapter {
@@ -75,6 +74,10 @@ export class Ld2450IngestAdapter {
     this.#unsubscribe = null
   }
 
+  #debugEnabled() {
+    return this.#cfg?.debug?.enabled === true
+  }
+
   #initLayout(cfg) {
     const layout = cfg?.layout || {}
     const list = Array.isArray(layout?.ld2450) ? layout.ld2450 : []
@@ -103,31 +106,16 @@ export class Ld2450IngestAdapter {
     if (!publishAs) return
 
     const device = this.#devicesByPublishAs.get(publishAs)
-    if (!this.#deviceUsable(device)) {
-      return
-    }
+    if (!this.#deviceUsable(device)) return
 
     const layoutEntry = this.#layoutByPublishAs.get(publishAs)
-    if (!layoutEntry || layoutEntry.enabled !== true) {
-      return
-    }
+    if (!layoutEntry || layoutEntry.enabled !== true) return
+
+    const debugEnabled = this.#debugEnabled()
 
     const frame = p.frame || {}
     const frameTs = Number(frame.ts) || Number(event?.ts) || this.#clock.nowMs()
     const slots = Array.isArray(frame.targets) ? frame.targets : []
-
-    const frameSnapshot = {
-      measTs: frameTs,
-      bus: 'presence',
-      publishAs,
-      radarId: layoutEntry.radarId,
-      slots: slots.map((t) => ({
-        slotId: Number(t?.id),
-        valid: t?.valid === true,
-        xMm: Number(t?.xMm) || 0,
-        yMm: Number(t?.yMm) || 0,
-      })),
-    }
 
     const detections = slots
       .filter((t) => t && t.valid === true)
@@ -139,62 +127,53 @@ export class Ld2450IngestAdapter {
         resolutionMm: Number(t.resolutionMm) || 0,
       }))
 
-    const tracks = detections.map((d) => {
-      const local = this.#deriveLocal(d.xMm, d.yMm)
+    const frameSnapshot = debugEnabled ? {
+      measTs: frameTs,
+      bus: 'presence',
+      publishAs,
+      radarId: layoutEntry.radarId,
+      slots: slots.map((t) => ({
+        slotId: Number(t?.id),
+        valid: t?.valid === true,
+        xMm: Number(t?.xMm) || 0,
+        yMm: Number(t?.yMm) || 0,
+      })),
+    } : null
 
+    const transformDebug = debugEnabled
+      ? this.#transform.getDebugForRadar(layoutEntry.radarId)
+      : null
+
+    const measurements = detections.map((d) => {
       const worldMeas = this.#transform.toWorldMm({
         radarId: layoutEntry.radarId,
         xMm: d.xMm,
         yMm: d.yMm,
       })
 
-      const world = this.#deriveWorld(worldMeas.xMm, worldMeas.yMm)
-      const transformDebug = this.#transform.getDebugForRadar(layoutEntry.radarId)
+      const out = {
+        ts: frameTs,
 
-      return {
-        trackId: `${publishAs}:${d.slotId}`,
-        state: 'confirmed',
-
+        publishAs,
         radarId: layoutEntry.radarId,
         zoneId: layoutEntry.zoneId,
+        slotId: d.slotId,
 
-        local: {
-          xMm: d.xMm,
-          yMm: d.yMm,
-          rangeMm: local.rangeMm,
-          bearingDeg: local.bearingDeg,
-        },
+        localMm: { xMm: d.xMm, yMm: d.yMm },
+        worldMm: { xMm: worldMeas.xMm, yMm: worldMeas.yMm },
 
-        world: {
-          xMm: world.xMm,
-          yMm: world.yMm,
-          rangeMm: world.rangeMm,
-          bearingDeg: world.bearingDeg,
-        },
-
-        vxMmS: 0,
-        vyMmS: 0,
         speedMmS: Math.abs(d.speedMmS),
-
-        ageMs: 0,
-        lastSeenMs: 0,
-        sourceRadars: [layoutEntry.radarId],
-
-        provenance: {
-          bus: 'presence',
-          publishAs,
-          radarId: layoutEntry.radarId,
-          slotId: d.slotId,
-          measTs: frameTs,
-
-          localMm: { xMm: d.xMm, yMm: d.yMm },
-          worldMeasMm: { xMm: worldMeas.xMm, yMm: worldMeas.yMm },
-
-          transform: transformDebug,
-
-          frame: frameSnapshot,
-        },
+        resolutionMm: d.resolutionMm,
       }
+
+      if (debugEnabled) {
+        out.debug = {
+          transform: transformDebug,
+          frame: frameSnapshot,
+        }
+      }
+
+      return out
     })
 
     this.#presenceInternalBus.publish({
@@ -208,31 +187,24 @@ export class Ld2450IngestAdapter {
       }),
       payload: {
         ts: frameTs,
-        tracks,
+
+        measurements,
         slots,
 
         meta: {
           publishAs,
           radarId: layoutEntry.radarId,
           zoneId: layoutEntry.zoneId,
+
           slotCount: slots.length,
+
+          measurementCount: measurements.length,
           detectionCount: detections.length,
+
           frame: 'radarLocal_to_world_v0',
         },
       },
     })
-  }
-
-  #deriveLocal(xMm, yMm) {
-    const rangeMm = Math.sqrt((xMm * xMm) + (yMm * yMm))
-    const bearingDeg = (Math.atan2(xMm, yMm) * 180) / Math.PI
-    return { rangeMm, bearingDeg }
-  }
-
-  #deriveWorld(xMm, yMm) {
-    const rangeMm = Math.sqrt((xMm * xMm) + (yMm * yMm))
-    const bearingDeg = (Math.atan2(yMm, xMm) * 180) / Math.PI
-    return { xMm, yMm, rangeMm, bearingDeg }
   }
 }
 
