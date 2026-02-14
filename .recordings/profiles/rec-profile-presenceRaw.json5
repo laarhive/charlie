@@ -7,7 +7,7 @@
       busNames: [
         'presence'
       ],
-      duration: '1s',
+      duration: '1m',
       select: {
         includeStreamKeys: [
           '*::presenceRaw:*::presence',
@@ -18,25 +18,27 @@
         note: 'tracking calibration',
       },
     },
-    dur10s: {
-      duration: '10s',
-      meta: {
-        note: 'tracking calibration for 10s',
-      }
-    }
+    dur30s: {
+      duration: '30s',
+    },
+    dur1m: {
+      duration: '1m',
+    },
   },
   play: {
     op: 'play.start',
     params: {
-      speed: 1,
       routingByStreamKey: {
         '*::presenceRaw:*::presence': 'device'
       },
-      rewriteTs: true,
+      rewriteTs: false,
       isolation: {
         blockDevices: ['LD2450A', 'LD2450B', 'LD2450C'],
         unblockOnStop: true,
       }
+    },
+    int: {
+      interval: [1100, 1000000000],
     },
     speed2: {
       speed: 2
