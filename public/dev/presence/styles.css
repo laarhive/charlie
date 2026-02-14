@@ -132,3 +132,116 @@ button:hover {
     border-radius: 8px;
 }
 
+.controls input[type="number"] {
+    width: 90px;
+    background: #162235;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 8px;
+}
+
+.switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+}
+
+.switch input {
+    display: none;
+}
+
+.slider {
+    position: relative;
+    width: 42px;
+    height: 22px;
+    background: #22324a;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.slider::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: #8aa0b8;
+    border-radius: 999px;
+    transition: transform 120ms ease, background 120ms ease;
+}
+
+.switch input:checked + .slider::after {
+    transform: translateX(20px);
+    background: #6aa9ff;
+}
+
+.switchLabel {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.panel .mono.small {
+    white-space: pre-wrap;
+}
+
+.panel {
+    user-select: text;
+}
+
+.panel .mono.small {
+    white-space: pre-wrap;
+}
+
+.controls {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.group {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+    border-radius: 10px;
+}
+
+.groupTitle {
+    font-weight: 700;
+    color: var(--muted);
+    margin-right: 6px;
+}
+
+.inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.muted {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.controls input[type="number"] {
+    width: 80px;
+    background: #162235;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 8px;
+}
+
+#rawTargetsConsistencyInfo .ok { color: rgba(120, 255, 170, 0.85); }
+#rawTargetsConsistencyInfo .bad { color: rgba(255, 120, 120, 0.90); }
+#rawTargetsConsistencyInfo { user-select: text; }
+
+

@@ -12,16 +12,47 @@
     <div class="title">Presence Debug</div>
 
     <div class="controls">
-        <label><input id="chkGrid" type="checkbox" checked /> Grid</label>
-        <label><input id="chkFov" type="checkbox" checked /> FOV</label>
-        <label><input id="chkMeas" type="checkbox" checked /> Measurements</label>
-        <label><input id="chkTracks" type="checkbox" checked /> Tracks</label>
+        <div class="group">
+            <div class="groupTitle">Layers</div>
 
-        <label class="sep">Range (m)</label>
-        <input id="inpRangeM" type="number" min="0.1" step="0.1" value="3.0" />
+            <label><input id="chkGrid" type="checkbox" checked /> Grid</label>
+            <label><input id="chkFov" type="checkbox" checked /> FOV</label>
 
-        <button id="btnReconnect">Reconnect</button>
+            <label class="inline">
+                <input id="chkRaw" type="checkbox" checked />
+                RawTargets
+                <span class="muted">trail(s)</span>
+                <input id="inpRawTrailS" type="number" step="0.1" value="1.5" />
+            </label>
+
+            <label class="inline">
+                <input id="chkTracks" type="checkbox" checked />
+                Tracks
+                <span class="muted">trail(s)</span>
+                <input id="inpTrackTrailS" type="number" step="0.1" value="4.0" />
+            </label>
+
+            <button id="btnClearTrails">Clear trails</button>
+        </div>
+
+        <div class="group">
+            <div class="groupTitle">View</div>
+
+            <label class="inline">
+                <span class="muted">Range (m)</span>
+                <input id="inpRangeM" type="number" min="0.1" step="0.1" value="3.0" />
+            </label>
+
+            <button id="btnFreeze">Freeze</button>
+
+            <label class="switch">
+                <input id="tglConnect" type="checkbox" />
+                <span class="slider"></span>
+                <span class="switchLabel">Connected</span>
+            </label>
+        </div>
     </div>
+
 
     <div class="status">
         <span id="wsStatus" class="pill">disconnected</span>
@@ -41,13 +72,17 @@
         </div>
 
         <div class="panel">
-            <div class="panelTitle">Tracks</div>
-            <div id="tracksTable" class="mono small"></div>
+            <div class="panelTitle">Targets</div>
+            <div id="targetsInfo" class="mono small"></div>
         </div>
 
         <div class="panel">
-            <div class="panelTitle">Last frames</div>
-            <div id="framesInfo" class="mono small"></div>
+            <div class="panelTitle">Tracks</div>
+            <div id="tracksTable" class="mono small"></div>
+        </div>
+        <div class="panel">
+            <div class="panelTitle">Raw Targets Monitor</div>
+            <div id="rawTargetsConsistencyInfo" class="mono small"></div>
         </div>
     </aside>
 </main>
@@ -55,4 +90,3 @@
 <script type="module" src="./main.js"></script>
 </body>
 </html>
-
