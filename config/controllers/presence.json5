@@ -53,6 +53,9 @@
     jitterFullMm: 60,
     jitterCutoffMm: 250,
     jitterNoiseScaleMax: 3.0,
+
+    // 1 disables. If you see stale frames pulling fusion: set to 3 or 4 (3–4 is a reasonable safety net)
+    staleNoiseScaleMax: 1
   },
 
   // 5–7) Tracking pipeline

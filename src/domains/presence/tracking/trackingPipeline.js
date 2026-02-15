@@ -109,6 +109,8 @@ export class TrackingPipeline {
 
   #sanityCounters
 
+  #bufferByRadarId  = new Map()
+
   constructor({ logger, clock, controllerId, presenceInternalBus, controllerConfig }) {
     this.#logger = logger
     this.#clock = clock
@@ -203,6 +205,80 @@ export class TrackingPipeline {
     this.#healthLastPublishTs = 0
     this.#healthSeq = 0
     this.#sanityCounters = this.#makeEmptySanityCounters()
+    this.#bufferByRadarId.clear()
+  }
+
+  #getJitterDelayMs() {
+    const ms = Number(this.#cfg?.tracking?.snapshot?.jitterDelayMs)
+    if (Number.isFinite(ms) && ms >= 0) return Math.floor(ms)
+    return 0
+  }
+
+  #getRadarBufferMaxFrames() {
+    const n = Number(this.#cfg?.tracking?.snapshot?.radarBufferMaxFrames)
+    if (Number.isFinite(n) && n > 0) return Math.floor(n)
+    return 5
+  }
+
+  #getRadarBufferWindowMs() {
+    const ms = Number(this.#cfg?.tracking?.snapshot?.radarBufferWindowMs)
+    if (Number.isFinite(ms) && ms > 0) return Math.floor(ms)
+    return 4000
+  }
+
+  #getWaitForAllEnabled() {
+    return this.#cfg?.tracking?.snapshot?.waitForAll?.enabled === true
+  }
+
+  #getWaitForAllTimeoutMs() {
+    const ms = Number(this.#cfg?.tracking?.snapshot?.waitForAll?.timeoutMs)
+    if (Number.isFinite(ms) && ms > 0) return Math.floor(ms)
+    return 120
+  }
+
+  #pushRadarBuffer(radarId, entry, now) {
+    const rid = Number(radarId)
+    if (!Number.isFinite(rid)) return
+
+    const maxFrames = this.#getRadarBufferMaxFrames()
+    const windowMs = this.#getRadarBufferWindowMs()
+
+    const buf = this.#bufferByRadarId.get(rid) || []
+    buf.push(entry)
+
+    // Keep only recent by time window (measTs), then cap by count.
+    const cutoffTs = now - windowMs
+    let keep = buf.filter((e) => Number(e?.measTs) >= cutoffTs)
+
+    if (maxFrames > 0 && keep.length > maxFrames) {
+      keep = keep.slice(keep.length - maxFrames)
+    }
+
+    this.#bufferByRadarId.set(rid, keep)
+  }
+
+  #selectRadarEntry(radarId, sampleTs, now) {
+    const buf = this.#bufferByRadarId.get(radarId)
+    if (!Array.isArray(buf) || buf.length === 0) return null
+
+    // Prefer newest entry with measTs <= sampleTs
+    let best = null
+    for (let i = buf.length - 1; i >= 0; i -= 1) {
+      const e = buf[i]
+      const ts = Number(e?.measTs)
+      if (!Number.isFinite(ts)) continue
+
+      if (ts <= sampleTs) {
+        best = e
+        break
+      }
+    }
+
+    // If nothing <= sampleTs, keep best-effort: newest entry overall.
+    // This keeps system responsive; coherence is handled by jitterDelay + waitForAll policy.
+    if (!best) best = buf[buf.length - 1]
+
+    return best || null
   }
 
   #mode() {
@@ -320,8 +396,8 @@ export class TrackingPipeline {
     const measTsRaw = Number(p.measTs)
     if (!Number.isFinite(measTsRaw) || measTsRaw <= 0) return
 
-    const prev = this.#latestByRadarId.get(radarId)
-    const prevMeasTs = Number(prev?.measTs) || 0
+    const prevLatest = this.#latestByRadarId.get(radarId)
+    const prevMeasTs = Number(prevLatest?.measTs) || 0
 
     let measTs = measTsRaw
     if (prevMeasTs > 0 && measTsRaw < prevMeasTs) {
@@ -382,11 +458,14 @@ export class TrackingPipeline {
       zoneId,
       publishAs,
       measurements,
-
       detectionCount: measurements.length,
       slotCount: Number.isFinite(slotCount) ? slotCount : null,
     }
 
+    const now = this.#clock.nowMs()
+    this.#pushRadarBuffer(radarId, entry, now)
+
+    // Keep "latest" for health/sanity/meta
     if (debugEnabled) {
       entry.debug = {
         meta: p?.meta || null,
@@ -407,9 +486,38 @@ export class TrackingPipeline {
     const staleMeasMaxMs = this.#getStaleMeasMaxMs()
     const radarMissingTimeoutMs = this.#getRadarMissingTimeoutMs()
 
+    const jitterDelayMs = this.#getJitterDelayMs()
+    let sampleTs = now - jitterDelayMs
+
+    const waitForAll = this.#getWaitForAllEnabled()
+    const waitTimeoutMs = this.#getWaitForAllTimeoutMs()
+
+    if (waitForAll) {
+      // Align sampleTs to the slowest "recent enough" radar so we get a coherent multi-radar snapshot.
+      // Bounded by waitTimeoutMs so we don't introduce large latency.
+      let minLatest = Infinity
+      let haveAny = false
+
+      const expectedIds = this.#radarsExpectedSet.size > 0
+        ? [...this.#radarsExpectedSet.values()]
+        : [...this.#latestByRadarId.keys()]
+
+      for (const rid of expectedIds) {
+        const latest = this.#latestByRadarId.get(rid)
+        const ts = Number(latest?.measTs)
+        if (!Number.isFinite(ts) || ts <= 0) continue
+        haveAny = true
+        minLatest = Math.min(minLatest, ts)
+      }
+
+      if (haveAny && Number.isFinite(minLatest)) {
+        const maxBack = now - waitTimeoutMs
+        sampleTs = Math.max(minLatest, maxBack)
+      }
+    }
+
     const expected = this.#radarsExpectedSet
     const expectedCount = expected.size
-
     const seenTotal = this.#radarsSeenEver.size
 
     let radarsFresh = 0
@@ -436,7 +544,7 @@ export class TrackingPipeline {
     const expectedSet = expectedCount > 0 ? expected : null
 
     for (const radarId of expectedIds) {
-      const entry = this.#latestByRadarId.get(radarId)
+      const entry = this.#selectRadarEntry(radarId, sampleTs, now)
 
       if (!entry) {
         radarsMissing += 1
@@ -584,6 +692,11 @@ export class TrackingPipeline {
       tickIntervalMs: this.#getUpdateIntervalMs(),
       staleMeasMaxMs,
       radarMissingTimeoutMs,
+
+      jitterDelayMs,
+      sampleTs,
+      waitForAll: waitForAll || null,
+      waitForAllTimeoutMs: waitForAll ? waitTimeoutMs : null,
 
       radarsExpected: expectedCount || null,
       radarsSeenTotal: seenTotal,
@@ -1286,6 +1399,11 @@ export class TrackingPipeline {
     const jitCut = Number(q.jitterCutoffMm ?? 250)
     const jitMax = Number(q.jitterNoiseScaleMax ?? 3.0)
 
+    const staleMaxMs = this.#getStaleMeasMaxMs()
+    const staleMax = Number(q.staleNoiseScaleMax ?? 1)
+
+    const useStaleScale = Number.isFinite(staleMax) && staleMax > 1 && Number.isFinite(staleMaxMs) && staleMaxMs > 0
+
     const out = Array(measurements.length).fill(baseVar)
 
     for (let i = 0; i < measurements.length; i += 1) {
@@ -1328,7 +1446,14 @@ export class TrackingPipeline {
         scaleMax: jitMax,
       })
 
-      out[i] = baseVar * bearingScale * rangeScale * jitterScale
+      let staleScale = 1
+      if (useStaleScale) {
+        const ageMs = Math.max(0, now - ts)
+        const t = clamp01(ageMs / staleMaxMs)
+        staleScale = lerp(1, staleMax, t)
+      }
+
+      out[i] = baseVar * bearingScale * rangeScale * jitterScale * staleScale
     }
 
     return out
