@@ -7,7 +7,7 @@ const FRAME_LEN = 30
 const TARGETS = 3
 const TARGET_STRIDE = 8
 
-const decodeSigned15PosBit = function (u16) {
+const decodeSigned15PosBit = function decodeSigned15PosBit(u16) {
   if ((u16 & 0x8000) !== 0) {
     return u16 - 0x8000
   }
@@ -15,14 +15,14 @@ const decodeSigned15PosBit = function (u16) {
   return -u16
 }
 
-const isValidByRule = function (t, rule) {
+const isValidByRule = function isValidByRule(t, rule) {
   if (rule === 'resolution') return t.resolutionMm !== 0
   if (rule === 'nonzeroXY') return t.xMm !== 0 || t.yMm !== 0
   if (rule === 'either') return t.resolutionMm !== 0 || t.xMm !== 0 || t.yMm !== 0
   return t.resolutionMm !== 0
 }
 
-export const decodeLd2450TrackingFrames = function (buf, opts = {}) {
+export const decodeLd2450TrackingFrames = function decodeLd2450TrackingFrames(buf, opts = {}) {
   const maxFrames = Number.isFinite(opts.maxFrames) ? opts.maxFrames : Infinity
   const validRule = typeof opts.validRule === 'string' ? opts.validRule : 'resolution'
 
@@ -110,7 +110,7 @@ export const decodeLd2450TrackingFrames = function (buf, opts = {}) {
   return { frames, remainder, droppedBytes, stats }
 }
 
-export const createLd2450StreamDecoder = function (opts = {}) {
+export const createLd2450StreamDecoder = function createLd2450StreamDecoder(opts = {}) {
   const emitter = new EventEmitter()
 
   let carry = Buffer.alloc(0)
@@ -124,11 +124,11 @@ export const createLd2450StreamDecoder = function (opts = {}) {
   const noiseLogThreshold = Number.isFinite(opts.noiseLogThreshold) ? opts.noiseLogThreshold : 32
   const nowMs = typeof opts.nowMs === 'function' ? opts.nowMs : () => Date.now()
 
-  const reset = function () {
+  const reset = function reset() {
     carry = Buffer.alloc(0)
   }
 
-  const getState = function () {
+  const getState = function getState() {
     return {
       carryBytes: carry.length,
       totalFrames,
@@ -137,7 +137,7 @@ export const createLd2450StreamDecoder = function (opts = {}) {
     }
   }
 
-  const push = function (chunk) {
+  const push = function push(chunk) {
     if (!Buffer.isBuffer(chunk)) {
       emitter.emit('error', { code: 'INVALID_CHUNK', message: 'push(chunk) requires a Buffer' })
       return
@@ -182,10 +182,12 @@ export const createLd2450StreamDecoder = function (opts = {}) {
       emitter.emit('error', { code: 'BAD_FOOTER', count: res.stats.badFooters })
     }
 
+    const batchTs = nowMs()
+
     for (const frame of res.frames) {
       totalFrames += 1
       emitter.emit('frame', {
-//        ts: nowMs(),
+        ts: batchTs,
         ...frame,
       })
     }

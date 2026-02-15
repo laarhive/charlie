@@ -216,10 +216,14 @@ export default class Ld2450RadarDevice extends BaseDevice {
   }
 
   #publishFrame(frame) {
-    const publishedTs = this.#clock.nowMs()
+    const publishTs = this.#clock.nowMs()
+
+    const frameTs = Number(frame?.ts)
+    const measTs = (Number.isFinite(frameTs) && frameTs > 0) ? frameTs : publishTs
+
     this.#domainBus.publish({
       type: domainEventTypes.presence.ld2450,
-      ts: publishedTs,
+      ts: publishTs,
       source: 'ld2450RadarDevice',
       streamKey: makeStreamKey({
         who: this.streamKeyWho,
@@ -229,8 +233,8 @@ export default class Ld2450RadarDevice extends BaseDevice {
       payload: {
         deviceId: this.getId(),
         publishAs: this.getPublishAs(),
-        // No HW timestamp exists for LD2450. For consistency, measTs is the time we observed/decoded the frame.
-        measTs: publishedTs,
+        // No HW timestamp exists for LD2450. measTs is the decoder's frame completion time.
+        measTs,
         frame,
       },
     })
