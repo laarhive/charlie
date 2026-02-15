@@ -1,4 +1,4 @@
-// public/dev/presence/panels/comparePanel.js
+// public/dev/presence/panels/rawTargetsConsistencyPanel.js
 const fmt = function fmt(v, digits = 1) {
   const n = Number(v)
   if (!Number.isFinite(n)) return '-'
@@ -6,8 +6,10 @@ const fmt = function fmt(v, digits = 1) {
   return String(Math.round(n * p) / p)
 }
 
-const cls = function cls(ok) {
-  return ok ? 'ok' : 'bad'
+const sevClass = function sevClass(sev) {
+  if (sev === 'ERROR') return 'bad'
+  if (sev === 'WARN') return 'warn'
+  return 'ok'
 }
 
 export default class RawTargetsConsistencyPanel {
@@ -18,36 +20,56 @@ export default class RawTargetsConsistencyPanel {
   }
 
   render({ tol, rows, stats }) {
-    const header =
-      `Tolerances
-localMm<=${tol.localMm}  worldMm<=${tol.worldMm}
-measAgeMs<=${tol.measAgeMs}  rawAgeMs<=${tol.rawMatchAgeMs}
+    const comparable = rows.length
+    const okCount = rows.filter(r => r.okLocal && r.okWorld && r.okMeasAge && r.okRawAge).length
+    const warnCount = rows.filter(r =>
+      !r.okLocal || !r.okWorld || !r.okMeasAge || !r.okRawAge
+    ).length
+    const rawMissing = rows.filter(r => r.dLocal == null).length
 
-Rolling stats (last ~250 updates)
-dLocal  max=${fmt(stats.localMax)}  med=${fmt(stats.localMed)}
-dWorld  max=${fmt(stats.worldMax)}  med=${fmt(stats.worldMed)}
-ΔtMeas  max=${fmt(stats.measAgeMax, 0)}ms  med=${fmt(stats.measAgeMed, 0)}ms
-ΔtRaw   max=${fmt(stats.rawAgeMax, 0)}ms  med=${fmt(stats.rawAgeMed, 0)}ms
+    let severity = 'OK'
+    if (warnCount > 0 || rawMissing > 0) severity = 'WARN'
 
-Per-track checks
-`
+    const summary =
+      `<div class="mono small">` +
+      `<span class="pill ${sevClass(severity)}">${severity}</span> ` +
+      `comparable=${comparable} ok=${okCount} warn=${warnCount} rawMissing=${rawMissing}` +
+      `</div>`
 
-    const lines = (rows || []).map((r) => {
-      const parts = [
-        `${r.publishAs || `R${r.radarId}`}:S${r.slotId}`,
-        `dL=${fmt(r.dLocal)}mm`,
-        `dW=${fmt(r.dWorld)}mm`,
-        `Δm=${fmt(r.dtMeas, 0)}ms`,
-        `Δr=${fmt(r.dtRaw, 0)}ms`,
-        `${r.id.slice(-6)}`,
-      ]
+    const tolBlock =
+      `<div class="mono small">` +
+      `tol: dLocal<=${tol.localMm}mm dWorld<=${tol.worldMm}mm ` +
+      `Δmeas<=${tol.measAgeMs}ms Δraw<=${tol.rawMatchAgeMs}ms` +
+      `</div>`
 
-      const okAll = r.okLocal && r.okWorld && r.okMeasAge && r.okRawAge
-      const c = cls(okAll)
+    const rollBlock =
+      `<div class="mono small">` +
+      `roll: dWorld med=${fmt(stats.worldMed)} max=${fmt(stats.worldMax)} ` +
+      `Δmeas med=${fmt(stats.measAgeMed, 0)}ms max=${fmt(stats.measAgeMax, 0)}ms` +
+      `</div>`
 
-      return `<div class="${c}">${parts.join('  ')}</div>`
-    })
+    const rowsBlock = rows.length
+      ? rows.map(r => {
+        const rowOk = r.okLocal && r.okWorld && r.okMeasAge && r.okRawAge
+        const cls = rowOk ? 'ok' : 'warn'
 
-    this.#el.innerHTML = `<div class="mono small">${header}</div>${lines.join('') || '<div class="mono small">(no comparable tracks)</div>'}`
+        return (
+          `<div class="mono small ${cls}">` +
+          `${r.publishAs || `R${r.radarId}`}:S${r.slotId} ` +
+          `dL=${fmt(r.dLocal)}mm ` +
+          `dW=${fmt(r.dWorld)}mm ` +
+          `Δm=${fmt(r.dtMeas, 0)}ms ` +
+          `Δr=${fmt(r.dtRaw, 0)}ms ` +
+          `<span class="muted">${r.id.slice(-6)}</span>` +
+          `</div>`
+        )
+      }).join('')
+      : `<div class="mono small muted">(no failing rows)</div>`
+
+    this.#el.innerHTML =
+      summary +
+      tolBlock +
+      rollBlock +
+      rowsBlock
   }
 }

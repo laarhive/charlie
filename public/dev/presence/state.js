@@ -27,6 +27,7 @@ export class PresenceUiState {
 
   #rawTrailByKey
   #trackTrailById
+  #trackingSnapshotHealth = null
 
   constructor({ cfg }) {
     this.#cfg = cfg
@@ -97,6 +98,14 @@ export class PresenceUiState {
 
       return
     }
+  }
+
+  ingestTrackingSnapshotHealth(payload) {
+    this.#trackingSnapshotHealth = payload
+  }
+
+  getTrackingSnapshotHealth() {
+    return this.#trackingSnapshotHealth
   }
 
   clearTrails() {

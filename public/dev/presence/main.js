@@ -5,6 +5,8 @@ import { PresenceRenderer } from './renderer.js'
 import { loadUiConfig } from './config.js'
 import Ld2450RawTargetsConsistencyMonitor from './monitor/ld2450RawTargetsConsistencyMonitor.js'
 import RawTargetsConsistencyPanel from './panels/rawTargetsConsistencyPanel.js'
+import SnapshotHealthPanel from './panels/snapshotHealthPanel.js'
+import SnapshotSanityPanel from './panels/snapshotSanityPanel.js'
 
 const byId = function byId(id) {
   return document.getElementById(id)
@@ -121,6 +123,13 @@ tracks: ${stats.trackCount}
   tracksTable.textContent = header + (lines.length ? lines.join('\n') : '(no tracks)')
 }
 
+const radarIdFromPublishAs = function radarIdFromPublishAs(cfgPresence, publishAs) {
+  const s = String(publishAs || '').trim()
+  const list = Array.isArray(cfgPresence?.layout?.ld2450) ? cfgPresence.layout.ld2450 : []
+  const idx = list.findIndex((x) => String(x?.publishAs || '').trim() === s)
+  return idx >= 0 ? idx : null
+}
+
 const main = async function main() {
   const cfgUi = await loadUiConfig()
   const cfgPresence = cfgUi.presence
@@ -155,6 +164,9 @@ const main = async function main() {
       rawMatchAgeMs: 200,
     },
   })
+
+  const snapshotHealthPanel = new SnapshotHealthPanel({ el: byId('snapshotHealthInfo') })
+  const snapshotSanityPanel = new SnapshotSanityPanel({ el: byId('snapshotSanityInfo') })
 
   let frozen = false
   let settingToggle = false
@@ -216,10 +228,15 @@ const main = async function main() {
         const p = event.payload || {}
         rawTargetsMonitor.ingestRawLd2450({
           publishAs: p.publishAs,
-          radarId: p.radarId,
+          radarId: radarIdFromPublishAs(cfgPresence, p.publishAs),
           frame: p.frame,
           tsNow: Number(event.ts) || Date.now(),
         })
+      }
+
+      // presenceInternal bus -> snapshot health
+      if (bus === 'presenceInternal' && event.type === 'presence:trackingSnapshotHealth') {
+        state.ingestTrackingSnapshotHealth(event.payload || null)
       }
 
       // main bus -> monitor compare rows
@@ -276,6 +293,8 @@ const main = async function main() {
       })
 
       rawTargetsPanel.render(rawTargetsMonitor.snapshot())
+      snapshotHealthPanel.render(state.getTrackingSnapshotHealth())
+      snapshotSanityPanel.render(state.getTrackingSnapshotHealth())
 
       const s = state.getStats()
       statLine.textContent = `raw=${s.measCount} tracks=${s.trackCount}`

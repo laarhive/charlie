@@ -92,7 +92,6 @@ export class TrackingPipeline {
   #latestByRadarId
   #radarsExpectedSet
   #radarsSeenEver
-
   #lastTickMeasTsByRadarId
 
   #tracksById
@@ -104,6 +103,11 @@ export class TrackingPipeline {
   #stuckTicks
 
   #jitterLastByKey
+
+  #healthLastPublishTs
+  #healthSeq
+
+  #sanityCounters
 
   constructor({ logger, clock, controllerId, presenceInternalBus, controllerConfig }) {
     this.#logger = logger
@@ -140,8 +144,12 @@ export class TrackingPipeline {
     this.#unsubscribe = null
 
     this.#stuckTicks = 0
-
     this.#jitterLastByKey = new Map()
+
+    this.#healthLastPublishTs = 0
+    this.#healthSeq = 0
+
+    this.#sanityCounters = this.#makeEmptySanityCounters()
 
     if (!this.#presenceInternalBus?.subscribe || !this.#presenceInternalBus?.publish) {
       throw new Error('TrackingPipeline requires presenceInternalBus.subscribe+publish')
@@ -192,6 +200,9 @@ export class TrackingPipeline {
     this.#jitterLastByKey.clear()
 
     this.#stuckTicks = 0
+    this.#healthLastPublishTs = 0
+    this.#healthSeq = 0
+    this.#sanityCounters = this.#makeEmptySanityCounters()
   }
 
   #mode() {
@@ -208,6 +219,12 @@ export class TrackingPipeline {
     const ms = Number(this.#cfg?.tracking?.updateIntervalMs)
     if (Number.isFinite(ms) && ms > 0) return Math.floor(ms)
     return 50
+  }
+
+  #getHealthIntervalMs() {
+    const ms = Number(this.#cfg?.tracking?.health?.intervalMs)
+    if (Number.isFinite(ms) && ms > 0) return Math.floor(ms)
+    return 1000
   }
 
   #getStaleMeasMaxMs() {
@@ -236,6 +253,38 @@ export class TrackingPipeline {
     }
 
     return set
+  }
+
+  #makeEmptySanityCounters() {
+    return {
+      measWentBackwards: 0,
+      negativeRecvLag: 0,
+      recvLagHuge: 0,
+
+      slotCountTooHigh: 0,
+      detectionsGtSlots: 0,
+
+      nonFiniteWorld: 0,
+
+      last: {
+        measWentBackwards: null,
+        negativeRecvLag: null,
+        recvLagHuge: null,
+        slotCountTooHigh: null,
+        detectionsGtSlots: null,
+        nonFiniteWorld: null,
+      },
+    }
+  }
+
+  #noteSanity(counterKey, details) {
+    if (!this.#sanityCounters[counterKey] && this.#sanityCounters[counterKey] !== 0) return
+
+    this.#sanityCounters[counterKey] += 1
+    this.#sanityCounters.last[counterKey] = {
+      ts: this.#clock.nowMs(),
+      ...details,
+    }
   }
 
   #stripProvenanceForTracking(prov, { debugEnabled }) {
@@ -271,6 +320,27 @@ export class TrackingPipeline {
     const measTs = Number(p.measTs)
     if (!Number.isFinite(measTs) || measTs <= 0) return
 
+    const recvLagMs = Math.max(0, recvTs - measTs)
+    if (recvTs < measTs) {
+      this.#noteSanity('negativeRecvLag', { radarId, recvTs, measTs })
+    }
+
+    const hugeRecvLagMs = Number(this.#cfg?.tracking?.health?.recvLagHugeMs ?? 500)
+    if (Number.isFinite(hugeRecvLagMs) && hugeRecvLagMs > 0 && recvLagMs > hugeRecvLagMs) {
+      this.#noteSanity('recvLagHuge', { radarId, recvLagMs, hugeRecvLagMs })
+    }
+
+    const slotCountMax = Number(this.#cfg?.tracking?.health?.slotCountMax ?? 3)
+    const slotCount = Number(p?.meta?.slotCount)
+    if (Number.isFinite(slotCountMax) && slotCountMax > 0 && Number.isFinite(slotCount) && slotCount > slotCountMax) {
+      this.#noteSanity('slotCountTooHigh', { radarId, slotCount, slotCountMax })
+    }
+
+    const detCountMeta = Number(p?.meta?.detectionCount)
+    if (Number.isFinite(detCountMeta) && Number.isFinite(slotCount) && detCountMeta > slotCount) {
+      this.#noteSanity('detectionsGtSlots', { radarId, detectionCount: detCountMeta, slotCount })
+    }
+
     const tracks = Array.isArray(p.tracks) ? p.tracks : []
     const measurements = []
 
@@ -279,7 +349,10 @@ export class TrackingPipeline {
       const xMm = Number(w.xMm)
       const yMm = Number(w.yMm)
 
-      if (!Number.isFinite(xMm) || !Number.isFinite(yMm)) continue
+      if (!Number.isFinite(xMm) || !Number.isFinite(yMm)) {
+        this.#noteSanity('nonFiniteWorld', { radarId })
+        continue
+      }
 
       const prov = this.#stripProvenanceForTracking(t?.provenance || null, { debugEnabled })
 
@@ -295,7 +368,10 @@ export class TrackingPipeline {
 
     const prev = this.#latestByRadarId.get(radarId)
     const prevMeasTs = Number(prev?.measTs) || 0
-    if (measTs < prevMeasTs) return
+    if (measTs < prevMeasTs) {
+      this.#noteSanity('measWentBackwards', { radarId, measTs, prevMeasTs })
+      return
+    }
 
     const entry = {
       measTs,
@@ -306,7 +382,7 @@ export class TrackingPipeline {
       measurements,
 
       detectionCount: measurements.length,
-      slotCount: Number(p?.meta?.slotCount) || null,
+      slotCount: Number.isFinite(slotCount) ? slotCount : null,
     }
 
     if (debugEnabled) {
@@ -344,6 +420,7 @@ export class TrackingPipeline {
     let radarsAdvancedCount = 0
 
     const measurements = []
+    const radars = []
 
     const debugEnabled = this.#debugEnabled()
     const debugRadars = debugEnabled ? [] : null
@@ -356,6 +433,21 @@ export class TrackingPipeline {
 
       if (!entry) {
         radarsMissing += 1
+
+        radars.push({
+          radarId,
+          status: 'missing',
+          included: false,
+          advanced: false,
+          measTs: null,
+          recvTs: null,
+          ageMs: null,
+          recvLagMs: null,
+          detectionCount: 0,
+          slotCount: null,
+          publishAs: null,
+          zoneId: null,
+        })
 
         if (debugEnabled) {
           debugRadars.push({
@@ -407,6 +499,21 @@ export class TrackingPipeline {
       } else {
         radarsFresh += 1
       }
+
+      radars.push({
+        radarId,
+        status,
+        included,
+        advanced,
+        measTs,
+        recvTs: recvTs || null,
+        ageMs,
+        recvLagMs,
+        detectionCount: Number(entry.detectionCount) || 0,
+        slotCount: Number(entry.slotCount) || null,
+        publishAs: entry.publishAs ?? null,
+        zoneId: entry.zoneId ?? null,
+      })
 
       if (included) {
         maxRadarAgeMs = Math.max(maxRadarAgeMs, ageMs)
@@ -496,7 +603,7 @@ export class TrackingPipeline {
 
     const debug = debugEnabled ? { radars: debugRadars } : null
 
-    return { measurements, meta, debug }
+    return { measurements, radars, meta, debug }
   }
 
   #computeTickLagStats(now, measurements) {
@@ -612,6 +719,19 @@ export class TrackingPipeline {
     const fusedVarMm2ByIdx = fusion.measVarMm2ByIdx
 
     const tickLag = this.#computeTickLagStats(now, measurements)
+
+    this.#maybePublishSnapshotHealth(now, {
+      snapshotMeta: snapshot.meta,
+      snapshotRadars: snapshot.radars,
+      tickLag,
+      meas: {
+        measIn: snapshot.meta.measIn,
+        measFiltered: filtered.length,
+        measDeduped: deduped.length,
+        measFused: measurements.length,
+      },
+      fusionDebug: fusion.debug,
+    })
 
     if (mode === 'passthrough') {
       this.#publishPassthrough(now, measurements, fusedVarMm2ByIdx, {
@@ -849,6 +969,147 @@ export class TrackingPipeline {
         meta,
       },
     })
+  }
+
+  #maybePublishSnapshotHealth(now, { snapshotMeta, snapshotRadars, tickLag, meas, fusionDebug }) {
+    const intervalMs = this.#getHealthIntervalMs()
+    if ((now - this.#healthLastPublishTs) < intervalMs) return
+
+    this.#healthLastPublishTs = now
+    this.#healthSeq += 1
+
+    const expected = Number(snapshotMeta?.radarsExpected) || 0
+    const fresh = Number(snapshotMeta?.radarsFresh) || 0
+    const stale = Number(snapshotMeta?.radarsStale) || 0
+    const missing = Number(snapshotMeta?.radarsMissing) || 0
+
+    const degraded = (expected > 0 && fresh < expected && stale === 0 && missing === 0)
+
+    const sanity = this.#buildSanityReport({
+      now,
+      snapshotMeta,
+      degraded,
+      tickLag,
+    })
+
+    const payload = {
+      ts: now,
+      seq: this.#healthSeq,
+
+      overall: {
+        tickIntervalMs: snapshotMeta?.tickIntervalMs ?? null,
+        staleMeasMaxMs: snapshotMeta?.staleMeasMaxMs ?? null,
+        radarMissingTimeoutMs: snapshotMeta?.radarMissingTimeoutMs ?? null,
+
+        radarsExpected: snapshotMeta?.radarsExpected ?? null,
+        radarsSeenTotal: snapshotMeta?.radarsSeenTotal ?? null,
+
+        radarsFresh: snapshotMeta?.radarsFresh ?? null,
+        radarsStale: snapshotMeta?.radarsStale ?? null,
+        radarsMissing: snapshotMeta?.radarsMissing ?? null,
+
+        maxRadarAgeMs: snapshotMeta?.maxRadarAgeMs ?? null,
+        maxRecvLagMs: snapshotMeta?.maxRecvLagMs ?? null,
+
+        snapshotsAdvancedThisTick: snapshotMeta?.snapshotsAdvancedThisTick ?? null,
+        radarsAdvancedCount: snapshotMeta?.radarsAdvancedCount ?? null,
+
+        stuckTicks: snapshotMeta?.stuckTicks ?? null,
+        stuck: snapshotMeta?.stuck ?? null,
+
+        tickLagSamples: tickLag?.tickLagSamples ?? 0,
+        tickLagMsP95: tickLag?.tickLagMsP95 ?? 0,
+        tickLagMsMax: tickLag?.tickLagMsMax ?? 0,
+
+        degraded,
+      },
+
+      radars: Array.isArray(snapshotRadars) ? snapshotRadars : [],
+
+      meas: {
+        measIn: meas?.measIn ?? null,
+        measFiltered: meas?.measFiltered ?? null,
+        measDeduped: meas?.measDeduped ?? null,
+        measFused: meas?.measFused ?? null,
+      },
+
+      fusion: fusionDebug || null,
+
+      sanity,
+    }
+
+    this.#presenceInternalBus.publish({
+      type: domainEventTypes.presence.trackingSnapshotHealth,
+      ts: now,
+      source: this.#controllerId,
+      streamKey: makeStreamKey({
+        who: this.streamKeyWho,
+        what: domainEventTypes.presence.trackingSnapshotHealth,
+        where: busIds.presenceInternal,
+      }),
+      payload,
+    })
+
+    this.#sanityCounters = this.#makeEmptySanityCounters()
+  }
+
+  #buildSanityReport({ snapshotMeta, degraded, tickLag }) {
+    const errors = []
+    const warnings = []
+    const degradedList = []
+
+    const expected = Number(snapshotMeta?.radarsExpected) || 0
+    const fresh = Number(snapshotMeta?.radarsFresh) || 0
+    const adv = Number(snapshotMeta?.radarsAdvancedCount) || 0
+
+    if (degraded) {
+      degradedList.push({ code: 'PARTIAL_SNAPSHOT', details: { fresh, expected } })
+    }
+
+    if (fresh > 0 && expected > 0 && adv === 0) {
+      warnings.push({ code: 'NO_ADVANCE_WHILE_FRESH', details: { fresh, expected } })
+    }
+
+    const lagP95 = Number(tickLag?.tickLagMsP95) || 0
+    const tickIntervalMs = Number(snapshotMeta?.tickIntervalMs) || 0
+    const lagWarnMult = Number(this.#cfg?.tracking?.health?.tickLagWarnMult ?? 2)
+    const lagWarnMs = (Number.isFinite(lagWarnMult) && lagWarnMult > 0 && tickIntervalMs > 0)
+      ? (lagWarnMult * tickIntervalMs)
+      : 0
+
+    if (lagWarnMs > 0 && lagP95 > lagWarnMs) {
+      warnings.push({ code: 'TICK_LAG_HIGH', details: { tickLagMsP95: lagP95, warnMs: lagWarnMs } })
+    }
+
+    if (this.#sanityCounters.negativeRecvLag > 0) {
+      errors.push({ code: 'NEGATIVE_RECV_LAG', count: this.#sanityCounters.negativeRecvLag, last: this.#sanityCounters.last.negativeRecvLag })
+    }
+
+    if (this.#sanityCounters.measWentBackwards > 0) {
+      errors.push({ code: 'MEAS_TS_WENT_BACKWARDS', count: this.#sanityCounters.measWentBackwards, last: this.#sanityCounters.last.measWentBackwards })
+    }
+
+    if (this.#sanityCounters.recvLagHuge > 0) {
+      warnings.push({ code: 'RECV_LAG_HUGE', count: this.#sanityCounters.recvLagHuge, last: this.#sanityCounters.last.recvLagHuge })
+    }
+
+    if (this.#sanityCounters.slotCountTooHigh > 0) {
+      warnings.push({ code: 'SLOTCOUNT_TOO_HIGH', count: this.#sanityCounters.slotCountTooHigh, last: this.#sanityCounters.last.slotCountTooHigh })
+    }
+
+    if (this.#sanityCounters.detectionsGtSlots > 0) {
+      errors.push({ code: 'DETECTIONS_GT_SLOTS', count: this.#sanityCounters.detectionsGtSlots, last: this.#sanityCounters.last.detectionsGtSlots })
+    }
+
+    if (this.#sanityCounters.nonFiniteWorld > 0) {
+      errors.push({ code: 'NONFINITE_WORLD_XY', count: this.#sanityCounters.nonFiniteWorld, last: this.#sanityCounters.last.nonFiniteWorld })
+    }
+
+    return {
+      error: errors,
+      warn: warnings,
+      degraded: degradedList,
+    }
   }
 
   #filterMeasurements(measurements) {
@@ -1103,7 +1364,16 @@ export class TrackingPipeline {
       return {
         measurements,
         measVarMm2ByIdx,
-        debug: debugEnabled ? { enabled, clustersOut: measurements.length, mergesCrossRadar: 0, mergeRejectedNotVisible: 0 } : null,
+        debug: {
+          enabled,
+          clustersOut: measurements.length,
+          clustersMultiRadar: 0,
+          clusterGateMm: Number(this.#cfg?.tracking?.fusion?.clusterGateMm ?? 450),
+          clusterRadiusMmMax: 0,
+          clusterRadiusMmP95: 0,
+          mergesCrossRadar: 0,
+          mergeRejectedNotVisible: 0,
+        },
       }
     }
 
@@ -1197,11 +1467,15 @@ export class TrackingPipeline {
     const fused = []
     const fusedVar = []
 
+    const clusterRadius = []
+    let clustersMultiRadar = 0
+
     for (const idxs of groups.values()) {
       if (idxs.length === 1) {
         const i = idxs[0]
         fused.push(measurements[i])
         fusedVar.push(Number(measVarMm2ByIdx[i]) || 1)
+        clusterRadius.push(0)
         continue
       }
 
@@ -1209,6 +1483,7 @@ export class TrackingPipeline {
         for (const i of idxs) {
           fused.push(measurements[i])
           fusedVar.push(Number(measVarMm2ByIdx[i]) || 1)
+          clusterRadius.push(0)
         }
 
         continue
@@ -1261,6 +1536,19 @@ export class TrackingPipeline {
       const cx = sumW > 0 ? (sumX / sumW) : measurements[bestIdx].xMm
       const cy = sumW > 0 ? (sumY / sumW) : measurements[bestIdx].yMm
 
+      let rMax = 0
+      for (const i of idxs) {
+        const m = measurements[i]
+        const dx = m.xMm - cx
+        const dy = m.yMm - cy
+        const d = Math.sqrt((dx * dx) + (dy * dy))
+        if (Number.isFinite(d)) rMax = Math.max(rMax, d)
+      }
+
+      clusterRadius.push(rMax)
+
+      if (radarSet.size > 1) clustersMultiRadar += 1
+
       const rep = measurements[bestIdx]
       const repProv = rep?.prov || null
 
@@ -1281,6 +1569,7 @@ export class TrackingPipeline {
         fusedItem.fusion = {
           members,
           membersCount: idxs.length,
+          radiusMm: rMax,
         }
       }
 
@@ -1290,19 +1579,24 @@ export class TrackingPipeline {
       fusedVar.push(fusedVarMm2)
     }
 
+    clusterRadius.sort((a, b) => a - b)
+
+    const radiusMax = clusterRadius.length > 0 ? clusterRadius[clusterRadius.length - 1] : 0
+    const radiusP95 = clusterRadius.length > 0 ? this.#percentileFromSorted(clusterRadius, 0.95) : 0
+
     return {
       measurements: fused,
       measVarMm2ByIdx: fusedVar,
-      debug: debugEnabled ? {
+      debug: {
         enabled,
         clustersOut: fused.length,
+        clustersMultiRadar,
+        clusterGateMm: gateMm,
+        clusterRadiusMmMax: radiusMax,
+        clusterRadiusMmP95: radiusP95,
         mergesCrossRadar,
         mergeRejectedNotVisible,
-        gateMm,
-        bearingAbsMax,
-        rangeMax,
-        ts: now,
-      } : null,
+      },
     }
   }
 
