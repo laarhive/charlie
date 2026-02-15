@@ -2,8 +2,78 @@
 import domainEventTypes from '../../domainEventTypes.js'
 import { KalmanFilterCv2d } from './kalmanFilterCv2d.js'
 import { AssociationEngine } from './associationEngine.js'
+import { TransformService } from '../transform/transformService.js'
 import { makeStreamKey } from '../../../core/eventBus.js'
 import { busIds } from '../../../app/buses.js'
+
+const clamp01 = function clamp01(x) {
+  const n = Number(x)
+  if (!Number.isFinite(n)) return 0
+  return Math.min(1, Math.max(0, n))
+}
+
+const lerp = function lerp(a, b, t) {
+  return (a + (b - a) * clamp01(t))
+}
+
+const mapScale = function mapScale({ v, full, cutoff, scaleMax }) {
+  const vv = Number(v)
+  const f = Number(full)
+  const c = Number(cutoff)
+  const sMax = Number(scaleMax)
+
+  if (![vv, f, c, sMax].every(Number.isFinite)) return 1
+  if (sMax <= 1) return 1
+
+  if (vv <= f) return 1
+  if (vv >= c) return sMax
+
+  const t = (vv - f) / Math.max(1e-9, (c - f))
+  return lerp(1, sMax, t)
+}
+
+class Uf {
+  #parent
+  #rank
+
+  constructor(n) {
+    this.#parent = Array.from({ length: n }, (_, i) => i)
+    this.#rank = Array(n).fill(0)
+  }
+
+  find(x) {
+    let p = this.#parent[x]
+    if (p !== x) {
+      p = this.find(p)
+      this.#parent[x] = p
+    }
+
+    return p
+  }
+
+  union(a, b) {
+    const ra = this.find(a)
+    const rb = this.find(b)
+
+    if (ra === rb) return
+
+    const ka = this.#rank[ra]
+    const kb = this.#rank[rb]
+
+    if (ka < kb) {
+      this.#parent[ra] = rb
+      return
+    }
+
+    if (kb < ka) {
+      this.#parent[rb] = ra
+      return
+    }
+
+    this.#parent[rb] = ra
+    this.#rank[ra] += 1
+  }
+}
 
 export class TrackingPipeline {
   #logger
@@ -17,6 +87,7 @@ export class TrackingPipeline {
 
   #kf
   #assoc
+  #transform
 
   #latestByRadarId
   #radarsExpectedSet
@@ -29,6 +100,10 @@ export class TrackingPipeline {
 
   #timer
   #unsubscribe
+
+  #stuckTicks
+
+  #jitterLastByKey
 
   constructor({ logger, clock, controllerId, presenceInternalBus, controllerConfig }) {
     this.#logger = logger
@@ -48,6 +123,11 @@ export class TrackingPipeline {
       gateD2Max: this.#cfg?.tracking?.association?.gateD2Max ?? 9.21,
     })
 
+    this.#transform = new TransformService({
+      config: this.#cfg,
+      logger: this.#logger,
+    })
+
     this.#latestByRadarId = new Map()
     this.#radarsExpectedSet = this.#buildExpectedRadarIdSet()
     this.#radarsSeenEver = new Set()
@@ -58,6 +138,10 @@ export class TrackingPipeline {
 
     this.#timer = null
     this.#unsubscribe = null
+
+    this.#stuckTicks = 0
+
+    this.#jitterLastByKey = new Map()
 
     if (!this.#presenceInternalBus?.subscribe || !this.#presenceInternalBus?.publish) {
       throw new Error('TrackingPipeline requires presenceInternalBus.subscribe+publish')
@@ -105,6 +189,9 @@ export class TrackingPipeline {
     this.#lastTickMeasTsByRadarId.clear()
 
     this.#tracksById.clear()
+    this.#jitterLastByKey.clear()
+
+    this.#stuckTicks = 0
   }
 
   #mode() {
@@ -170,9 +257,6 @@ export class TrackingPipeline {
     const p = event?.payload || {}
     const debugEnabled = this.#debugEnabled()
 
-    // Contract:
-    // - event.ts: ingest publishedTs (when ingest emitted tracks)
-    // - payload.measTs: measurement time (propagated from device raw publisher)
     const recvTs = Number(event?.ts)
     if (!Number.isFinite(recvTs) || recvTs <= 0) {
       throw new Error('ld2450Tracks event.ts must be present')
@@ -281,6 +365,7 @@ export class TrackingPipeline {
             enabled: expectedSet ? true : null,
             status: 'missing',
             included: false,
+            advanced: false,
             measTs: null,
             ageMs: null,
             recvTs: null,
@@ -345,6 +430,7 @@ export class TrackingPipeline {
           enabled: expectedSet ? true : null,
           status,
           included,
+          advanced,
           measTs,
           ageMs,
           recvTs: recvTs || null,
@@ -369,6 +455,17 @@ export class TrackingPipeline {
       }
     }
 
+    if (expectedCount > 0 && radarsAdvancedCount === 0) {
+      this.#stuckTicks += 1
+    } else {
+      this.#stuckTicks = 0
+    }
+
+    const stuckN = Number(this.#cfg?.tracking?.snapshot?.stuckTicksWarn ?? 20)
+    const stuck = Number.isFinite(stuckN) && stuckN > 0
+      ? this.#stuckTicks >= stuckN
+      : (this.#stuckTicks >= 20)
+
     const meta = {
       tickIntervalMs: this.#getUpdateIntervalMs(),
       staleMeasMaxMs,
@@ -392,6 +489,9 @@ export class TrackingPipeline {
 
       snapshotsAdvancedThisTick,
       radarsAdvancedCount,
+
+      stuckTicks: this.#stuckTicks,
+      stuck,
     }
 
     const debug = debugEnabled ? { radars: debugRadars } : null
@@ -466,7 +566,7 @@ export class TrackingPipeline {
     return (absNew + marginDeg) < absOld
   }
 
-  #findFallbackMeasIdxSameRadar(tr, measurements, unassignedSet, measVarMm2ByRadarId) {
+  #findFallbackMeasIdxSameRadar(tr, measurements, unassignedSet, measVarMm2ByIdx) {
     const radarId = tr.lastRadarId
     if (radarId == null) return null
 
@@ -479,7 +579,7 @@ export class TrackingPipeline {
       const m = measurements[idx]
       if (!m || m.radarId !== radarId) continue
 
-      const varMm2 = measVarMm2ByRadarId.get(m.radarId) ?? 1
+      const varMm2 = Number(measVarMm2ByIdx[idx]) || 1
 
       const dx = m.xMm - tr.xMm
       const dy = m.yMm - tr.yMm
@@ -503,20 +603,26 @@ export class TrackingPipeline {
 
     const rawMeasurements = snapshot.measurements
     const filtered = this.#filterMeasurements(rawMeasurements)
-    const measurements = this.#dedupMeasurements(filtered)
+    const deduped = this.#dedupMeasurements(filtered)
+
+    const measVarMm2ByIdx = this.#computeMeasVarByIdx(deduped, now)
+
+    const fusion = this.#clusterMeasurements(deduped, measVarMm2ByIdx, now)
+    const measurements = fusion.measurements
+    const fusedVarMm2ByIdx = fusion.measVarMm2ByIdx
 
     const tickLag = this.#computeTickLagStats(now, measurements)
 
-    const measVarMm2ByRadarId = this.#computeMeasVarByRadar(measurements)
-
     if (mode === 'passthrough') {
-      this.#publishPassthrough(now, measurements, {
+      this.#publishPassthrough(now, measurements, fusedVarMm2ByIdx, {
         debugEnabled,
         snapshotMeta: snapshot.meta,
         snapshotDebug: snapshot.debug,
         measFiltered: filtered.length,
-        measDeduped: measurements.length,
+        measDeduped: deduped.length,
+        measFused: measurements.length,
         tickLag,
+        fusionDebug: fusion.debug,
       })
       return
     }
@@ -561,7 +667,7 @@ export class TrackingPipeline {
     const { assignments, unassignedMeas } = this.#assoc.associate({
       tracks: assocInput,
       measurements,
-      measVarMm2ByRadarId,
+      measVarMm2ByIdx: fusedVarMm2ByIdx,
     })
 
     const unassignedSet = new Set(unassignedMeas)
@@ -573,7 +679,7 @@ export class TrackingPipeline {
       let m = measurements[measIdx]
 
       if (!this.#shouldAcceptRadarSwitch(tr, m)) {
-        const fbIdx = this.#findFallbackMeasIdxSameRadar(tr, measurements, unassignedSet, measVarMm2ByRadarId)
+        const fbIdx = this.#findFallbackMeasIdxSameRadar(tr, measurements, unassignedSet, fusedVarMm2ByIdx)
 
         if (fbIdx == null) {
           continue
@@ -583,7 +689,7 @@ export class TrackingPipeline {
         m = measurements[fbIdx]
       }
 
-      const varMm2 = measVarMm2ByRadarId.get(m.radarId) ?? 1
+      const varMm2 = Number(fusedVarMm2ByIdx[measIdx]) || 1
       const sigmaMm = Math.sqrt(Math.max(1, varMm2))
 
       const assocDebug = this.#computeAssocDebug(tr, m, varMm2)
@@ -624,11 +730,16 @@ export class TrackingPipeline {
 
       tr.lastUpdateTs = now
       tr.lastSeenTs = now
+
       tr.lastRadarId = m.radarId
       tr.lastZoneId = m.zoneId
       tr.updatedThisTick = true
 
-      tr.sourceRadars.add(m.radarId)
+      if (Array.isArray(m.sourceRadars) && m.sourceRadars.length > 0) {
+        for (const rid of m.sourceRadars) tr.sourceRadars.add(rid)
+      } else {
+        tr.sourceRadars.add(m.radarId)
+      }
 
       if (confirmEnabled && tr.state === 'tentative') {
         tr.confirmHits += 1
@@ -704,7 +815,8 @@ export class TrackingPipeline {
       ...snapshot.meta,
 
       measFiltered: filtered.length,
-      measDeduped: measurements.length,
+      measDeduped: deduped.length,
+      measFused: measurements.length,
 
       tickLagSamples: tickLag.tickLagSamples,
       tickLagMsMax: tickLag.tickLagMsMax,
@@ -712,6 +824,10 @@ export class TrackingPipeline {
 
       activeTracks: out.length,
       tickIntervalMs: this.#getUpdateIntervalMs(),
+    }
+
+    if (debugEnabled) {
+      meta.fusion = fusion.debug
     }
 
     if (debugEnabled && snapshot.debug) {
@@ -767,10 +883,11 @@ export class TrackingPipeline {
     return out
   }
 
-  #publishPassthrough(now, measurements, { debugEnabled, snapshotMeta, snapshotDebug, measFiltered, measDeduped, tickLag }) {
+  #publishPassthrough(now, measurements, measVarMm2ByIdx, { debugEnabled, snapshotMeta, snapshotDebug, measFiltered, measDeduped, measFused, tickLag, fusionDebug }) {
     const out = []
 
-    for (const m of measurements) {
+    for (let i = 0; i < measurements.length; i += 1) {
+      const m = measurements[i]
       const prov = m.prov || null
 
       const publishAs = String(prov?.publishAs || '')
@@ -792,7 +909,7 @@ export class TrackingPipeline {
 
         lastRadarId: m.radarId,
         lastZoneId: m.zoneId,
-        sourceRadars: [m.radarId],
+        sourceRadars: Array.isArray(m.sourceRadars) ? m.sourceRadars : [m.radarId],
       }
 
       if (debugEnabled) {
@@ -801,7 +918,10 @@ export class TrackingPipeline {
           updatedThisTick: true,
           m,
           assoc: null,
-          kf: null,
+          kf: {
+            sigmaMm: Math.sqrt(Math.max(1, Number(measVarMm2ByIdx[i]) || 1)),
+            innovationMm: null,
+          },
         }))
       }
 
@@ -815,6 +935,7 @@ export class TrackingPipeline {
 
       measFiltered: Number(measFiltered) || measurements.length,
       measDeduped: Number(measDeduped) || measurements.length,
+      measFused: Number(measFused) || measurements.length,
 
       tickLagSamples: tickLag?.tickLagSamples ?? 0,
       tickLagMsMax: tickLag?.tickLagMsMax ?? 0,
@@ -822,6 +943,10 @@ export class TrackingPipeline {
 
       activeTracks: out.length,
       tickIntervalMs: this.#getUpdateIntervalMs(),
+    }
+
+    if (debugEnabled) {
+      meta.fusion = fusionDebug
     }
 
     if (debugEnabled && snapshotDebug) {
@@ -871,6 +996,314 @@ export class TrackingPipeline {
     }
 
     return [...latestByKey.values()]
+  }
+
+  #computeMeasVarByIdx(measurements, now) {
+    const baseMm = Number(this.#cfg?.tracking?.kf?.measNoiseBaseMm ?? 160)
+    const baseVar = Math.max(1, baseMm * baseMm)
+
+    const q = this.#cfg?.quality || {}
+
+    const fullBear = Number(q.edgeBearingFullDeg ?? 30)
+    const cutBear = Number(q.edgeBearingCutoffDeg ?? 45)
+    const edgeMax = Number(q.edgeNoiseScaleMax ?? 4.0)
+
+    const fullRange = Number(q.rangeFullMm ?? 1200)
+    const cutRange = Number(q.rangeCutoffMm ?? 3000)
+    const rangeMax = Number(q.rangeNoiseScaleMax ?? 3.0)
+
+    const jitWinMs = Number(q.jitterWindowMs ?? 500)
+    const jitFull = Number(q.jitterFullMm ?? 60)
+    const jitCut = Number(q.jitterCutoffMm ?? 250)
+    const jitMax = Number(q.jitterNoiseScaleMax ?? 3.0)
+
+    const out = Array(measurements.length).fill(baseVar)
+
+    for (let i = 0; i < measurements.length; i += 1) {
+      const m = measurements[i]
+      const prov = m?.prov || null
+
+      const local = prov?.localMm || null
+      const lx = Number(local?.xMm)
+      const ly = Number(local?.yMm)
+
+      let bearingAbs = null
+      let rangeMm = null
+
+      if (Number.isFinite(lx) && Number.isFinite(ly)) {
+        bearingAbs = Math.abs((Math.atan2(lx, ly) * 180) / Math.PI)
+        rangeMm = Math.sqrt((lx * lx) + (ly * ly))
+      }
+
+      const bearingScale = (bearingAbs == null)
+        ? 1
+        : mapScale({ v: bearingAbs, full: fullBear, cutoff: cutBear, scaleMax: edgeMax })
+
+      const rangeScale = (rangeMm == null)
+        ? 1
+        : mapScale({ v: rangeMm, full: fullRange, cutoff: cutRange, scaleMax: rangeMax })
+
+      const key = this.#jitterKeyForMeasurement(m)
+      const jitterScale = this.#computeJitterScaleForKey({
+        key,
+        now,
+        xMm: m.xMm,
+        yMm: m.yMm,
+        windowMs: jitWinMs,
+        fullMm: jitFull,
+        cutoffMm: jitCut,
+        scaleMax: jitMax,
+      })
+
+      out[i] = baseVar * bearingScale * rangeScale * jitterScale
+    }
+
+    return out
+  }
+
+  #jitterKeyForMeasurement(m) {
+    const prov = m?.prov || null
+    const publishAs = String(prov?.publishAs || '').trim()
+    const slotId = Number(prov?.slotId)
+
+    if (publishAs && Number.isFinite(slotId)) {
+      return `slot:${publishAs}:${slotId}`
+    }
+
+    return `radar:${Number(m?.radarId)}`
+  }
+
+  #computeJitterScaleForKey({ key, now, xMm, yMm, windowMs, fullMm, cutoffMm, scaleMax }) {
+    const k = String(key || '')
+    if (!k) return 1
+
+    const prev = this.#jitterLastByKey.get(k) || null
+    this.#jitterLastByKey.set(k, { ts: now, xMm, yMm })
+
+    if (!prev) return 1
+
+    const dt = now - Number(prev.ts || 0)
+    if (!Number.isFinite(dt) || dt <= 0) return 1
+    if (Number.isFinite(windowMs) && windowMs > 0 && dt > windowMs) return 1
+
+    const dx = Number(xMm) - Number(prev.xMm)
+    const dy = Number(yMm) - Number(prev.yMm)
+    if (![dx, dy].every(Number.isFinite)) return 1
+
+    const distMm = Math.sqrt((dx * dx) + (dy * dy))
+
+    return mapScale({ v: distMm, full: fullMm, cutoff: cutoffMm, scaleMax })
+  }
+
+  #clusterMeasurements(measurements, measVarMm2ByIdx, now) {
+    const enabled = this.#cfg?.tracking?.fusion?.enabled === true
+    const debugEnabled = this.#debugEnabled()
+
+    if (!enabled || measurements.length <= 1) {
+      return {
+        measurements,
+        measVarMm2ByIdx,
+        debug: debugEnabled ? { enabled, clustersOut: measurements.length, mergesCrossRadar: 0, mergeRejectedNotVisible: 0 } : null,
+      }
+    }
+
+    const gateMm = Number(this.#cfg?.tracking?.fusion?.clusterGateMm ?? 450)
+    const gate2 = Math.max(1, gateMm * gateMm)
+
+    const maxClusterSize = Number(this.#cfg?.tracking?.fusion?.maxClusterSize ?? 10)
+    const fovMarginDeg = Number(this.#cfg?.tracking?.fusion?.fovMarginDeg ?? 6)
+    const rangeMarginMm = Number(this.#cfg?.tracking?.fusion?.rangeMarginMm ?? 150)
+
+    const q = this.#cfg?.quality || {}
+    const cutoffDeg = Number(q.edgeBearingCutoffDeg ?? 45)
+    const rangeCutoffMm = Number(q.rangeCutoffMm ?? 3000)
+
+    const fovDeg = Number(this.#cfg?.layout?.radarFovDeg ?? 120)
+    const halfFov = Number.isFinite(fovDeg) ? Math.abs(fovDeg) / 2 : 60
+
+    const bearingAbsMax = Math.min(
+      Number.isFinite(cutoffDeg) ? Math.abs(cutoffDeg) : 180,
+      Number.isFinite(halfFov) ? halfFov : 180,
+    ) + (Number.isFinite(fovMarginDeg) ? Math.abs(fovMarginDeg) : 0)
+
+    const rangeMax = (Number.isFinite(rangeCutoffMm) ? rangeCutoffMm : 3000) + (Number.isFinite(rangeMarginMm) ? Math.abs(rangeMarginMm) : 0)
+
+    const n = measurements.length
+    const uf = new Uf(n)
+
+    let mergesCrossRadar = 0
+    let mergeRejectedNotVisible = 0
+
+    const isVisible = (radarId, wx, wy) => {
+      const loc = this.#transform.toLocalMm({ radarId, xMm: wx, yMm: wy })
+      const x = Number(loc?.xMm)
+      const y = Number(loc?.yMm)
+
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return false
+
+      const bearingDeg = (Math.atan2(x, y) * 180) / Math.PI
+      const absB = Math.abs(bearingDeg)
+
+      if (absB > bearingAbsMax) return false
+
+      const r = Math.sqrt((x * x) + (y * y))
+      if (!Number.isFinite(r)) return false
+      if (r > rangeMax) return false
+
+      return true
+    }
+
+    for (let i = 0; i < n; i += 1) {
+      const a = measurements[i]
+
+      for (let j = i + 1; j < n; j += 1) {
+        const b = measurements[j]
+
+        const dx = a.xMm - b.xMm
+        const dy = a.yMm - b.yMm
+        const d2 = (dx * dx) + (dy * dy)
+
+        if (d2 > gate2) continue
+
+        if (a.radarId === b.radarId) {
+          uf.union(i, j)
+          continue
+        }
+
+        const cx = (a.xMm + b.xMm) / 2
+        const cy = (a.yMm + b.yMm) / 2
+
+        const visA = isVisible(a.radarId, cx, cy)
+        const visB = isVisible(b.radarId, cx, cy)
+
+        if (visA && visB) {
+          mergesCrossRadar += 1
+          uf.union(i, j)
+          continue
+        }
+
+        mergeRejectedNotVisible += 1
+      }
+    }
+
+    const groups = new Map()
+    for (let i = 0; i < n; i += 1) {
+      const r = uf.find(i)
+
+      if (!groups.has(r)) groups.set(r, [])
+      groups.get(r).push(i)
+    }
+
+    const fused = []
+    const fusedVar = []
+
+    for (const idxs of groups.values()) {
+      if (idxs.length === 1) {
+        const i = idxs[0]
+        fused.push(measurements[i])
+        fusedVar.push(Number(measVarMm2ByIdx[i]) || 1)
+        continue
+      }
+
+      if (Number.isFinite(maxClusterSize) && maxClusterSize > 0 && idxs.length > maxClusterSize) {
+        for (const i of idxs) {
+          fused.push(measurements[i])
+          fusedVar.push(Number(measVarMm2ByIdx[i]) || 1)
+        }
+
+        continue
+      }
+
+      let sumW = 0
+      let sumX = 0
+      let sumY = 0
+      let tsMax = 0
+
+      const radarSet = new Set()
+      const zoneSet = new Set()
+
+      const members = debugEnabled ? [] : null
+
+      let bestIdx = idxs[0]
+      let bestVar = Infinity
+
+      for (const i of idxs) {
+        const m = measurements[i]
+        const varMm2 = Number(measVarMm2ByIdx[i]) || 1
+        const w = 1 / Math.max(1, varMm2)
+
+        sumW += w
+        sumX += w * m.xMm
+        sumY += w * m.yMm
+
+        tsMax = Math.max(tsMax, Number(m.measTs) || 0)
+
+        radarSet.add(m.radarId)
+        if (m.zoneId) zoneSet.add(m.zoneId)
+
+        if (varMm2 < bestVar) {
+          bestVar = varMm2
+          bestIdx = i
+        }
+
+        if (debugEnabled) {
+          members.push({
+            radarId: m.radarId,
+            zoneId: m.zoneId,
+            xMm: m.xMm,
+            yMm: m.yMm,
+            measTs: m.measTs,
+            varMm2,
+          })
+        }
+      }
+
+      const cx = sumW > 0 ? (sumX / sumW) : measurements[bestIdx].xMm
+      const cy = sumW > 0 ? (sumY / sumW) : measurements[bestIdx].yMm
+
+      const rep = measurements[bestIdx]
+      const repProv = rep?.prov || null
+
+      const fusedItem = {
+        measTs: tsMax || rep.measTs,
+        radarId: rep.radarId,
+        zoneId: zoneSet.size === 1 ? [...zoneSet][0] : rep.zoneId,
+
+        xMm: cx,
+        yMm: cy,
+
+        sourceRadars: [...radarSet],
+
+        prov: repProv,
+      }
+
+      if (debugEnabled) {
+        fusedItem.fusion = {
+          members,
+          membersCount: idxs.length,
+        }
+      }
+
+      fused.push(fusedItem)
+
+      const fusedVarMm2 = sumW > 0 ? (1 / sumW) : (Number(measVarMm2ByIdx[bestIdx]) || 1)
+      fusedVar.push(fusedVarMm2)
+    }
+
+    return {
+      measurements: fused,
+      measVarMm2ByIdx: fusedVar,
+      debug: debugEnabled ? {
+        enabled,
+        clustersOut: fused.length,
+        mergesCrossRadar,
+        mergeRejectedNotVisible,
+        gateMm,
+        bearingAbsMax,
+        rangeMax,
+        ts: now,
+      } : null,
+    }
   }
 
   #buildDebug({ mode, updatedThisTick, m, assoc, kf }) {
@@ -979,18 +1412,6 @@ export class TrackingPipeline {
     return { gateD2, assigned: true }
   }
 
-  #computeMeasVarByRadar(measurements) {
-    const baseMm = Number(this.#cfg?.tracking?.kf?.measNoiseBaseMm ?? 160)
-    const baseVar = Math.max(1, baseMm * baseMm)
-
-    const map = new Map()
-    for (const m of measurements) {
-      if (!map.has(m.radarId)) map.set(m.radarId, baseVar)
-    }
-
-    return map
-  }
-
   #createTrackFromMeasurement(m, now, { confirmEnabled, kfEnabled, mode }) {
     const id = `t${now}:${this.#seq++}`
 
@@ -1029,7 +1450,7 @@ export class TrackingPipeline {
       lastRadarId: m.radarId,
       lastZoneId: m.zoneId,
 
-      sourceRadars: new Set([m.radarId]),
+      sourceRadars: new Set(Array.isArray(m.sourceRadars) ? m.sourceRadars : [m.radarId]),
       drop: false,
 
       updatedThisTick: true,

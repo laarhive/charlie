@@ -27,6 +27,8 @@ export class PresenceController {
 
   #unsubGlobal
 
+  #lastHealthPublishTs
+
   constructor({ logger, presenceInternalBus, presenceBus, mainBus, clock, controllerId, controller, devices }) {
     this.#logger = logger
     this.#clock = clock
@@ -45,6 +47,8 @@ export class PresenceController {
     this.#ld2410 = null
     this.#tracking = null
     this.#unsubGlobal = null
+
+    this.#lastHealthPublishTs = 0
 
     if (!this.#presenceInternalBus?.publish || !this.#presenceInternalBus?.subscribe) {
       throw new Error('presenceController requires presenceInternalBus.publish+subscribe')
@@ -132,6 +136,8 @@ export class PresenceController {
       this.#ld2410 = null
     }
 
+    this.#lastHealthPublishTs = 0
+
     this.#logger.notice('presence_controller_disposed', { controllerId: this.#controllerId })
   }
 
@@ -175,10 +181,14 @@ export class PresenceController {
       targets: out,
     }
 
-    // Forward snapshot/tick verification meta so the browser UI can verify snapshotting
-    // using only the main bus stream.
     if (meta) {
       payload.meta = debugEnabled ? meta : this.#stripTargetsMeta(meta)
+
+      const now = this.#clock.nowMs()
+      if ((now - this.#lastHealthPublishTs) >= 1000) {
+        this.#lastHealthPublishTs = now
+        payload.health = this.#makeHealthFromMeta(meta, now)
+      }
     }
 
     this.#mainBus.publish({
@@ -194,13 +204,45 @@ export class PresenceController {
     })
   }
 
+  #makeHealthFromMeta(meta, now) {
+    const m = meta || {}
+
+    return {
+      ts: now,
+
+      radarsExpected: m.radarsExpected ?? null,
+      radarsSeenTotal: m.radarsSeenTotal ?? null,
+
+      radarsFresh: m.radarsFresh ?? null,
+      radarsStale: m.radarsStale ?? null,
+      radarsMissing: m.radarsMissing ?? null,
+
+      maxRadarAgeMs: m.maxRadarAgeMs ?? null,
+      maxRecvLagMs: m.maxRecvLagMs ?? null,
+
+      tickLagMsP95: m.tickLagMsP95 ?? null,
+      tickLagMsMax: m.tickLagMsMax ?? null,
+      tickLagSamples: m.tickLagSamples ?? null,
+
+      activeTracks: m.activeTracks ?? null,
+
+      snapshotsAdvancedThisTick: m.snapshotsAdvancedThisTick ?? null,
+      radarsAdvancedCount: m.radarsAdvancedCount ?? null,
+
+      stuckTicks: m.stuckTicks ?? null,
+      stuck: m.stuck ?? null,
+
+      tickIntervalMs: m.tickIntervalMs ?? null,
+    }
+  }
+
   #stripTargetsMeta(meta) {
     if (!meta || typeof meta !== 'object') return meta
 
     const out = { ...meta }
 
-    // Keep always-on snapshot counters, drop debug-heavy tables.
     if (out.debug) delete out.debug
+    if (out.fusion) delete out.fusion
 
     return out
   }

@@ -13,7 +13,10 @@ export class TransformService {
 
     this.#azimuthDeg = az.map((x) => Number(x) || 0)
 
-    this.#tubeRadiusMm = 50
+    const tubeDiameterMm = Number(layout?.tubeDiameterMm)
+    this.#tubeRadiusMm = Number.isFinite(tubeDiameterMm) && tubeDiameterMm > 0
+      ? tubeDiameterMm / 2
+      : 50
 
     this.#yawOffsetsDeg = this.#initYawOffsets(config)
   }
@@ -37,9 +40,36 @@ export class TransformService {
     const ty = this.#tubeRadiusMm * Math.sin(phiRad)
 
     const X = (cosT * yMm) + (-sinT * xMm) + tx
-    const Y = (sinT * yMm) + ( cosT * xMm) + ty
+    const Y = (sinT * yMm) + (cosT * xMm) + ty
 
     return { xMm: X, yMm: Y }
+  }
+
+  toLocalMm({ radarId, xMm, yMm }) {
+    const i = Number(radarId)
+    if (!Number.isFinite(i) || i < 0 || i >= this.#azimuthDeg.length) {
+      return { xMm: 0, yMm: 0 }
+    }
+
+    const phiDeg = this.#azimuthDeg[i]
+    const deltaDeg = this.#yawOffsetsDeg[i] || 0
+    const thetaDeg = phiDeg + deltaDeg
+
+    const thetaRad = (thetaDeg * Math.PI) / 180
+    const cosT = Math.cos(thetaRad)
+    const sinT = Math.sin(thetaRad)
+
+    const phiRad = (phiDeg * Math.PI) / 180
+    const tx = this.#tubeRadiusMm * Math.cos(phiRad)
+    const ty = this.#tubeRadiusMm * Math.sin(phiRad)
+
+    const Xp = Number(xMm) - tx
+    const Yp = Number(yMm) - ty
+
+    const yLocal = (cosT * Xp) + (sinT * Yp)
+    const xLocal = (-sinT * Xp) + (cosT * Yp)
+
+    return { xMm: xLocal, yMm: yLocal }
   }
 
   getYawOffsetsDeg() {

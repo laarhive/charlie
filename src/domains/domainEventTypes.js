@@ -10,6 +10,7 @@ export const domainEventTypes = Object.freeze({
     ld2410Stable: 'presence:ld2410Stable',
     globalTracks: 'presence:globalTracks',
     calibrationStatus: 'presence:calibrationStatus',
+    trackingSnapshotHealth: 'presence:trackingSnapshotHealth',
   }),
 
   vibration: Object.freeze({

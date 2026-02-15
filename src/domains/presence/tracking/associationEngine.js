@@ -6,10 +6,12 @@ export class AssociationEngine {
     this.#gateD2Max = Number(gateD2Max) || 9.21
   }
 
-  associate({ tracks, measurements, measVarMm2ByRadarId }) {
+  associate({ tracks, measurements, measVarMm2ByIdx }) {
     const usedMeas = new Set()
     const assignments = new Map() // trackId -> measIndex
     const unassignedMeas = []
+
+    const vars = Array.isArray(measVarMm2ByIdx) ? measVarMm2ByIdx : []
 
     for (const t of tracks) {
       let bestIdx = -1
@@ -19,7 +21,7 @@ export class AssociationEngine {
         if (usedMeas.has(i)) continue
 
         const m = measurements[i]
-        const varMm2 = measVarMm2ByRadarId.get(m.radarId) ?? 1
+        const varMm2 = Number(vars[i]) || 1
 
         const dx = (m.xMm - t.xMm)
         const dy = (m.yMm - t.yMm)
@@ -47,3 +49,5 @@ export class AssociationEngine {
     return { assignments, unassignedMeas }
   }
 }
+
+export default AssociationEngine
