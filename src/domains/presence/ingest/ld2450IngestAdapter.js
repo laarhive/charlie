@@ -100,8 +100,33 @@ export class Ld2450IngestAdapter {
     return String(device.state || 'active') === 'active'
   }
 
+  #assertFiniteTs(label, v) {
+    const n = Number(v)
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new Error(`Ld2450IngestAdapter invalid ${label}: ${String(v)}`)
+    }
+
+    return n
+  }
+
+  #stripProvenance(prov, { debugEnabled }) {
+    if (!prov || typeof prov !== 'object') return null
+
+    if (debugEnabled) return prov
+
+    return {
+      publishAs: prov.publishAs ?? null,
+      radarId: prov.radarId ?? null,
+      slotId: prov.slotId ?? null,
+      measTs: prov.measTs ?? null,
+      localMm: prov.localMm ?? null,
+      worldMeasMm: prov.worldMeasMm ?? null,
+    }
+  }
+
   #onLd2450Raw(event) {
-    const p = event?.payload || {}
+    const p = event.payload
+
     const publishAs = String(p.publishAs || '').trim()
     if (!publishAs) return
 
@@ -113,22 +138,19 @@ export class Ld2450IngestAdapter {
 
     const debugEnabled = this.#debugEnabled()
 
+    // Timestamp contract:
+    // - raw event.ts: rawPublishedTs (bus publish time in device)
+    // - raw payload.measTs: rawMeasTs ("observed/decode time" set by device)
+    // - tracks event.ts: tracksPublishedTs (when ingest publishes)
+    // - tracks payload.measTs: rawMeasTs (measurement time propagated)
+    const rawPublishedTs = this.#assertFiniteTs('rawPublishedTs(event.ts)', event.ts)
+    const rawMeasTs = this.#assertFiniteTs('rawMeasTs(payload.measTs)', p.measTs)
+
     const frame = p.frame || {}
-    const frameTs = Number(frame.ts) || Number(event?.ts) || this.#clock.nowMs()
     const slots = Array.isArray(frame.targets) ? frame.targets : []
 
-    const detections = slots
-      .filter((t) => t && t.valid === true)
-      .map((t) => ({
-        slotId: Number(t.id),
-        xMm: Number(t.xMm) || 0,
-        yMm: Number(t.yMm) || 0,
-        speedMmS: Number.isFinite(Number(t.speedCms)) ? Number(t.speedCms) * 10 : 0,
-        resolutionMm: Number(t.resolutionMm) || 0,
-      }))
-
     const frameSnapshot = debugEnabled ? {
-      measTs: frameTs,
+      measTs: rawMeasTs,
       bus: 'presence',
       publishAs,
       radarId: layoutEntry.radarId,
@@ -140,45 +162,93 @@ export class Ld2450IngestAdapter {
       })),
     } : null
 
-    const transformDebug = debugEnabled
-      ? this.#transform.getDebugForRadar(layoutEntry.radarId)
-      : null
+    const detections = slots
+      .filter((t) => t && t.valid === true)
+      .map((t) => ({
+        slotId: Number(t.id),
+        xMm: Number(t.xMm) || 0,
+        yMm: Number(t.yMm) || 0,
+        speedMmS: Number.isFinite(Number(t.speedCms)) ? Number(t.speedCms) * 10 : 0,
+        resolutionMm: Number(t.resolutionMm) || 0,
+      }))
 
-    const measurements = detections.map((d) => {
+    const tracks = detections.map((d) => {
+      const local = this.#deriveLocal(d.xMm, d.yMm)
+
       const worldMeas = this.#transform.toWorldMm({
         radarId: layoutEntry.radarId,
         xMm: d.xMm,
         yMm: d.yMm,
       })
 
-      const out = {
-        ts: frameTs,
+      const world = this.#deriveWorld(worldMeas.xMm, worldMeas.yMm)
+      const transformDebug = debugEnabled ? this.#transform.getDebugForRadar(layoutEntry.radarId) : null
 
+      const prov = this.#stripProvenance({
+        bus: 'presence',
         publishAs,
         radarId: layoutEntry.radarId,
-        zoneId: layoutEntry.zoneId,
         slotId: d.slotId,
+        measTs: rawMeasTs,
 
         localMm: { xMm: d.xMm, yMm: d.yMm },
-        worldMm: { xMm: worldMeas.xMm, yMm: worldMeas.yMm },
+        worldMeasMm: { xMm: worldMeas.xMm, yMm: worldMeas.yMm },
 
+        transform: transformDebug,
+        frame: frameSnapshot,
+      }, { debugEnabled })
+
+      return {
+        trackId: `${publishAs}:${d.slotId}`,
+        state: 'confirmed',
+
+        radarId: layoutEntry.radarId,
+        zoneId: layoutEntry.zoneId,
+
+        local: {
+          xMm: d.xMm,
+          yMm: d.yMm,
+          rangeMm: local.rangeMm,
+          bearingDeg: local.bearingDeg,
+        },
+
+        world: {
+          xMm: world.xMm,
+          yMm: world.yMm,
+          rangeMm: world.rangeMm,
+          bearingDeg: world.bearingDeg,
+        },
+
+        vxMmS: 0,
+        vyMmS: 0,
         speedMmS: Math.abs(d.speedMmS),
-        resolutionMm: d.resolutionMm,
-      }
 
-      if (debugEnabled) {
-        out.debug = {
-          transform: transformDebug,
-          frame: frameSnapshot,
-        }
-      }
+        ageMs: 0,
+        lastSeenMs: 0,
+        sourceRadars: [layoutEntry.radarId],
 
-      return out
+        provenance: prov,
+      }
     })
+
+    const tracksPublishedTs = this.#clock.nowMs()
+
+    const debug = debugEnabled ? {
+      timing: {
+        rawMeasTs,
+        rawPublishedTs,
+        tracksPublishedTs,
+        rawToTracksPublishMs: Math.max(0, tracksPublishedTs - rawMeasTs),
+      },
+      frame: {
+        slotCount: slots.length,
+        detectionCount: detections.length,
+      },
+    } : null
 
     this.#presenceInternalBus.publish({
       type: domainEventTypes.presence.ld2450Tracks,
-      ts: this.#clock.nowMs(),
+      ts: tracksPublishedTs,
       source: this.#controllerId,
       streamKey: makeStreamKey({
         who: this.streamKeyWho,
@@ -186,25 +256,34 @@ export class Ld2450IngestAdapter {
         where: busIds.presenceInternal,
       }),
       payload: {
-        ts: frameTs,
+        measTs: rawMeasTs,
+        publishAs,
+        radarId: layoutEntry.radarId,
+        zoneId: layoutEntry.zoneId,
 
-        measurements,
-        slots,
+        tracks,
 
         meta: {
-          publishAs,
-          radarId: layoutEntry.radarId,
-          zoneId: layoutEntry.zoneId,
-
           slotCount: slots.length,
-
-          measurementCount: measurements.length,
           detectionCount: detections.length,
-
           frame: 'radarLocal_to_world_v0',
         },
+
+        debug,
       },
     })
+  }
+
+  #deriveLocal(xMm, yMm) {
+    const rangeMm = Math.sqrt((xMm * xMm) + (yMm * yMm))
+    const bearingDeg = (Math.atan2(xMm, yMm) * 180) / Math.PI
+    return { rangeMm, bearingDeg }
+  }
+
+  #deriveWorld(xMm, yMm) {
+    const rangeMm = Math.sqrt((xMm * xMm) + (yMm * yMm))
+    const bearingDeg = (Math.atan2(yMm, xMm) * 180) / Math.PI
+    return { xMm, yMm, rangeMm, bearingDeg }
   }
 }
 

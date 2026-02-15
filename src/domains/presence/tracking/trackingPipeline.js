@@ -154,38 +154,38 @@ export class TrackingPipeline {
   #stripProvenanceForTracking(prov, { debugEnabled }) {
     if (!prov || typeof prov !== 'object') return null
 
-    if (debugEnabled) {
-      return prov
-    }
+    if (debugEnabled) return prov
 
-    // Keep only what tracking logic depends on:
-    // - localMm: bearing gate + handover heuristic
-    // - publishAs/slotId/radarId/measTs: stable identity/timing (lightweight)
     return {
       publishAs: prov.publishAs ?? null,
       radarId: prov.radarId ?? null,
       slotId: prov.slotId ?? null,
       measTs: prov.measTs ?? null,
+
       localMm: prov.localMm ?? null,
     }
   }
 
   #onLd2450Tracks(event) {
     const p = event?.payload || {}
-    const meta = p?.meta || {}
-
     const debugEnabled = this.#debugEnabled()
 
-    const radarId = Number(meta.radarId)
+    // Contract:
+    // - event.ts: ingest publishedTs (when ingest emitted tracks)
+    // - payload.measTs: measurement time (propagated from device raw publisher)
+    const recvTs = Number(event?.ts)
+    if (!Number.isFinite(recvTs) || recvTs <= 0) {
+      throw new Error('ld2450Tracks event.ts must be present')
+    }
+
+    const radarId = Number(p.radarId)
     if (!Number.isFinite(radarId)) return
 
-    const publishAs = String(meta.publishAs || '').trim()
-    const zoneId = String(meta.zoneId || '')
+    const publishAs = String(p.publishAs || '').trim()
+    const zoneId = String(p.zoneId || '')
 
-    const measTs = Number(p.ts)
+    const measTs = Number(p.measTs)
     if (!Number.isFinite(measTs) || measTs <= 0) return
-
-    const recvTs = Number(event?.ts) || this.#clock.nowMs()
 
     const tracks = Array.isArray(p.tracks) ? p.tracks : []
     const measurements = []
@@ -200,7 +200,7 @@ export class TrackingPipeline {
       const prov = this.#stripProvenanceForTracking(t?.provenance || null, { debugEnabled })
 
       measurements.push({
-        ts: measTs,
+        measTs,
         radarId,
         zoneId,
         xMm,
@@ -222,14 +222,13 @@ export class TrackingPipeline {
       measurements,
 
       detectionCount: measurements.length,
-      slotCount: Number(meta.slotCount) || null,
+      slotCount: Number(p?.meta?.slotCount) || null,
     }
 
     if (debugEnabled) {
       entry.debug = {
-        slotCount: Number(meta.slotCount) || null,
-        detectionCount: Number(meta.detectionCount) || measurements.length,
-        slots: Array.isArray(p.slots) ? p.slots : null,
+        meta: p?.meta || null,
+        ingestDebug: p?.debug || null,
       }
     }
 
@@ -243,6 +242,7 @@ export class TrackingPipeline {
 
     const expected = this.#radarsExpectedSet
     const expectedCount = expected.size
+
     const seenTotal = this.#radarsSeenEver.size
 
     let radarsFresh = 0
@@ -287,6 +287,7 @@ export class TrackingPipeline {
             recvLagMs: null,
             detectionCount: 0,
             slotCount: null,
+            ingestDebug: null,
           })
         }
 
@@ -350,13 +351,13 @@ export class TrackingPipeline {
           recvLagMs,
           detectionCount: Number(entry.detectionCount) || 0,
           slotCount: Number(entry.slotCount) || null,
+          ingestDebug: entry.debug?.ingestDebug ?? null,
         })
       }
     }
 
     if (!Number.isFinite(minRadarAgeMs)) minRadarAgeMs = 0
 
-    // Advance per-radar snapshot cursor only for enabled radars
     for (const [radarId, entry] of this.#latestByRadarId.entries()) {
       const enabled = this.#radarsExpectedSet.size > 0 ? this.#radarsExpectedSet.has(radarId) : true
       if (!enabled) continue
@@ -398,8 +399,42 @@ export class TrackingPipeline {
     return { measurements, meta, debug }
   }
 
+  #computeTickLagStats(now, measurements) {
+    const lags = []
+
+    for (const m of measurements) {
+      const ts = Number(m?.measTs)
+      if (!Number.isFinite(ts) || ts <= 0) continue
+      lags.push(Math.max(0, now - ts))
+    }
+
+    if (lags.length === 0) {
+      return { tickLagSamples: 0, tickLagMsMax: 0, tickLagMsP95: 0 }
+    }
+
+    lags.sort((a, b) => a - b)
+
+    return {
+      tickLagSamples: lags.length,
+      tickLagMsMax: lags[lags.length - 1],
+      tickLagMsP95: this.#percentileFromSorted(lags, 0.95),
+    }
+  }
+
+  #percentileFromSorted(sortedAsc, p01) {
+    if (!Array.isArray(sortedAsc) || sortedAsc.length === 0) return 0
+
+    const p = Math.min(1, Math.max(0, Number(p01) || 0))
+    const n = sortedAsc.length
+
+    if (n === 1) return sortedAsc[0]
+
+    const idx = Math.floor(p * (n - 1))
+    return sortedAsc[Math.min(n - 1, Math.max(0, idx))]
+  }
+
   #shouldAcceptRadarSwitch(tr, m) {
-    if (tr.lastRadarId === null || tr.lastRadarId === m.radarId) {
+    if (tr.lastRadarId == null || tr.lastRadarId === m.radarId) {
       return true
     }
 
@@ -470,6 +505,8 @@ export class TrackingPipeline {
     const filtered = this.#filterMeasurements(rawMeasurements)
     const measurements = this.#dedupMeasurements(filtered)
 
+    const tickLag = this.#computeTickLagStats(now, measurements)
+
     const measVarMm2ByRadarId = this.#computeMeasVarByRadar(measurements)
 
     if (mode === 'passthrough') {
@@ -479,6 +516,7 @@ export class TrackingPipeline {
         snapshotDebug: snapshot.debug,
         measFiltered: filtered.length,
         measDeduped: measurements.length,
+        tickLag,
       })
       return
     }
@@ -536,6 +574,7 @@ export class TrackingPipeline {
 
       if (!this.#shouldAcceptRadarSwitch(tr, m)) {
         const fbIdx = this.#findFallbackMeasIdxSameRadar(tr, measurements, unassignedSet, measVarMm2ByRadarId)
+
         if (fbIdx == null) {
           continue
         }
@@ -667,6 +706,10 @@ export class TrackingPipeline {
       measFiltered: filtered.length,
       measDeduped: measurements.length,
 
+      tickLagSamples: tickLag.tickLagSamples,
+      tickLagMsMax: tickLag.tickLagMsMax,
+      tickLagMsP95: tickLag.tickLagMsP95,
+
       activeTracks: out.length,
       tickIntervalMs: this.#getUpdateIntervalMs(),
     }
@@ -685,7 +728,6 @@ export class TrackingPipeline {
         where: busIds.presenceInternal,
       }),
       payload: {
-        ts: now,
         publishAs: this.streamKeyWho,
         tracks: out,
         meta,
@@ -717,9 +759,7 @@ export class TrackingPipeline {
       const bearingDeg = (Math.atan2(x, y) * 180) / Math.PI
       const absB = Math.abs(bearingDeg)
 
-      if (absB > cutoffAbs) {
-        continue
-      }
+      if (absB > cutoffAbs) continue
 
       out.push(m)
     }
@@ -727,7 +767,7 @@ export class TrackingPipeline {
     return out
   }
 
-  #publishPassthrough(now, measurements, { debugEnabled, snapshotMeta, snapshotDebug, measFiltered, measDeduped }) {
+  #publishPassthrough(now, measurements, { debugEnabled, snapshotMeta, snapshotDebug, measFiltered, measDeduped, tickLag }) {
     const out = []
 
     for (const m of measurements) {
@@ -748,7 +788,7 @@ export class TrackingPipeline {
         speedMmS: 0,
 
         ageMs: 0,
-        lastSeenMs: Math.max(0, now - m.ts),
+        lastSeenMs: Math.max(0, now - m.measTs),
 
         lastRadarId: m.radarId,
         lastZoneId: m.zoneId,
@@ -776,6 +816,10 @@ export class TrackingPipeline {
       measFiltered: Number(measFiltered) || measurements.length,
       measDeduped: Number(measDeduped) || measurements.length,
 
+      tickLagSamples: tickLag?.tickLagSamples ?? 0,
+      tickLagMsMax: tickLag?.tickLagMsMax ?? 0,
+      tickLagMsP95: tickLag?.tickLagMsP95 ?? 0,
+
       activeTracks: out.length,
       tickIntervalMs: this.#getUpdateIntervalMs(),
     }
@@ -794,7 +838,6 @@ export class TrackingPipeline {
         where: busIds.presenceInternal,
       }),
       payload: {
-        ts: now,
         publishAs: this.streamKeyWho,
         tracks: out,
         meta,
@@ -814,14 +857,14 @@ export class TrackingPipeline {
         ? `${publishAs}:${slotId}`
         : `${Number(m?.radarId)}:${Number.isFinite(slotId) ? slotId : 'na'}`
 
-      const ts = Number(m?.ts) || 0
+      const ts = Number(m?.measTs) || 0
       const prev = latestByKey.get(key)
       if (!prev) {
         latestByKey.set(key, m)
         continue
       }
 
-      const prevTs = Number(prev?.ts) || 0
+      const prevTs = Number(prev?.measTs) || 0
       if (ts >= prevTs) {
         latestByKey.set(key, m)
       }
@@ -849,7 +892,7 @@ export class TrackingPipeline {
       publishAs: prov.publishAs ?? null,
       radarId: Number.isFinite(Number(prov.radarId)) ? Number(prov.radarId) : m.radarId,
       slotId: Number.isFinite(Number(prov.slotId)) ? Number(prov.slotId) : null,
-      measTs: Number.isFinite(Number(prov.measTs)) ? Number(prov.measTs) : m.ts,
+      measTs: Number.isFinite(Number(prov.measTs)) ? Number(prov.measTs) : m.measTs,
 
       localMm: prov.localMm ?? null,
       worldMeasMm: prov.worldMeasMm ?? { xMm: m.xMm, yMm: m.yMm },
@@ -860,7 +903,7 @@ export class TrackingPipeline {
       publishAs: null,
       radarId: m.radarId,
       slotId: null,
-      measTs: m.ts,
+      measTs: m.measTs,
 
       localMm: null,
       worldMeasMm: { xMm: m.xMm, yMm: m.yMm },
