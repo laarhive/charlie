@@ -710,6 +710,7 @@ export class TrackingPipeline {
 
   #tick() {
     const now = this.#clock.nowMs()
+    this.#cleanupJitterHistory(now)
     const mode = this.#mode()
     const debugEnabled = this.#debugEnabled()
 
@@ -1611,6 +1612,31 @@ export class TrackingPipeline {
         mergesCrossRadar,
         mergeRejectedNotVisible,
       },
+    }
+  }
+
+  #getJitterWindowMs() {
+    const q = this.#cfg?.quality || {}
+    const ms = Number(q.jitterWindowMs ?? 500)
+    return (Number.isFinite(ms) && ms > 0) ? Math.floor(ms) : 500
+  }
+
+  #cleanupJitterHistory(nowTs) {
+    const windowMs = this.#getJitterWindowMs()
+    const ttlMs = windowMs * 2
+
+    if (!Number.isFinite(ttlMs) || ttlMs <= 0) return
+
+    for (const [key, v] of this.#jitterLastByKey.entries()) {
+      const ts = Number(v?.ts)
+      if (!Number.isFinite(ts)) {
+        this.#jitterLastByKey.delete(key)
+        continue
+      }
+
+      if ((nowTs - ts) > ttlMs) {
+        this.#jitterLastByKey.delete(key)
+      }
     }
   }
 
