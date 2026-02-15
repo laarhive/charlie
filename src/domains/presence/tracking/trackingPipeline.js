@@ -317,8 +317,17 @@ export class TrackingPipeline {
     const publishAs = String(p.publishAs || '').trim()
     const zoneId = String(p.zoneId || '')
 
-    const measTs = Number(p.measTs)
-    if (!Number.isFinite(measTs) || measTs <= 0) return
+    const measTsRaw = Number(p.measTs)
+    if (!Number.isFinite(measTsRaw) || measTsRaw <= 0) return
+
+    const prev = this.#latestByRadarId.get(radarId)
+    const prevMeasTs = Number(prev?.measTs) || 0
+
+    let measTs = measTsRaw
+    if (prevMeasTs > 0 && measTsRaw < prevMeasTs) {
+      this.#noteSanity('measWentBackwards', { radarId, measTs: measTsRaw, prevMeasTs })
+      measTs = prevMeasTs + 1
+    }
 
     const recvLagMs = Math.max(0, recvTs - measTs)
     if (recvTs < measTs) {
@@ -366,13 +375,6 @@ export class TrackingPipeline {
       })
     }
 
-    const prev = this.#latestByRadarId.get(radarId)
-    const prevMeasTs = Number(prev?.measTs) || 0
-    if (measTs < prevMeasTs) {
-      this.#noteSanity('measWentBackwards', { radarId, measTs, prevMeasTs })
-      return
-    }
-
     const entry = {
       measTs,
       recvTs,
@@ -389,6 +391,11 @@ export class TrackingPipeline {
       entry.debug = {
         meta: p?.meta || null,
         ingestDebug: p?.debug || null,
+        timing: {
+          measTsRaw,
+          measTsClamped: measTs,
+          prevMeasTs: prevMeasTs || null,
+        },
       }
     }
 
@@ -1305,9 +1312,13 @@ export class TrackingPipeline {
         : mapScale({ v: rangeMm, full: fullRange, cutoff: cutRange, scaleMax: rangeMax })
 
       const key = this.#jitterKeyForMeasurement(m)
+
+      const measTs = Number(m?.measTs)
+      const ts = (Number.isFinite(measTs) && measTs > 0) ? measTs : now
+
       const jitterScale = this.#computeJitterScaleForKey({
         key,
-        now,
+        ts,
         xMm: m.xMm,
         yMm: m.yMm,
         windowMs: jitWinMs,
@@ -1334,16 +1345,19 @@ export class TrackingPipeline {
     return `radar:${Number(m?.radarId)}`
   }
 
-  #computeJitterScaleForKey({ key, now, xMm, yMm, windowMs, fullMm, cutoffMm, scaleMax }) {
+  #computeJitterScaleForKey({ key, ts, xMm, yMm, windowMs, fullMm, cutoffMm, scaleMax }) {
     const k = String(key || '')
     if (!k) return 1
 
+    const t = Number(ts)
+    if (!Number.isFinite(t) || t <= 0) return 1
+
     const prev = this.#jitterLastByKey.get(k) || null
-    this.#jitterLastByKey.set(k, { ts: now, xMm, yMm })
+    this.#jitterLastByKey.set(k, { ts: t, xMm, yMm })
 
     if (!prev) return 1
 
-    const dt = now - Number(prev.ts || 0)
+    const dt = t - Number(prev.ts || 0)
     if (!Number.isFinite(dt) || dt <= 0) return 1
     if (Number.isFinite(windowMs) && windowMs > 0 && dt > windowMs) return 1
 
