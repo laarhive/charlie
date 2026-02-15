@@ -102,14 +102,15 @@ export class TrackingPipeline {
 
   #stuckTicks
 
-  #jitterLastByKey
+  #jitterLastByKey = new Map()
+  #jumpLastByKey = new Map()
 
   #healthLastPublishTs
   #healthSeq
 
   #sanityCounters
 
-  #bufferByRadarId  = new Map()
+  #bufferByRadarId = new Map()
 
   constructor({ logger, clock, controllerId, presenceInternalBus, controllerConfig }) {
     this.#logger = logger
@@ -200,6 +201,7 @@ export class TrackingPipeline {
 
     this.#tracksById.clear()
     this.#jitterLastByKey.clear()
+    this.#jumpLastByKey.clear()
 
     this.#stuckTicks = 0
     this.#healthLastPublishTs = 0
@@ -257,6 +259,34 @@ export class TrackingPipeline {
     this.#bufferByRadarId.set(rid, keep)
   }
 
+  #cleanupRadarBuffers(now) {
+    const windowMs = this.#getRadarBufferWindowMs()
+    const ttlMs = windowMs * 2
+
+    if (!Number.isFinite(ttlMs) || ttlMs <= 0) return
+
+    const cutoffTs = now - ttlMs
+
+    for (const [rid, buf] of this.#bufferByRadarId.entries()) {
+      if (!Array.isArray(buf) || buf.length === 0) {
+        this.#bufferByRadarId.delete(rid)
+        continue
+      }
+
+      const keep = buf.filter((e) => {
+        const ts = Number(e?.measTs)
+        return Number.isFinite(ts) && ts >= cutoffTs
+      })
+
+      if (keep.length === 0) {
+        this.#bufferByRadarId.delete(rid)
+        continue
+      }
+
+      this.#bufferByRadarId.set(rid, keep)
+    }
+  }
+
   #selectRadarEntry(radarId, sampleTs, now) {
     const buf = this.#bufferByRadarId.get(radarId)
     if (!Array.isArray(buf) || buf.length === 0) return null
@@ -274,8 +304,7 @@ export class TrackingPipeline {
       }
     }
 
-    // If nothing <= sampleTs, keep best-effort: newest entry overall.
-    // This keeps system responsive; coherence is handled by jitterDelay + waitForAll policy.
+    // If nothing <= sampleTs, best-effort newest entry overall.
     if (!best) best = buf[buf.length - 1]
 
     return best || null
@@ -493,7 +522,7 @@ export class TrackingPipeline {
     const waitTimeoutMs = this.#getWaitForAllTimeoutMs()
 
     if (waitForAll) {
-      // Align sampleTs to the slowest "recent enough" radar so we get a coherent multi-radar snapshot.
+      // Align sampleTs to the slowest radar so we get a coherent multi-radar snapshot.
       // Bounded by waitTimeoutMs so we don't introduce large latency.
       let minLatest = Infinity
       let haveAny = false
@@ -823,7 +852,11 @@ export class TrackingPipeline {
 
   #tick() {
     const now = this.#clock.nowMs()
+
     this.#cleanupJitterHistory(now)
+    this.#cleanupJumpHistory(now)
+    this.#cleanupRadarBuffers(now)
+
     const mode = this.#mode()
     const debugEnabled = this.#debugEnabled()
 
@@ -1380,6 +1413,69 @@ export class TrackingPipeline {
     return [...latestByKey.values()]
   }
 
+  #jumpKeyForMeasurement(m) {
+    const prov = m?.prov || null
+    const publishAs = String(prov?.publishAs || '').trim()
+    const slotId = Number(prov?.slotId)
+
+    if (publishAs && Number.isFinite(slotId)) {
+      return `slot:${publishAs}:${slotId}`
+    }
+
+    return `radar:${Number(m?.radarId)}`
+  }
+
+  #computeJumpScaleForKey({ key, ts, xMm, yMm, windowMs, suspiciousMmS, impossibleMmS, scaleMax }) {
+    const k = String(key || '')
+    if (!k) return 1
+
+    const t = Number(ts)
+    if (!Number.isFinite(t) || t <= 0) return 1
+
+    const prev = this.#jumpLastByKey.get(k) || null
+    this.#jumpLastByKey.set(k, { ts: t, xMm, yMm })
+
+    if (!prev) return 1
+
+    const dtMs = t - Number(prev.ts || 0)
+    if (!Number.isFinite(dtMs) || dtMs <= 0) return 1
+    if (Number.isFinite(windowMs) && windowMs > 0 && dtMs > windowMs) return 1
+
+    const dx = Number(xMm) - Number(prev.xMm)
+    const dy = Number(yMm) - Number(prev.yMm)
+    if (![dx, dy].every(Number.isFinite)) return 1
+
+    const distMm = Math.sqrt((dx * dx) + (dy * dy))
+    const speedMmS = distMm / (dtMs / 1000)
+
+    const susp = Number(suspiciousMmS)
+    const imp = Number(impossibleMmS)
+    const sMax = Number(scaleMax)
+
+    if (![speedMmS, susp, imp, sMax].every(Number.isFinite)) return 1
+    if (sMax <= 1) return 1
+    if (imp <= susp) return 1
+
+    if (speedMmS <= susp) return 1
+    if (speedMmS >= imp) return sMax
+
+    const u = (speedMmS - susp) / (imp - susp)
+    return lerp(1, sMax, u)
+  }
+
+  #cleanupJumpHistory(nowTs) {
+    const windowMs = this.#getJitterWindowMs() // or make a dedicated getter if you want
+    const ttlMs = windowMs * 2
+    if (!Number.isFinite(ttlMs) || ttlMs <= 0) return
+
+    for (const [key, v] of this.#jumpLastByKey.entries()) {
+      const ts = Number(v?.ts)
+      if (!Number.isFinite(ts) || (nowTs - ts) > ttlMs) {
+        this.#jumpLastByKey.delete(key)
+      }
+    }
+  }
+
   #computeMeasVarByIdx(measurements, now) {
     const baseMm = Number(this.#cfg?.tracking?.kf?.measNoiseBaseMm ?? 160)
     const baseVar = Math.max(1, baseMm * baseMm)
@@ -1453,7 +1549,20 @@ export class TrackingPipeline {
         staleScale = lerp(1, staleMax, t)
       }
 
-      out[i] = baseVar * bearingScale * rangeScale * jitterScale * staleScale
+      const jumpKey = this.#jumpKeyForMeasurement(m)
+
+      const jumpScale = this.#computeJumpScaleForKey({
+        key: jumpKey,
+        ts,
+        xMm: m.xMm,
+        yMm: m.yMm,
+        windowMs: jitWinMs,
+        suspiciousMmS: 3500,
+        impossibleMmS: 8000,
+        scaleMax: 10,
+      })
+
+      out[i] = baseVar * bearingScale * rangeScale * jitterScale * staleScale * jumpScale
     }
 
     return out
