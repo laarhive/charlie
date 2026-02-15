@@ -1,9 +1,15 @@
 // src/domains/presence/transform/transformService.js
 export class TransformService {
   #logger
+
   #azimuthDeg
   #yawOffsetsDeg
   #tubeRadiusMm
+
+  #cosTheta
+  #sinTheta
+  #tx
+  #ty
 
   constructor({ config, logger }) {
     this.#logger = logger
@@ -19,6 +25,13 @@ export class TransformService {
       : 50
 
     this.#yawOffsetsDeg = this.#initYawOffsets(config)
+
+    this.#cosTheta = []
+    this.#sinTheta = []
+    this.#tx = []
+    this.#ty = []
+
+    this.#rebuildCache()
   }
 
   toWorldMm({ radarId, xMm, yMm }) {
@@ -27,17 +40,10 @@ export class TransformService {
       return { xMm: 0, yMm: 0 }
     }
 
-    const phiDeg = this.#azimuthDeg[i]
-    const deltaDeg = this.#yawOffsetsDeg[i] || 0
-    const thetaDeg = phiDeg + deltaDeg
-
-    const thetaRad = (thetaDeg * Math.PI) / 180
-    const cosT = Math.cos(thetaRad)
-    const sinT = Math.sin(thetaRad)
-
-    const phiRad = (phiDeg * Math.PI) / 180
-    const tx = this.#tubeRadiusMm * Math.cos(phiRad)
-    const ty = this.#tubeRadiusMm * Math.sin(phiRad)
+    const cosT = this.#cosTheta[i]
+    const sinT = this.#sinTheta[i]
+    const tx = this.#tx[i]
+    const ty = this.#ty[i]
 
     const X = (cosT * yMm) + (-sinT * xMm) + tx
     const Y = (sinT * yMm) + (cosT * xMm) + ty
@@ -51,17 +57,10 @@ export class TransformService {
       return { xMm: 0, yMm: 0 }
     }
 
-    const phiDeg = this.#azimuthDeg[i]
-    const deltaDeg = this.#yawOffsetsDeg[i] || 0
-    const thetaDeg = phiDeg + deltaDeg
-
-    const thetaRad = (thetaDeg * Math.PI) / 180
-    const cosT = Math.cos(thetaRad)
-    const sinT = Math.sin(thetaRad)
-
-    const phiRad = (phiDeg * Math.PI) / 180
-    const tx = this.#tubeRadiusMm * Math.cos(phiRad)
-    const ty = this.#tubeRadiusMm * Math.sin(phiRad)
+    const cosT = this.#cosTheta[i]
+    const sinT = this.#sinTheta[i]
+    const tx = this.#tx[i]
+    const ty = this.#ty[i]
 
     const Xp = Number(xMm) - tx
     const Yp = Number(yMm) - ty
@@ -70,6 +69,29 @@ export class TransformService {
     const xLocal = (-sinT * Xp) + (cosT * Yp)
 
     return { xMm: xLocal, yMm: yLocal }
+  }
+
+  /* Debug helper: world -> local -> world round-trip error for a single point */
+  validateRoundTripWorldMm({ radarId, xMm, yMm }) {
+    const wx = Number(xMm)
+    const wy = Number(yMm)
+    if (![wx, wy].every(Number.isFinite)) {
+      return { ok: false, errMm: null, w0: { xMm: wx, yMm: wy }, w1: null }
+    }
+
+    const local = this.toLocalMm({ radarId, xMm: wx, yMm: wy })
+    const world = this.toWorldMm({ radarId, xMm: local.xMm, yMm: local.yMm })
+
+    const dx = Number(world.xMm) - wx
+    const dy = Number(world.yMm) - wy
+    const errMm = Math.sqrt((dx * dx) + (dy * dy))
+
+    return {
+      ok: Number.isFinite(errMm),
+      errMm,
+      w0: { xMm: wx, yMm: wy },
+      w1: world,
+    }
   }
 
   getYawOffsetsDeg() {
@@ -87,6 +109,35 @@ export class TransformService {
       phiDeg,
       deltaDeg,
       tubeRadiusMm: this.#tubeRadiusMm,
+      cache: {
+        cosTheta: this.#cosTheta[i],
+        sinTheta: this.#sinTheta[i],
+        tx: this.#tx[i],
+        ty: this.#ty[i],
+      },
+    }
+  }
+
+  #rebuildCache() {
+    const n = this.#azimuthDeg.length
+
+    this.#cosTheta = Array(n).fill(1)
+    this.#sinTheta = Array(n).fill(0)
+    this.#tx = Array(n).fill(0)
+    this.#ty = Array(n).fill(0)
+
+    for (let i = 0; i < n; i += 1) {
+      const phiDeg = Number(this.#azimuthDeg[i]) || 0
+      const deltaDeg = Number(this.#yawOffsetsDeg[i]) || 0
+      const thetaDeg = phiDeg + deltaDeg
+
+      const thetaRad = (thetaDeg * Math.PI) / 180
+      this.#cosTheta[i] = Math.cos(thetaRad)
+      this.#sinTheta[i] = Math.sin(thetaRad)
+
+      const phiRad = (phiDeg * Math.PI) / 180
+      this.#tx[i] = this.#tubeRadiusMm * Math.cos(phiRad)
+      this.#ty[i] = this.#tubeRadiusMm * Math.sin(phiRad)
     }
   }
 
