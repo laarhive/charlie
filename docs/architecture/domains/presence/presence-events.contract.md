@@ -1,280 +1,158 @@
 <!-- docs/architecture/domains/presence/presence-events.contract.md -->
-# Presence Domain — Architecture & Event Contracts (v1)
+# Presence Domain — Event Contracts (v1)
 
-This document defines the **Presence domain architecture**, internal buses, and the **v1 frozen event contracts** for tracking and presence outputs.  
-It is intended as a long-term reference, similar in role to `led-output.spec.md`.
+This document freezes the v1 event contracts.
 
----
-
-## Goals
-
-- Strict separation of concerns
-- Tracking works independently of calibration
-- Calibration feeds back **only extrinsics**, never blocks tracking
-- Raw sensor data is never mixed with semantic presence events
-- Clear bus ownership and event naming
-- Debug/UI access to final coordinates without polluting semantic logic
-
-Non-goals:
-- UI design
-- Device protocol details
-- Perfect identity continuity
+Raw device contracts are defined elsewhere.
+This document covers domain-level events only.
 
 ---
 
-## Buses
-
-### 1. Presence Bus (raw input only)
-**Purpose:** Device → domain ingress  
-**Producers:** LD2450, LD2410 devices  
-**Consumers:** Presence ingest adapters
-
-Events:
-- `presenceRaw:ld2450`
-- `presenceRaw:ld2410`
-
-No derived or semantic events are published here.
+# presenceInternalBus
 
 ---
 
-### 2. Presence Internal Bus (derived state)
-**Purpose:** Internal fan-out of normalized / derived data  
-**Visibility:** Presence domain only (not consumed by app logic directly)
+## presence:ld2450Tracks
 
-Events:
-- `presence:ld2450Tracks`
-- `presence:ld2410Stable`
-- (optional debug/status)
-  - `presence:calibrationStatus`
-  - `presence:zonesState`
+Per-radar world-transformed detections.
 
----
-
-### 3. Main Bus (semantic output)
-**Purpose:** App-level semantics, automation, UI, LEDs  
-**Producers:** Presence controller (final stage only)
-
-Events:
-- `presence:targets`
-- `presence:enter`
-- `presence:exit`
-
----
-
-## High-Level Architecture
-
-```
-┌──────────────────────────┐
-│        LD2450 Device     │
-│        LD2410 Device     │
-└───────────┬──────────────┘
-            │
-            ▼
-     Presence Bus (raw)
-     ──────────────────
-     presenceRaw:ld2450
-     presenceRaw:ld2410
-            │
-            ▼
-┌──────────────────────────┐
-│   Ingest Adapters        │
-│  - normalize units       │
-│  - map publishAs → ids   │
-└───────────┬──────────────┘
-            │
-            ▼
- Presence Internal Bus (derived)
- ─────────────────────────────
- presence:ld2450Tracks
- presence:ld2410Stable
-            │
-            │──────────────┐
-            │              │
-            ▼              ▼
-┌─────────────────┐   ┌────────────────────┐
-│ Tracking        │   │ Calibration         │
-│ Pipeline        │   │ Pipeline            │
-│ (KF + assoc)    │   │ (sessions + solver) │
-└────────┬────────┘   └─────────┬──────────┘
-         │                      │
-         │          updates yaw │
-         │          offsets     │
-         │                      ▼
-         │               ┌──────────────┐
-         │               │ Extrinsics / │
-         │               │ Transform    │
-         │               │ Service      │
-         │               └──────────────┘
-         │
-         ▼
-┌──────────────────────────┐
-│ Zone Presence Engine     │
-│ (policy + hysteresis)   │
-└───────────┬──────────────┘
-            │
-            ▼
-        Main Bus (semantic)
-        ──────────────────
-        presence:targets
-        presence:enter
-        presence:exit
-```
-
----
-
-## Coordinate & Layout Conventions
-
-Defined in `config/controllers/presence.json5`.
-
-```json5
-// Azimuth convention:
-// - degrees clockwise from North
-// - 0° = North (radar 0 forward)
-// - 90° = East (right)
-// - 180° = South (back)
-// - 270° = West (left)
-radarAzimuthDeg: [0, 90, 180, 270]
-```
-
-World frame:
-- +X = North
-- +Y = East
-
----
-
-## Event Contracts (Frozen v1)
-
-### presence-internal: `presence:ld2450Tracks`
-
-**Authoritative output of LD2450 tracking pipeline**
-
-- **Bus:** Presence Internal Bus
-- **Producer:** Tracking pipeline
-- **Consumers:** Calibration, zone engine, main-bus publisher, debug UI
+Producer:
+- Ld2450IngestAdapter
 
 ```js
 {
   type: 'presence:ld2450Tracks',
-  ts: 1770197071450,        // publish time (ms)
+  ts: 1770238439564,
 
   payload: {
-    ts: 1770197071400,      // tracking tick / measurement-aligned time
+    radarId: 1,
+    publishAs: 'LD2450B',
+    zoneId: 'zone1',
+    measTs: 1770238439564,
 
     tracks: [
       {
-        trackId: 't17',
-        state: 'confirmed', // 'tentative' | 'confirmed' | 'predicted'
-
-        // World position (mm)
-        xMm: 1234,
-        yMm: 2506,
-
-        // World velocity (mm/s)
-        vxMmS: 10,
-        vyMmS: -35,
-
-        // Derived
-        rangeMm: 2795,
-        bearingDeg: 62.3,    // clockwise from North
-        speedMmS: 36.4,
-
-        // Lifecycle / diagnostics
-        ageMs: 1840,
-        lastSeenMs: 120,
-        sourceRadars: [0, 1]
+        xMm: -2050,
+        yMm: 40,
+        prov: {
+          localMm: { xMm: -15, yMm: 2050 },
+          slotId: 1
+        }
       }
-    ]
+    ],
+
+    meta: {
+      slotCount: 3,
+      detectionCount: 1
+    }
   }
 }
 ```
 
-Notes:
-- `trackId` is global and best-effort stable.
-- Local LD2450 target IDs are **not** propagated.
-- Empty `tracks[]` is valid and meaningful.
-
 ---
 
-### presence-internal: `presence:ld2410Stable`
+## presence:globalTracks
 
-**Debounced LD2410 presence state**
+Global tracking snapshot.
+
+Producer:
+- TrackingPipeline
 
 ```js
 {
-  type: 'presence:ld2410Stable',
-  ts: 1770197071500,
+  type: 'presence:globalTracks',
+  ts: 1770238439561,
 
   payload: {
-    zoneId: 'zone0',
-    present: true
+    ts: 1770238439561,
+
+    tracks: [
+      {
+        id: 't123',
+        state: 'confirmed',
+
+        xMm: -2046,
+        yMm: 39,
+
+        vxMmS: 15.41,
+        vyMmS: -11.45,
+        speedMmS: 19.2,
+
+        ageMs: 511738,
+        lastSeenMs: 86,
+        lastRadarId: 1,
+        lastZoneId: 'zone1',
+        sourceRadars: [0, 1]
+      }
+    ],
+
+    meta: {
+      activeTracks: 1,
+      updateIntervalMs: 100
+    }
   }
 }
 ```
 
-LD2410 **never** emits enter/exit events.
+---
+
+## presence:trackingSnapshotHealth
+
+Published periodically.
+
+Producer:
+- TrackingHealthPublisher
+
+Contains:
+
+- snapshot meta
+- per-radar status
+- tick lag stats
+- sanity counters
+- fusion stats
+
+Schema intentionally extensible.
 
 ---
 
-### main bus: `presence:targets`
+# mainBus
 
-**Semantic, UI-ready target snapshot**
+---
 
-- Derived from `presence:ld2450Tracks`
-- Emitted only after tracking pipeline completes
+## presence:targets
+
+Semantic target snapshot.
+
+Producer:
+- PresenceController
 
 ```js
 {
   type: 'presence:targets',
-  ts: 1770197071450,
+  ts: 1770223715168,
 
   payload: {
     targets: [
       {
-        id: 't17',
-        xMm: 1234,
-        yMm: 2506,
-        rangeMm: 2795,
-        bearingDeg: 62.3,
-        speedMmS: 36.4,
-
-        zoneId: 'zone0' // optional convenience
+        id: 't123',
+        xMm: -2046,
+        yMm: 39,
+        speedMmS: 19.2,
+        zoneId: 'zone1'
       }
     ]
   }
 }
 ```
 
-This event is what LED modulators, UI, and automation should consume.
+Only semantic data appears here.
 
 ---
 
-### main bus: Zone presence
+# Versioning
 
-```js
-presence:enter  { zoneId }
-presence:exit   { zoneId }
-```
+This defines Presence v1 contracts.
 
-Emitted **only** by the Zone Presence Engine.
+Breaking changes require version bump.
 
 ---
-
-## Policy Rules Summary
-
-- Raw frames are never dropped, even when no targets are present.
-- LD2450 `valid:false` slots mean “empty slot”, not invalid data.
-- Tracking is authoritative for coordinates.
-- LD2410 is auxiliary and gates presence **only via policy**.
-- Calibration never blocks tracking; it only updates extrinsics.
-- Main bus contains **semantic facts only**, not intermediate state.
-
----
-
-## Versioning
-
-- This document defines **Presence v1 contracts**.
-- Any breaking change requires bumping this spec and event versioning.
-
----
-
-End of document.
