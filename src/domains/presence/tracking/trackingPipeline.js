@@ -261,6 +261,8 @@ export class TrackingPipeline {
     this.#observe.cleanup(now)
 
     const snapshot = this.#snapshot.makeSnapshot(now, { debugEnabled })
+    if (!snapshot.meta || typeof snapshot.meta !== 'object') snapshot.meta = {}
+
     const rawObs = snapshot.observations
 
     const stage = this.#observe.process({ observations: rawObs, now })
@@ -277,6 +279,7 @@ export class TrackingPipeline {
 
     const observations = fusion.observations
     const fusedVarMm2ByIdx = fusion.measVarMm2ByIdx
+
     const snapshotChangedThisTick = this.#shouldConsumeSnapshot(snapshot.meta)
 
     const tickLag = this.#health.computeTickLagStats(now, observations)
@@ -330,6 +333,7 @@ export class TrackingPipeline {
         const baseTs = (Number.isFinite(lastPredictTs) && lastPredictTs > 0)
           ? lastPredictTs
           : (Number(tr.lastUpdateTs) || now)
+
         const dtMs = Math.min(dtClampMs, Math.max(0, now - baseTs))
         const dtSec = dtMs / 1000
 
@@ -339,8 +343,8 @@ export class TrackingPipeline {
         tr.vxMmS = tr.kfState.x[2]
         tr.vyMmS = tr.kfState.x[3]
       }
-      tr.lastPredictTs = now
 
+      tr.lastPredictTs = now
       liveTracks.push(tr)
     }
 
@@ -375,6 +379,10 @@ export class TrackingPipeline {
           idx = fbIdx
           m = observations[idx]
         }
+
+        const measTs = Number(m?.measTs) || 0
+        const lastUsed = Number(tr.lastMeasTsUsed) || 0
+        if (measTs > 0 && measTs <= lastUsed) continue
 
         const varMm2 = Number(fusedVarMm2ByIdx[idx]) || 1
         const sigmaMm = Math.sqrt(Math.max(1, varMm2))
@@ -416,6 +424,7 @@ export class TrackingPipeline {
 
         tr.lastUpdateTs = now
         tr.lastSeenTs = now
+        tr.lastMeasTsUsed = measTs || tr.lastMeasTsUsed
 
         tr.lastRadarId = m.radarId
         tr.lastZoneId = m.zoneId
@@ -511,6 +520,8 @@ export class TrackingPipeline {
 
       activeTracks: out.length,
       tickIntervalMs: this.#getUpdateIntervalMs(),
+
+      snapshotKey: snapshot.meta.snapshotKey,
       snapshotChangedThisTick,
     }
 
@@ -599,6 +610,8 @@ export class TrackingPipeline {
 
       activeTracks: out.length,
       tickIntervalMs: this.#getUpdateIntervalMs(),
+
+      snapshotKey: snapshotMeta?.snapshotKey || null,
       snapshotChangedThisTick,
     }
 
@@ -701,7 +714,7 @@ export class TrackingPipeline {
 
     if (key) {
       const changed = key !== this.#lastSnapshotKey
-      this.#lastSnapshotKey = key
+      if (changed) this.#lastSnapshotKey = key
       return changed
     }
 
@@ -743,6 +756,8 @@ export class TrackingPipeline {
       lastSeenTs: now,
       lastUpdateTs: now,
       lastPredictTs: now,
+
+      lastMeasTsUsed: Number(m?.measTs) || 0,
 
       confirmHits: 1,
 
