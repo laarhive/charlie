@@ -9,7 +9,7 @@
     // 90° = East (right)
     // 180° = South (back)
     // 270° = West (left)
-    radarAzimuthDeg: [0, 75, 285],
+    radarAzimuthDeg: [15, 75, 285],
     radarFovDeg: 120,
     tubeDiameterMm: 100,
 
