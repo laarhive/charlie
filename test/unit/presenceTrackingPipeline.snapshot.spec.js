@@ -622,4 +622,123 @@ describe('TrackingPipeline snapshot integration', function () {
       unsub()
     })
   })
+
+  it('treats multi-radar fused measurements as radar-neutral in switch-penalty association', async function () {
+    await withManualIntervals(async ({ tick }) => {
+      const clock = makeClock(1000)
+      const presenceInternalBus = new EventBus({ busId: 'presenceInternal', strict: true })
+      const globalEvents = []
+
+      const unsub = presenceInternalBus.subscribe((event) => {
+        if (event?.type !== domainEventTypes.presence.globalTracks) return
+        globalEvents.push(event)
+      })
+
+      const cfg = makeConfig({
+        radarCount: 2,
+        radarAzimuthDegOverride: [0, 0],
+        confirmEnabled: false,
+        waitForAllEnabled: false,
+        fusionEnabled: true,
+        fusionFovMarginDeg: 200,
+      })
+      cfg.tracking.mode = 'assocOnly'
+
+      const pipeline = new TrackingPipeline({
+        logger: { notice: () => {}, error: () => {} },
+        clock,
+        controllerId: 'presenceController',
+        presenceInternalBus,
+        controllerConfig: cfg,
+      })
+
+      pipeline.start()
+
+      publishLd2450Track({
+        bus: presenceInternalBus,
+        recvTs: clock.nowMs(),
+        measTs: clock.nowMs(),
+        radarId: 1,
+        xMm: 1000,
+        yMm: 1400,
+        slotId: 1,
+      })
+
+      clock.advance(50)
+      tick()
+
+      const e1050 = globalEventAtTs(globalEvents, 1050)
+      const t1050 = Array.isArray(e1050?.payload?.tracks) ? e1050.payload.tracks[0] : null
+      expect(t1050).to.not.equal(null)
+      const originalId = String(t1050.id)
+      expect(Number(t1050.lastRadarId)).to.equal(1)
+
+      clock.advance(50)
+      const now = clock.nowMs()
+
+      publishLd2450Track({
+        bus: presenceInternalBus,
+        recvTs: now,
+        measTs: now,
+        radarId: 0,
+        xMm: 1000,
+        yMm: 1400,
+        slotId: 1,
+      })
+
+      presenceInternalBus.publish({
+        type: domainEventTypes.presence.ld2450Tracks,
+        ts: now,
+        source: 'test',
+        streamKey: makeStreamKey({
+          who: 'test',
+          what: domainEventTypes.presence.ld2450Tracks,
+          where: busIds.presenceInternal,
+        }),
+        payload: {
+          measTs: now,
+          publishAs: 'LD2450B',
+          radarId: 1,
+          zoneId: 'zone1',
+          tracks: [
+            {
+              world: { xMm: 1050, yMm: 1400 },
+              provenance: {
+                publishAs: 'LD2450B',
+                radarId: 1,
+                slotId: 1,
+                measTs: now,
+                localMm: { xMm: 1050, yMm: 1400 },
+              },
+            },
+            {
+              world: { xMm: 1000, yMm: 1850 },
+              provenance: {
+                publishAs: 'LD2450B',
+                radarId: 1,
+                slotId: 2,
+                measTs: now,
+                localMm: { xMm: 1000, yMm: 1850 },
+              },
+            },
+          ],
+          meta: {
+            slotCount: 2,
+            detectionCount: 2,
+          },
+        },
+      })
+
+      tick()
+
+      const e1100 = globalEventAtTs(globalEvents, 1100)
+      const tracks1100 = Array.isArray(e1100?.payload?.tracks) ? e1100.payload.tracks : []
+      const updatedOriginal = tracks1100.find((t) => String(t?.id) === originalId) || null
+      expect(updatedOriginal).to.not.equal(null)
+      expect((updatedOriginal.sourceRadars || []).sort((a, b) => a - b)).to.deep.equal([0, 1])
+
+      pipeline.dispose()
+      unsub()
+    })
+  })
 })
