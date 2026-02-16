@@ -43,6 +43,7 @@ const makeClock = function makeClock(startMs = 0) {
 
 const makeConfig = function makeConfig({
   radarCount = 1,
+  radarAzimuthDegOverride = null,
   confirmEnabled = true,
   confirmCount = 2,
   confirmWindowMs = 1000,
@@ -54,13 +55,16 @@ const makeConfig = function makeConfig({
   waitForAllTimeoutMs = 0,
   jitterDelayMs = 0,
   fusionEnabled = false,
+  fusionFovMarginDeg = 6,
 } = {}) {
   const ld2450 = Array.from({ length: radarCount }, (_, radarId) => ({
     publishAs: `LD2450${String.fromCharCode(65 + radarId)}`,
     enabled: true,
   }))
 
-  const radarAzimuthDeg = Array.from({ length: radarCount }, (_, idx) => Math.floor((360 * idx) / Math.max(1, radarCount)))
+  const radarAzimuthDeg = Array.isArray(radarAzimuthDegOverride) && radarAzimuthDegOverride.length === radarCount
+    ? radarAzimuthDegOverride.map((x) => Number(x) || 0)
+    : Array.from({ length: radarCount }, (_, idx) => Math.floor((360 * idx) / Math.max(1, radarCount)))
 
   return {
     enabled: true,
@@ -101,7 +105,7 @@ const makeConfig = function makeConfig({
         enabled: fusionEnabled,
         clusterGateMm: 360,
         maxClusterSize: 6,
-        fovMarginDeg: 6,
+        fovMarginDeg: fusionFovMarginDeg,
         rangeMarginMm: 150,
       },
       health: {
@@ -535,6 +539,84 @@ describe('TrackingPipeline snapshot integration', function () {
       expect(meta.radarsFresh).to.equal(1)
       expect(meta.radarsMissing).to.equal(1)
       expect(meta.measIn).to.equal(1)
+
+      pipeline.dispose()
+      unsub()
+    })
+  })
+
+  it('does not overwrite lastRadarId from representative radar on multi-radar fused updates', async function () {
+    await withManualIntervals(async ({ tick }) => {
+      const clock = makeClock(1000)
+      const presenceInternalBus = new EventBus({ busId: 'presenceInternal', strict: true })
+      const globalEvents = []
+
+      const unsub = presenceInternalBus.subscribe((event) => {
+        if (event?.type !== domainEventTypes.presence.globalTracks) return
+        globalEvents.push(event)
+      })
+
+      const pipeline = new TrackingPipeline({
+        logger: { notice: () => {}, error: () => {} },
+        clock,
+        controllerId: 'presenceController',
+        presenceInternalBus,
+        controllerConfig: makeConfig({
+          radarCount: 2,
+          radarAzimuthDegOverride: [0, 0],
+          confirmEnabled: false,
+          waitForAllEnabled: false,
+          fusionEnabled: true,
+          fusionFovMarginDeg: 200,
+        }),
+      })
+
+      pipeline.start()
+
+      publishLd2450Track({
+        bus: presenceInternalBus,
+        recvTs: clock.nowMs(),
+        measTs: clock.nowMs(),
+        radarId: 0,
+        xMm: 1000,
+        yMm: 1400,
+      })
+
+      clock.advance(50)
+      tick()
+
+      const e1050 = globalEventAtTs(globalEvents, 1050)
+      const t1050 = Array.isArray(e1050?.payload?.tracks) ? e1050.payload.tracks[0] : null
+      expect(t1050).to.not.equal(null)
+      expect(Number(t1050.lastRadarId)).to.equal(0)
+
+      clock.advance(50)
+      const now = clock.nowMs()
+
+      publishLd2450Track({
+        bus: presenceInternalBus,
+        recvTs: now,
+        measTs: now,
+        radarId: 0,
+        xMm: 1010,
+        yMm: 1410,
+      })
+      publishLd2450Track({
+        bus: presenceInternalBus,
+        recvTs: now,
+        measTs: now,
+        radarId: 1,
+        xMm: 1015,
+        yMm: 1415,
+      })
+
+      tick()
+
+      const e1100 = globalEventAtTs(globalEvents, 1100)
+      const t1100 = Array.isArray(e1100?.payload?.tracks) ? e1100.payload.tracks[0] : null
+      expect(t1100).to.not.equal(null)
+      expect(Number(t1100.lastRadarId)).to.equal(0)
+      expect((t1100.sourceRadars || []).sort((a, b) => a - b)).to.deep.equal([0, 1])
 
       pipeline.dispose()
       unsub()

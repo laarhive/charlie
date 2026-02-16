@@ -40,8 +40,10 @@ const makeClock = function makeClock(startMs = 0) {
 }
 
 const makeConfig = function makeConfig({
+  mode = 'kf',
   confirmEnabled = true,
   confirmCount = 2,
+  confirmWindowMs = 1000,
 } = {}) {
   return {
     enabled: true,
@@ -50,7 +52,7 @@ const makeConfig = function makeConfig({
       ld2450: [{ publishAs: 'LD2450A', enabled: true }],
     },
     tracking: {
-      mode: 'kf',
+      mode,
       updateIntervalMs: 50,
       maxDtMs: 400,
       dropTimeoutMs: 1500,
@@ -72,7 +74,7 @@ const makeConfig = function makeConfig({
         gateD2Max: 1000,
         newTrackConfirmEnabled: confirmEnabled,
         newTrackConfirmCount: confirmCount,
-        newTrackConfirmWindowMs: 1000,
+        newTrackConfirmWindowMs: confirmWindowMs,
         newTrackSpawnGateMm: 0,
       },
       fusion: {
@@ -82,7 +84,7 @@ const makeConfig = function makeConfig({
   }
 }
 
-const publishLd2450Track = function publishLd2450Track({ bus, now, xMm, yMm, slotId = 1 }) {
+const publishLd2450Track = function publishLd2450Track({ bus, now, measTs = now, xMm, yMm, slotId = 1 }) {
   bus.publish({
     type: domainEventTypes.presence.ld2450Tracks,
     ts: now,
@@ -93,7 +95,7 @@ const publishLd2450Track = function publishLd2450Track({ bus, now, xMm, yMm, slo
       where: 'presenceInternal',
     }),
     payload: {
-      measTs: now,
+      measTs,
       publishAs: 'LD2450A',
       radarId: 0,
       zoneId: 'zone0',
@@ -103,7 +105,7 @@ const publishLd2450Track = function publishLd2450Track({ bus, now, xMm, yMm, slo
           publishAs: 'LD2450A',
           radarId: 0,
           slotId,
-          measTs: now,
+          measTs,
           localMm: { xMm, yMm },
         },
       }],
@@ -185,6 +187,163 @@ describe('TrackingPipeline (presence)', function () {
       latest = lastGlobalTrack(globalEvents)
       expect(latest.track.state).to.equal('confirmed')
       expect(latest.meta.snapshotChangedThisTick).to.equal(true)
+
+      pipeline.dispose()
+      unsub()
+    })
+  })
+
+  it('uses rolling confirmation window by resetting tentative streak after window expiry', async function () {
+    await withManualIntervals(async ({ tick }) => {
+      const clock = makeClock(1000)
+      const presenceInternalBus = new EventBus({ busId: 'presenceInternal', strict: true })
+      const globalEvents = []
+
+      const unsub = presenceInternalBus.subscribe((event) => {
+        if (event?.type !== domainEventTypes.presence.globalTracks) return
+        globalEvents.push(event)
+      })
+
+      const pipeline = new TrackingPipeline({
+        logger: { notice: () => {}, error: () => {} },
+        clock,
+        controllerId: 'presenceController',
+        presenceInternalBus,
+        controllerConfig: makeConfig({
+          confirmEnabled: true,
+          confirmCount: 2,
+          confirmWindowMs: 100,
+        }),
+      })
+
+      pipeline.start()
+
+      publishLd2450Track({
+        bus: presenceInternalBus,
+        now: clock.nowMs(),
+        xMm: 1200,
+        yMm: 1400,
+      })
+
+      clock.advance(50)
+      tick()
+
+      let latest = lastGlobalTrack(globalEvents)
+      expect(latest.track).to.not.equal(null)
+      expect(latest.track.state).to.equal('tentative')
+
+      clock.advance(150)
+      tick()
+
+      publishLd2450Track({
+        bus: presenceInternalBus,
+        now: clock.nowMs(),
+        xMm: 1210,
+        yMm: 1410,
+      })
+
+      clock.advance(50)
+      tick()
+
+      latest = lastGlobalTrack(globalEvents)
+      expect(latest.track.state).to.equal('tentative')
+
+      publishLd2450Track({
+        bus: presenceInternalBus,
+        now: clock.nowMs(),
+        xMm: 1220,
+        yMm: 1420,
+      })
+
+      clock.advance(50)
+      tick()
+
+      latest = lastGlobalTrack(globalEvents)
+      expect(latest.track.state).to.equal('confirmed')
+
+      pipeline.dispose()
+      unsub()
+    })
+  })
+
+  it('reports processing freshness and measurement freshness separately', async function () {
+    await withManualIntervals(async ({ tick }) => {
+      const clock = makeClock(1000)
+      const presenceInternalBus = new EventBus({ busId: 'presenceInternal', strict: true })
+      const globalEvents = []
+
+      const unsub = presenceInternalBus.subscribe((event) => {
+        if (event?.type !== domainEventTypes.presence.globalTracks) return
+        globalEvents.push(event)
+      })
+
+      const pipeline = new TrackingPipeline({
+        logger: { notice: () => {}, error: () => {} },
+        clock,
+        controllerId: 'presenceController',
+        presenceInternalBus,
+        controllerConfig: makeConfig({ confirmEnabled: false }),
+      })
+
+      pipeline.start()
+
+      publishLd2450Track({
+        bus: presenceInternalBus,
+        now: clock.nowMs(),
+        measTs: clock.nowMs() - 300,
+        xMm: 1200,
+        yMm: 1400,
+      })
+
+      clock.advance(50)
+      tick()
+
+      const latest = lastGlobalTrack(globalEvents)
+      expect(latest.track).to.not.equal(null)
+      expect(Number(latest.track.lastSeenMs)).to.equal(0)
+      expect(Number(latest.track.lastMeasAgeMs)).to.equal(350)
+
+      pipeline.dispose()
+      unsub()
+    })
+  })
+
+  it('in passthrough mode keeps lastSeenMs as processing freshness and lastMeasAgeMs as sensor freshness', async function () {
+    await withManualIntervals(async ({ tick }) => {
+      const clock = makeClock(1000)
+      const presenceInternalBus = new EventBus({ busId: 'presenceInternal', strict: true })
+      const globalEvents = []
+
+      const unsub = presenceInternalBus.subscribe((event) => {
+        if (event?.type !== domainEventTypes.presence.globalTracks) return
+        globalEvents.push(event)
+      })
+
+      const pipeline = new TrackingPipeline({
+        logger: { notice: () => {}, error: () => {} },
+        clock,
+        controllerId: 'presenceController',
+        presenceInternalBus,
+        controllerConfig: makeConfig({ mode: 'passthrough', confirmEnabled: false }),
+      })
+
+      pipeline.start()
+
+      publishLd2450Track({
+        bus: presenceInternalBus,
+        now: clock.nowMs(),
+        measTs: clock.nowMs() - 300,
+        xMm: 1200,
+        yMm: 1400,
+      })
+
+      clock.advance(50)
+      tick()
+
+      const latest = lastGlobalTrack(globalEvents)
+      expect(latest.track).to.not.equal(null)
+      expect(Number(latest.track.lastSeenMs)).to.equal(0)
+      expect(Number(latest.track.lastMeasAgeMs)).to.equal(350)
 
       pipeline.dispose()
       unsub()
