@@ -52,8 +52,11 @@ export class RadarSnapshotBuffer {
     }
 
     this.#bufferByRadarId.set(rid, keep)
-
-    this.#latestByRadarId.set(rid, entry)
+    if (keep.length > 0) {
+      this.#latestByRadarId.set(rid, keep[keep.length - 1])
+    } else {
+      this.#latestByRadarId.delete(rid)
+    }
     this.#radarsSeenEver.add(rid)
   }
 
@@ -355,6 +358,7 @@ export class RadarSnapshotBuffer {
     for (const [rid, buf] of this.#bufferByRadarId.entries()) {
       if (!Array.isArray(buf) || buf.length === 0) {
         this.#bufferByRadarId.delete(rid)
+        this.#latestByRadarId.delete(rid)
         continue
       }
 
@@ -365,10 +369,12 @@ export class RadarSnapshotBuffer {
 
       if (keep.length === 0) {
         this.#bufferByRadarId.delete(rid)
+        this.#latestByRadarId.delete(rid)
         continue
       }
 
       this.#bufferByRadarId.set(rid, keep)
+      this.#latestByRadarId.set(rid, keep[keep.length - 1])
     }
   }
 
