@@ -17,8 +17,8 @@ const makeClock = function makeClock() {
 
 const makeHarness = function makeHarness() {
   const clock = makeClock()
-  const mainBus = new EventBus()
-  const domainBus = new EventBus()
+  const mainBus = new EventBus({ busId: 'main' })
+  const domainBus = new EventBus({ busId: 'button' })
 
   const input = new VirtualBinaryInput(false)
 
@@ -152,8 +152,8 @@ describe('ButtonEdgeDevice – device-specific', function () {
 
   it('inject works while degraded', function () {
     const clock = makeClock()
-    const mainBus = new EventBus()
-    const domainBus = new EventBus()
+    const mainBus = new EventBus({ busId: 'main' })
+    const domainBus = new EventBus({ busId: 'button' })
 
     const input = new VirtualBinaryInput(false)
 

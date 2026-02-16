@@ -36,7 +36,7 @@ describe('CharlieCore + TimeScheduler', function () {
     clock.freeze()
     clock.setLocalDateTime({ year: 2026, month: 1, day: 5, hour: 9, minute: 0 })
 
-    const bus = new EventBus()
+    const bus = new EventBus({ busId: 'main' })
     const scheduler = new TimeScheduler({ clock, bus })
     const conv = new FakeConversationAdapter()
     const config = makeConfig({ armingDelayMs: 1000, exitConfirmMs: 800, cooldownMs: 5000 })
@@ -62,7 +62,7 @@ describe('CharlieCore + TimeScheduler', function () {
     clock.freeze()
     clock.setLocalDateTime({ year: 2026, month: 1, day: 5, hour: 9, minute: 0 })
 
-    const bus = new EventBus()
+    const bus = new EventBus({ busId: 'main' })
     const scheduler = new TimeScheduler({ clock, bus })
     const conv = new FakeConversationAdapter()
     const core = new CharlieCore({ clock, bus, scheduler, conversation: conv, config })
@@ -94,7 +94,7 @@ describe('CharlieCore + TimeScheduler', function () {
     clock.freeze()
     clock.setLocalDateTime({ year: 2026, month: 1, day: 5, hour: 9, minute: 0 })
 
-    const bus = new EventBus()
+    const bus = new EventBus({ busId: 'main' })
     const scheduler = new TimeScheduler({ clock, bus })
     const conv = new FakeConversationAdapter()
     const core = new CharlieCore({ clock, bus, scheduler, conversation: conv, config })
@@ -130,7 +130,7 @@ describe('CharlieCore + TimeScheduler', function () {
     clock.freeze()
     clock.setLocalDateTime({ year: 2026, month: 1, day: 5, hour: 9, minute: 0 })
 
-    const bus = new EventBus()
+    const bus = new EventBus({ busId: 'main' })
     const scheduler = new TimeScheduler({ clock, bus })
     const conv = new FakeConversationAdapter()
     const core = new CharlieCore({ clock, bus, scheduler, conversation: conv, config })

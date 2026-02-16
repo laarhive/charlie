@@ -20,7 +20,7 @@ describe('timeScheduler', function () {
     clock.freeze()
     clock.setNowMs(100000)
 
-    const bus = new EventBus()
+    const bus = new EventBus({ busId: 'main' })
     const scheduler = new TimeScheduler({ clock, bus })
     const { events, unsubscribe } = collectEvents(bus)
 
@@ -51,7 +51,7 @@ describe('timeScheduler', function () {
     clock.freeze()
     clock.setNowMs(200000)
 
-    const bus = new EventBus()
+    const bus = new EventBus({ busId: 'main' })
     const scheduler = new TimeScheduler({ clock, bus })
     const { events, unsubscribe } = collectEvents(bus)
 
@@ -78,7 +78,7 @@ describe('timeScheduler', function () {
     clock.freeze()
     clock.setNowMs(300000)
 
-    const bus = new EventBus()
+    const bus = new EventBus({ busId: 'main' })
     const scheduler = new TimeScheduler({ clock, bus })
     const { events, unsubscribe } = collectEvents(bus)
 
@@ -103,7 +103,7 @@ describe('timeScheduler', function () {
     clock.freeze()
     clock.setNowMs(400000)
 
-    const bus = new EventBus()
+    const bus = new EventBus({ busId: 'main' })
     const scheduler = new TimeScheduler({ clock, bus })
     const { events, unsubscribe } = collectEvents(bus)
 
@@ -132,7 +132,7 @@ describe('timeScheduler', function () {
     clock.freeze()
     clock.setNowMs(500000)
 
-    const bus = new EventBus()
+    const bus = new EventBus({ busId: 'main' })
     const scheduler = new TimeScheduler({ clock, bus })
     const { events, unsubscribe } = collectEvents(bus)
 

@@ -14,8 +14,8 @@ const makeClock = function makeClock() {
 
 const makeHarness = function makeHarness() {
   const clock = makeClock()
-  const mainBus = new EventBus()
-  const domainBus = new EventBus()
+  const mainBus = new EventBus({ busId: 'main' })
+  const domainBus = new EventBus({ busId: 'watchdog' })
 
   const device = new GpioWatchdogLoopbackDevice({
     logger: { error: () => {}, notice: () => {} },
@@ -46,4 +46,3 @@ runDeviceConformanceTests({
   name: 'GpioWatchdogLoopbackDevice',
   makeHarness,
 })
-

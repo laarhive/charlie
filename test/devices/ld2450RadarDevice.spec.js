@@ -19,8 +19,8 @@ const makeClock = function makeClock() {
 
 const makeHarness = function makeHarness({ serialPath = null, openResults } = {}) {
   const clock = makeClock()
-  const mainBus = new EventBus()
-  const domainBus = new EventBus()
+  const mainBus = new EventBus({ busId: 'main' })
+  const domainBus = new EventBus({ busId: 'presence' })
 
   const duplex = new FakeUsbSerialDuplex({ openResults })
 

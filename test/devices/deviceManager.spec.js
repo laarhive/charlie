@@ -17,12 +17,12 @@ const makeLogger = function makeLogger() {
 
 const makeHarness = function makeHarness() {
   const clock = makeClock()
-  const mainBus = new EventBus()
+  const mainBus = new EventBus({ busId: 'main' })
 
   const buses = {
     main: mainBus,
-    button: new EventBus(),
-    watchdog: new EventBus(),
+    button: new EventBus({ busId: 'button' }),
+    watchdog: new EventBus({ busId: 'watchdog' }),
   }
 
   /*

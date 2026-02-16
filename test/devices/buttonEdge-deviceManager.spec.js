@@ -20,8 +20,8 @@ const makeLogger = function makeLogger() {
 describe('ButtonEdgeDevice – DeviceManager integration', function () {
   it('inject forwards to the device instance (domain event observed)', async function () {
     const clock = makeClock()
-    const mainBus = new EventBus()
-    const buttonBus = new EventBus()
+    const mainBus = new EventBus({ busId: 'main' })
+    const buttonBus = new EventBus({ busId: 'button' })
 
     const buses = {
       main: mainBus,
@@ -71,8 +71,8 @@ describe('ButtonEdgeDevice – DeviceManager integration', function () {
 
   it('inject returns INVALID_INJECT_PAYLOAD for malformed payloads (instance exists)', function () {
     const clock = makeClock()
-    const mainBus = new EventBus()
-    const buttonBus = new EventBus()
+    const mainBus = new EventBus({ busId: 'main' })
+    const buttonBus = new EventBus({ busId: 'button' })
 
     const buses = {
       main: mainBus,
@@ -113,8 +113,8 @@ describe('ButtonEdgeDevice – DeviceManager integration', function () {
 
   it('inject returns DEVICE_NOT_READY when device is present but instance is not created', function () {
     const clock = makeClock()
-    const mainBus = new EventBus()
-    const buttonBus = new EventBus()
+    const mainBus = new EventBus({ busId: 'main' })
+    const buttonBus = new EventBus({ busId: 'button' })
 
     const buses = {
       main: mainBus,
