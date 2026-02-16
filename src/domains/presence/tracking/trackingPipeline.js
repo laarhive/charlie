@@ -684,9 +684,22 @@ export class TrackingPipeline {
 
   #radarSwitchPenalty(track, meas) {
     const prevRadarId = track?.lastRadarId
-    const nextRadarId = meas?.radarId
+    const nextRadarId = Number(meas?.radarId)
 
-    if (prevRadarId == null || prevRadarId === nextRadarId) {
+    const sourceRadars = Array.isArray(meas?.sourceRadars) ? meas.sourceRadars : []
+    if (sourceRadars.length !== 1) {
+      return 0
+    }
+
+    if (!Number.isFinite(nextRadarId)) {
+      return 0
+    }
+
+    if (!meas?.prov?.localMm) {
+      return 0
+    }
+
+    if (prevRadarId == null || Number(prevRadarId) === nextRadarId) {
       return 0
     }
 
@@ -700,7 +713,7 @@ export class TrackingPipeline {
     const newLocal = meas?.prov?.localMm
     const oldLocal = track?.lastLocalMm
 
-    if (!newLocal || !oldLocal) {
+    if (!oldLocal) {
       return basePenalty
     }
 
