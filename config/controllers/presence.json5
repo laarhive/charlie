@@ -79,6 +79,7 @@
 
     handover: {
       bearingSwitchMarginDeg: 8,
+      radarSwitchPenalty: 6,
     },
 
     kf: {
@@ -90,6 +91,7 @@
 
     association: {
       gateD2Max: 9.21,
+      tentativePenalty: 0.35,
       newTrackConfirmEnabled: true,
       newTrackConfirmCount: 4,
       newTrackConfirmWindowMs: 650,

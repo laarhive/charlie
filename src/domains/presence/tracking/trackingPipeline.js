@@ -54,6 +54,8 @@ export class TrackingPipeline {
 
     this.#assoc = new AssociationEngine({
       gateD2Max: this.#cfg?.tracking?.association?.gateD2Max ?? 9.21,
+      tentativePenalty: this.#cfg?.tracking?.association?.tentativePenalty ?? 0,
+      radarSwitchPenaltyFn: (track, meas) => this.#radarSwitchPenalty(track, meas),
     })
 
     this.#transform = new TransformService({
@@ -348,37 +350,41 @@ export class TrackingPipeline {
       liveTracks.push(tr)
     }
 
+    const assocStats = {
+      consumedSnapshot: snapshotChangedThisTick,
+      skipped: !snapshotChangedThisTick,
+      skipReason: snapshotChangedThisTick ? null : 'snapshot_unchanged',
+      assignedTracks: snapshotChangedThisTick ? 0 : null,
+      unassignedTracks: snapshotChangedThisTick ? liveTracks.length : null,
+      unassignedMeas: snapshotChangedThisTick ? observations.length : null,
+    }
+
     if (snapshotChangedThisTick) {
       const assocInput = liveTracks.map((t) => ({
         id: t.id,
         xMm: t.xMm,
         yMm: t.yMm,
-        radarId: t.lastRadarId ?? null,
+        ageMs: Math.max(0, now - (Number(t.createdTs) || now)),
+        state: t.state,
+        lastRadarId: t.lastRadarId ?? null,
+        lastLocalMm: t?.debugLast?.lastMeas?.localMm ?? null,
       }))
 
-      const { assignments, unassignedMeas } = this.#assoc.associate({
+      const { assignments, unassignedMeas, unassignedTracks } = this.#assoc.associate({
         tracks: assocInput,
         measurements: observations,
         measVarMm2ByIdx: fusedVarMm2ByIdx,
       })
-
-      const unassignedSet = new Set(unassignedMeas)
+      assocStats.assignedTracks = assignments.size
+      assocStats.unassignedTracks = unassignedTracks.length
+      assocStats.unassignedMeas = unassignedMeas.length
 
       for (const [trackId, measIdx] of assignments.entries()) {
         const tr = this.#tracksById.get(trackId)
         if (!tr) continue
 
-        let idx = measIdx
-        let m = observations[idx]
-
-        if (!this.#shouldAcceptRadarSwitch(tr, m)) {
-          const fbIdx = this.#findFallbackMeasIdxSameRadar(tr, observations, unassignedSet, fusedVarMm2ByIdx)
-          if (fbIdx == null) continue
-
-          unassignedSet.delete(fbIdx)
-          idx = fbIdx
-          m = observations[idx]
-        }
+        const idx = measIdx
+        const m = observations[idx]
 
         const measTs = Number(m?.measTs) || 0
         const lastUsed = Number(tr.lastMeasTsUsed) || 0
@@ -527,6 +533,7 @@ export class TrackingPipeline {
 
     if (debugEnabled) {
       meta.fusion = fusion.debug
+      meta.association = assocStats
     }
 
     if (debugEnabled && snapshot.debug) {
@@ -640,65 +647,55 @@ export class TrackingPipeline {
     })
   }
 
-  #shouldAcceptRadarSwitch(tr, m) {
-    if (tr.lastRadarId == null || tr.lastRadarId === m.radarId) {
-      return true
+  #radarSwitchPenalty(track, meas) {
+    const prevRadarId = track?.lastRadarId
+    const nextRadarId = meas?.radarId
+
+    if (prevRadarId == null || prevRadarId === nextRadarId) {
+      return 0
     }
 
     const marginDeg = Number(this.#cfg?.tracking?.handover?.bearingSwitchMarginDeg ?? 8)
+    const basePenalty = Math.max(0, Number(this.#cfg?.tracking?.handover?.radarSwitchPenalty ?? 6) || 0)
 
     const q = this.#cfg?.quality || {}
     const fullDeg = Number(q.edgeBearingFullDeg ?? 30)
     const cutoffDeg = Number(q.edgeBearingCutoffDeg ?? 45)
 
-    const newLocal = m?.prov?.localMm
-    const oldLocal = tr?.debugLast?.lastMeas?.localMm
+    const newLocal = meas?.prov?.localMm
+    const oldLocal = track?.lastLocalMm
 
     if (!newLocal || !oldLocal) {
-      return true
+      return basePenalty
     }
 
     const absNew = Math.abs(Math.atan2(Number(newLocal.xMm), Number(newLocal.yMm)) * 180 / Math.PI)
     const absOld = Math.abs(Math.atan2(Number(oldLocal.xMm), Number(oldLocal.yMm)) * 180 / Math.PI)
+    if (!Number.isFinite(absNew) || !Number.isFinite(absOld)) {
+      return basePenalty
+    }
 
     if (Number.isFinite(cutoffDeg) && Number.isFinite(fullDeg)) {
       const EDGE = cutoffDeg - 2
       const CENTER = fullDeg + 2
 
       if (absOld >= EDGE && absNew <= CENTER) {
-        return true
+        return 0
       }
     }
 
-    return (absNew + marginDeg) < absOld
-  }
-
-  #findFallbackMeasIdxSameRadar(tr, observations, unassignedSet, measVarMm2ByIdx) {
-    const radarId = tr.lastRadarId
-    if (radarId == null) return null
-
-    const gateD2Max = Number(this.#cfg?.tracking?.association?.gateD2Max ?? 9.21)
-
-    let bestIdx = null
-    let bestD2 = Infinity
-
-    for (const idx of unassignedSet) {
-      const m = observations[idx]
-      if (!m || m.radarId !== radarId) continue
-
-      const varMm2 = Number(measVarMm2ByIdx[idx]) || 1
-
-      const dx = m.xMm - tr.xMm
-      const dy = m.yMm - tr.yMm
-      const d2 = ((dx * dx) + (dy * dy)) / Math.max(1, varMm2)
-
-      if (d2 <= gateD2Max && d2 < bestD2) {
-        bestD2 = d2
-        bestIdx = idx
-      }
+    if ((absNew + marginDeg) < absOld) {
+      return 0
     }
 
-    return bestIdx
+    if (absNew > absOld && Number.isFinite(cutoffDeg) && Number.isFinite(fullDeg) && cutoffDeg > fullDeg) {
+      const worsen = absNew - absOld
+      const band = cutoffDeg - fullDeg
+      const scale = 1 + (worsen / Math.max(1, band))
+      return basePenalty * scale
+    }
+
+    return basePenalty
   }
 
   #computeAssocDebug(tr, m, varMm2) {
