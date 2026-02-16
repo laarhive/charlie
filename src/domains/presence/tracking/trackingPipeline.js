@@ -36,6 +36,7 @@ export class TrackingPipeline {
 
   #timer = null
   #unsubscribe = null
+  #lastSnapshotKey = null
 
   constructor({ logger, clock, controllerId, presenceInternalBus, controllerConfig }) {
     this.#logger = logger
@@ -115,6 +116,7 @@ export class TrackingPipeline {
     }
 
     this.#tracksById.clear()
+    this.#lastSnapshotKey = null
 
     this.#snapshot.dispose()
     this.#observe.dispose()
@@ -275,6 +277,7 @@ export class TrackingPipeline {
 
     const observations = fusion.observations
     const fusedVarMm2ByIdx = fusion.measVarMm2ByIdx
+    const snapshotChangedThisTick = this.#shouldConsumeSnapshot(snapshot.meta)
 
     const tickLag = this.#health.computeTickLagStats(now, observations)
 
@@ -295,6 +298,7 @@ export class TrackingPipeline {
       this.#publishPassthrough(now, observations, fusedVarMm2ByIdx, {
         debugEnabled,
         snapshotMeta: snapshot.meta,
+        snapshotChangedThisTick,
         snapshotDebug: snapshot.debug,
         measFiltered: filtered.length,
         measDeduped: deduped.length,
@@ -322,7 +326,11 @@ export class TrackingPipeline {
     const liveTracks = []
     for (const tr of this.#tracksById.values()) {
       if (kfEnabled) {
-        const dtMs = Math.min(dtClampMs, Math.max(0, now - tr.lastUpdateTs))
+        const lastPredictTs = Number(tr.lastPredictTs)
+        const baseTs = (Number.isFinite(lastPredictTs) && lastPredictTs > 0)
+          ? lastPredictTs
+          : (Number(tr.lastUpdateTs) || now)
+        const dtMs = Math.min(dtClampMs, Math.max(0, now - baseTs))
         const dtSec = dtMs / 1000
 
         tr.kfState = this.#kf.predict(tr.kfState, dtSec)
@@ -331,104 +339,107 @@ export class TrackingPipeline {
         tr.vxMmS = tr.kfState.x[2]
         tr.vyMmS = tr.kfState.x[3]
       }
+      tr.lastPredictTs = now
 
       liveTracks.push(tr)
     }
 
-    const assocInput = liveTracks.map((t) => ({
-      id: t.id,
-      xMm: t.xMm,
-      yMm: t.yMm,
-      radarId: t.lastRadarId ?? null,
-    }))
+    if (snapshotChangedThisTick) {
+      const assocInput = liveTracks.map((t) => ({
+        id: t.id,
+        xMm: t.xMm,
+        yMm: t.yMm,
+        radarId: t.lastRadarId ?? null,
+      }))
 
-    const { assignments, unassignedMeas } = this.#assoc.associate({
-      tracks: assocInput,
-      measurements: observations,
-      measVarMm2ByIdx: fusedVarMm2ByIdx,
-    })
+      const { assignments, unassignedMeas } = this.#assoc.associate({
+        tracks: assocInput,
+        measurements: observations,
+        measVarMm2ByIdx: fusedVarMm2ByIdx,
+      })
 
-    const unassignedSet = new Set(unassignedMeas)
+      const unassignedSet = new Set(unassignedMeas)
 
-    for (const [trackId, measIdx] of assignments.entries()) {
-      const tr = this.#tracksById.get(trackId)
-      if (!tr) continue
+      for (const [trackId, measIdx] of assignments.entries()) {
+        const tr = this.#tracksById.get(trackId)
+        if (!tr) continue
 
-      let idx = measIdx
-      let m = observations[idx]
+        let idx = measIdx
+        let m = observations[idx]
 
-      if (!this.#shouldAcceptRadarSwitch(tr, m)) {
-        const fbIdx = this.#findFallbackMeasIdxSameRadar(tr, observations, unassignedSet, fusedVarMm2ByIdx)
-        if (fbIdx == null) continue
+        if (!this.#shouldAcceptRadarSwitch(tr, m)) {
+          const fbIdx = this.#findFallbackMeasIdxSameRadar(tr, observations, unassignedSet, fusedVarMm2ByIdx)
+          if (fbIdx == null) continue
 
-        unassignedSet.delete(fbIdx)
-        idx = fbIdx
-        m = observations[idx]
-      }
+          unassignedSet.delete(fbIdx)
+          idx = fbIdx
+          m = observations[idx]
+        }
 
-      const varMm2 = Number(fusedVarMm2ByIdx[idx]) || 1
-      const sigmaMm = Math.sqrt(Math.max(1, varMm2))
-      const assocDebug = this.#computeAssocDebug(tr, m, varMm2)
+        const varMm2 = Number(fusedVarMm2ByIdx[idx]) || 1
+        const sigmaMm = Math.sqrt(Math.max(1, varMm2))
+        const assocDebug = this.#computeAssocDebug(tr, m, varMm2)
 
-      if (kfEnabled) {
-        const upd = this.#kf.updateWithDebug(tr.kfState, { xMm: m.xMm, yMm: m.yMm }, sigmaMm)
-        tr.kfState = upd.state
+        if (kfEnabled) {
+          const upd = this.#kf.updateWithDebug(tr.kfState, { xMm: m.xMm, yMm: m.yMm }, sigmaMm)
+          tr.kfState = upd.state
 
-        tr.xMm = tr.kfState.x[0]
-        tr.yMm = tr.kfState.x[1]
-        tr.vxMmS = tr.kfState.x[2]
-        tr.vyMmS = tr.kfState.x[3]
+          tr.xMm = tr.kfState.x[0]
+          tr.yMm = tr.kfState.x[1]
+          tr.vxMmS = tr.kfState.x[2]
+          tr.vyMmS = tr.kfState.x[3]
 
-        tr.debugLast = buildDebug({
-          mode,
-          updatedThisTick: true,
-          m,
-          assoc: assocDebug,
-          kf: {
-            innovationMm: upd.innovationMm,
-            sigmaMm: upd.sigmaMm,
-          },
-        })
-      } else {
-        tr.xMm = m.xMm
-        tr.yMm = m.yMm
-        tr.vxMmS = 0
-        tr.vyMmS = 0
+          tr.debugLast = buildDebug({
+            mode,
+            updatedThisTick: true,
+            m,
+            assoc: assocDebug,
+            kf: {
+              innovationMm: upd.innovationMm,
+              sigmaMm: upd.sigmaMm,
+            },
+          })
+        } else {
+          tr.xMm = m.xMm
+          tr.yMm = m.yMm
+          tr.vxMmS = 0
+          tr.vyMmS = 0
 
-        tr.debugLast = buildDebug({
-          mode,
-          updatedThisTick: true,
-          m,
-          assoc: assocDebug,
-          kf: null,
-        })
-      }
+          tr.debugLast = buildDebug({
+            mode,
+            updatedThisTick: true,
+            m,
+            assoc: assocDebug,
+            kf: null,
+          })
+        }
 
-      tr.lastUpdateTs = now
-      tr.lastSeenTs = now
+        tr.lastUpdateTs = now
+        tr.lastSeenTs = now
 
-      tr.lastRadarId = m.radarId
-      tr.lastZoneId = m.zoneId
-      tr.updatedThisTick = true
+        tr.lastRadarId = m.radarId
+        tr.lastZoneId = m.zoneId
+        tr.updatedThisTick = true
 
-      if (Array.isArray(m.sourceRadars) && m.sourceRadars.length > 0) {
-        for (const rid of m.sourceRadars) tr.sourceRadars.add(rid)
-      } else {
-        tr.sourceRadars.add(m.radarId)
-      }
+        if (Array.isArray(m.sourceRadars) && m.sourceRadars.length > 0) {
+          for (const rid of m.sourceRadars) tr.sourceRadars.add(rid)
+        } else {
+          tr.sourceRadars.add(m.radarId)
+        }
 
-      if (confirmEnabled && tr.state === 'tentative') {
-        tr.confirmHits += 1
-        if (tr.confirmHits >= confirmCount && (now - tr.firstSeenTs) <= confirmWindowMs) {
-          tr.state = 'confirmed'
+        if (confirmEnabled && tr.state === 'tentative') {
+          tr.confirmHits += 1
+          if (tr.confirmHits >= confirmCount && (now - tr.firstSeenTs) <= confirmWindowMs) {
+            tr.state = 'confirmed'
+          }
         }
       }
-    }
 
-    for (const idx of unassignedMeas) {
-      const m = observations[idx]
-      if (!this.#canSpawnNewTrack(m)) continue
-      this.#createTrackFromMeasurement(m, now, { confirmEnabled, kfEnabled, mode })
+      for (const idx of unassignedMeas) {
+        const m = observations[idx]
+        if (!this.#canSpawnNewTrack(m)) continue
+        this.#createTrackFromMeasurement(m, now, { confirmEnabled, kfEnabled, mode })
+      }
     }
 
     for (const tr of this.#tracksById.values()) {
@@ -500,6 +511,7 @@ export class TrackingPipeline {
 
       activeTracks: out.length,
       tickIntervalMs: this.#getUpdateIntervalMs(),
+      snapshotChangedThisTick,
     }
 
     if (debugEnabled) {
@@ -527,7 +539,7 @@ export class TrackingPipeline {
     })
   }
 
-  #publishPassthrough(now, observations, measVarMm2ByIdx, { debugEnabled, snapshotMeta, snapshotDebug, measFiltered, measDeduped, measFused, tickLag, fusionDebug }) {
+  #publishPassthrough(now, observations, measVarMm2ByIdx, { debugEnabled, snapshotMeta, snapshotChangedThisTick, snapshotDebug, measFiltered, measDeduped, measFused, tickLag, fusionDebug }) {
     const out = []
 
     for (let i = 0; i < observations.length; i += 1) {
@@ -587,6 +599,7 @@ export class TrackingPipeline {
 
       activeTracks: out.length,
       tickIntervalMs: this.#getUpdateIntervalMs(),
+      snapshotChangedThisTick,
     }
 
     if (debugEnabled) {
@@ -683,6 +696,20 @@ export class TrackingPipeline {
     return { gateD2, assigned: true }
   }
 
+  #shouldConsumeSnapshot(snapshotMeta) {
+    const key = String(snapshotMeta?.snapshotKey || '')
+
+    if (key) {
+      const changed = key !== this.#lastSnapshotKey
+      this.#lastSnapshotKey = key
+      return changed
+    }
+
+    const fallbackAdvanced = snapshotMeta?.snapshotsAdvancedThisTick === true
+    if (fallbackAdvanced) this.#lastSnapshotKey = null
+    return fallbackAdvanced
+  }
+
   #createTrackFromMeasurement(m, now, { confirmEnabled, kfEnabled, mode }) {
     const id = `t${now}:${this.#seq++}`
 
@@ -715,6 +742,7 @@ export class TrackingPipeline {
       firstSeenTs: now,
       lastSeenTs: now,
       lastUpdateTs: now,
+      lastPredictTs: now,
 
       confirmHits: 1,
 

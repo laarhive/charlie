@@ -17,14 +17,6 @@
       { publishAs: 'LD2450A', enabled: true }, // radarId 0
       { publishAs: 'LD2450B', enabled: true }, // radarId 1
       { publishAs: 'LD2450C', enabled: true }, // radarId 2
-      { publishAs: 'LD2450D', enabled: false }, // radarId 3
-    ],
-
-    ld2410: [
-      { publishAs: 'LD2410A', enabled: false,  zoneId: 'zone0' },
-      { publishAs: 'LD2410B', enabled: false, zoneId: 'zone1' },
-      { publishAs: 'LD2410C', enabled: false,  zoneId: 'zone2' },
-      { publishAs: 'LD2410D', enabled: false,  zoneId: 'zone3' }
     ],
   },
 
@@ -55,20 +47,35 @@
     jitterNoiseScaleMax: 3.0,
 
     // 1 disables. If you see stale frames pulling fusion: set to 3 or 4 (3–4 is a reasonable safety net)
-    staleNoiseScaleMax: 1
+    staleNoiseScaleMax: 3
   },
 
   // 5–7) Tracking pipeline
   tracking: {
-    // mode switch:
-    // - 'passthrough' => no association, no KF, deterministic IDs m:<publishAs>:<slotId>
-    // - 'assocOnly'   => association + lifecycle, state = last measurement
-    // - 'kf'          => association + KF (current full)
     mode: 'kf',
 
+    // run tracking at 50ms; snapshot gating ensures measurements are consumed once per new snapshot
     updateIntervalMs: 50,
+
     maxDtMs: 400,
     dropTimeoutMs: 1500,
+
+    snapshot: {
+      // delay sampling slightly so late frames arrive and you fuse same-time-ish frames
+      jitterDelayMs: 40,
+
+      // keep defaults unless you have RAM pressure
+      radarBufferMaxFrames: 5,
+      radarBufferWindowMs: 4000,
+
+      staleMeasMaxMs: 250,
+      radarMissingTimeoutMs: 1500,
+
+      // strongly recommended for multi-radar
+      waitForAll: { enabled: true, timeoutMs: 110 },
+
+      stuckTicksWarn: 20,
+    },
 
     handover: {
       bearingSwitchMarginDeg: 8,
@@ -76,19 +83,33 @@
 
     kf: {
       procNoiseAccelMmS2: 1200,
-      measNoiseBaseMm: 160,
-      initialPosVarMm2: 250000, // 500^2
-      initialVelVarMm2S2: 1440000, // 1200^2
+      measNoiseBaseMm: 140,          // slightly tighter base; your quality scalers will still expand it
+      initialPosVarMm2: 250000,
+      initialVelVarMm2S2: 1440000,
     },
 
     association: {
       gateD2Max: 9.21,
       newTrackConfirmEnabled: true,
-      newTrackConfirmCount: 3,
-      newTrackConfirmWindowMs: 400,
-      // prevent spawning near existing tracks
-      newTrackSpawnGateMm: 450,
+      newTrackConfirmCount: 4,
+      newTrackConfirmWindowMs: 650,
+      newTrackSpawnGateMm: 400,       // slightly less aggressive than 450
     },
+
+    fusion: {
+      enabled: true,
+      clusterGateMm: 360,
+      maxClusterSize: 6,
+      fovMarginDeg: 6,
+      rangeMarginMm: 150,
+    },
+
+    health: {
+      intervalMs: 1000,
+      recvLagHugeMs: 500,
+      slotCountMax: 3,
+      tickLagWarnMult: 2,
+    }
   },
 
   // 8) Zone Presence Engine

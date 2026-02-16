@@ -85,8 +85,8 @@ export class RadarSnapshotBuffer {
       let haveAny = false
 
       const expectedIds = this.#radarsExpectedSet.size > 0
-        ? [...this.#radarsExpectedSet.values()]
-        : [...this.#latestByRadarId.keys()]
+        ? [...this.#radarsExpectedSet.values()].sort((a, b) => a - b)
+        : [...this.#latestByRadarId.keys()].sort((a, b) => a - b)
 
       for (const rid of expectedIds) {
         const latest = this.#latestByRadarId.get(rid)
@@ -125,13 +125,17 @@ export class RadarSnapshotBuffer {
 
     const debugRadars = debugEnabled ? [] : null
 
-    const expectedIds = expectedCount > 0 ? [...expected.values()] : [...this.#latestByRadarId.keys()]
+    const expectedIds = expectedCount > 0
+      ? [...expected.values()].sort((a, b) => a - b)
+      : [...this.#latestByRadarId.keys()].sort((a, b) => a - b)
     const expectedSet = expectedCount > 0 ? expected : null
+    const selectedMeasTsByRadarId = new Map()
 
     for (const radarId of expectedIds) {
       const entry = this.#selectRadarEntry(radarId, sampleTs)
 
       if (!entry) {
+        selectedMeasTsByRadarId.set(radarId, null)
         radarsMissing += 1
 
         radars.push({
@@ -173,6 +177,7 @@ export class RadarSnapshotBuffer {
 
       const measTs = Number(entry.measTs) || 0
       const recvTs = Number(entry.recvTs) || 0
+      selectedMeasTsByRadarId.set(radarId, measTs)
 
       const ageMs = Math.max(0, now - measTs)
       const recvLagMs = (recvTs && measTs) ? Math.max(0, recvTs - measTs) : 0
@@ -251,16 +256,22 @@ export class RadarSnapshotBuffer {
 
     if (!Number.isFinite(minRadarAgeMs)) minRadarAgeMs = 0
 
-    for (const [radarId, entry] of this.#latestByRadarId.entries()) {
-      const enabled = this.#radarsExpectedSet.size > 0 ? this.#radarsExpectedSet.has(radarId) : true
-      if (!enabled) continue
-
-      const measTs = Number(entry?.measTs) || 0
+    for (const [radarId, measTsRaw] of selectedMeasTsByRadarId.entries()) {
+      const measTs = Number(measTsRaw) || 0
       const lastTickMeasTs = Number(this.#lastTickMeasTsByRadarId.get(radarId)) || 0
       if (measTs > lastTickMeasTs) {
         this.#lastTickMeasTsByRadarId.set(radarId, measTs)
       }
     }
+
+    const snapshotKey = expectedIds
+      .map((radarId) => {
+        const measTs = Number(selectedMeasTsByRadarId.get(radarId))
+        return Number.isFinite(measTs) && measTs > 0
+          ? `${radarId}:${Math.floor(measTs)}`
+          : `${radarId}:na`
+      })
+      .join('|')
 
     if (expectedCount > 0 && radarsAdvancedCount === 0) {
       this.#stuckTicks += 1
@@ -280,6 +291,7 @@ export class RadarSnapshotBuffer {
 
       jitterDelayMs,
       sampleTs,
+      snapshotKey,
       waitForAll: waitForAll || null,
       waitForAllTimeoutMs: waitForAll ? waitTimeoutMs : null,
 
