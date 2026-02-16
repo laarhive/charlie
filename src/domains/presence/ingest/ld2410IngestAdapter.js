@@ -177,7 +177,7 @@ export class Ld2410IngestAdapter {
       streamKey: makeStreamKey({
         who: this.streamKeyWho,
         what: domainEventTypes.presence.ld2410Stable,
-        where: busIds.presenceInternalBus,
+        where: busIds.presenceInternal,
       }),
       payload: {
         zoneId,
