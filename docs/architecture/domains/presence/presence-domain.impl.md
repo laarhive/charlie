@@ -19,6 +19,7 @@ This is the maintenance reference.
 src/domains/presence/
   ingest/
     ld2450IngestAdapter.js
+    ld2410IngestAdapter.js
 
   transform/
     transformService.js
@@ -44,8 +45,6 @@ src/domains/presence/
   presenceController.js
 ```
 
-LD2410 ingest exists but is not part of v1 core flow.
-
 ---
 
 # Bus Ownership
@@ -54,9 +53,11 @@ LD2410 ingest exists but is not part of v1 core flow.
 
 Producers:
 - LD2450 devices
+- LD2410 devices
 
 Events:
 - `presenceRaw:ld2450`
+- `presenceRaw:ld2410`
 
 Only raw device data appears here.
 
@@ -66,11 +67,13 @@ Only raw device data appears here.
 
 Producers:
 - Ld2450IngestAdapter
+- Ld2410IngestAdapter
 - TrackingPipeline
 - TrackingHealthPublisher
 
 Events:
 - `presence:ld2450Tracks`
+- `presence:ld2410Stable`
 - `presence:globalTracks`
 - `presence:trackingSnapshotHealth`
 
@@ -95,9 +98,10 @@ Only semantic outputs go here.
 ## 1) PresenceController
 
 - Subscribes to presenceBus
-- Wires ingest adapters
+- Wires LD2450 + LD2410 ingest adapters
 - Instantiates tracking pipeline
-- Republishes globalTracks to mainBus as presence:targets
+- Subscribes to `presence:globalTracks`
+- Republishes confirmed tracks to mainBus as `presence:targets`
 
 It is the only component publishing to mainBus.
 
@@ -112,11 +116,26 @@ Responsibilities:
 - Transform local → world
 - Emit presence:ld2450Tracks
 
-Emits one internal event per radar frame (even if empty).
+Emits one internal event per radar frame.
 
 ---
 
-## 3) TransformService
+## 3) Ld2410IngestAdapter
+
+Responsibilities:
+
+- Subscribe to raw `presenceRaw:ld2410`
+- Apply debounce (`onConfirmMs` / `offConfirmMs`)
+- Emit debounced stable state on presenceInternalBus
+
+Event:
+- `presence:ld2410Stable` with `{ zoneId, present, publishAs }`
+
+No in-domain consumer of `presence:ld2410Stable` is wired yet.
+
+---
+
+## 4) TransformService
 
 - Converts radar-local → world
 - Applies yaw offsets
@@ -124,7 +143,7 @@ Emits one internal event per radar frame (even if empty).
 
 ---
 
-## 4) TrackingPipeline (orchestrator)
+## 5) TrackingPipeline (orchestrator)
 
 Owns:
 
@@ -228,10 +247,11 @@ Event:
 
 # Current Behavior Notes
 
-- Multiple real targets are expected if radars see reflections.
-- ID swaps are possible under ambiguity.
-- Tracking is authoritative for coordinates.
-- Main bus contains only semantic target snapshots.
+- `presence:targets` is derived from confirmed `presence:globalTracks`.
+- Targets currently include kinematics and source radar metadata.
+- No Presence-domain publisher currently emits `presence:enter` / `presence:exit`.
+- Calibration pipeline is not wired yet.
+- ID swaps remain possible under ambiguity.
 
 ---
 

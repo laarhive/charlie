@@ -1,54 +1,41 @@
-<!-- docs/architecture/presence/tracking-modules.md -->
+<!-- docs/architecture/domains/presence/tracking-modules.md -->
 # Presence Tracking Modules (Responsibilities + APIs)
 
-This document is the **developer reference** for the LD2450-based tracking subsystem.
-
-It defines:
-- module responsibilities
-- public APIs
-- internal data shapes
-- config ownership per module
-- call graph boundaries
-
-It is intentionally implementation-adjacent and intended to remain stable during refactoring.
+This file documents the current tracking implementation.
 
 Canonical references:
-- Requirements / HLD:  
-  `[presence-tracking-calibration.spec.md](presence-tracking-calibration.spec.md)`
-- Frozen event schemas (v1 contracts):  
-  `[presence-events.contract.md](presence-events.contract.md)`
-- Current wiring and bus ownership:  
-  `[presence-domain.impl.md](presence-domain.impl.md)`
+- Requirements / HLD: `presence-tracking-calibration.spec.md`
+- Frozen event schemas: `presence-events.contract.md`
+- Wiring and bus ownership: `presence-domain.impl.md`
 
 Scope:
-- LD2450-based tracking only
-- No LD2410 logic here (see spec appendix if needed)
-- No semantic presence policy here (zone engine is separate)
+- LD2450 ingest to global tracking output
+- Tracking internals only
+- No calibration implementation details (not implemented)
+- No zone enter/exit policy engine (not implemented in Presence domain)
 
 ---
 
 # 1) Data Flow Overview
 
 ```
-LD2450 Ingest Adapter
-  └─ publishes presence:ld2450Tracks (presenceInternalBus)
+LD2450 raw event (presenceRaw:ld2450)
+  -> Ld2450IngestAdapter
+  -> presence:ld2450Tracks (presenceInternalBus)
 
-TrackingPipeline (orchestration)
-  ├─ RadarSnapshotBuffer (temporal sync + buffering)
-  ├─ TrackingObservationStage (filter + dedup + variance inflation)
-  ├─ FusionClusterer (cross-radar merge)
-  ├─ AssociationEngine (track-to-measurement assignment)
-  ├─ KalmanFilterCv2d (state estimation)
-  └─ TrackingHealthPublisher (monitoring + sanity)
+TrackingPipeline
+  -> RadarSnapshotBuffer
+  -> TrackingObservationStage
+  -> FusionClusterer
+  -> AssociationEngine
+  -> KalmanFilterCv2d
+  -> presence:globalTracks (presenceInternalBus)
+  -> TrackingHealthPublisher -> presence:trackingSnapshotHealth
+
+PresenceController
+  -> consumes presence:globalTracks
+  -> publishes presence:targets (mainBus)
 ```
-
-TrackingPipeline owns:
-- track lifecycle
-- predict/update loop
-- publish of `presence:globalTracks`
-- coordination of submodules
-
-All other modules are pure(ish) components.
 
 ---
 
@@ -56,630 +43,338 @@ All other modules are pure(ish) components.
 
 ## 2.1 Time
 
-- `now` always comes from `clock.nowMs()` (injected monotonic clock).
-- `event.ts` (ingest receive timestamp) is required.
-- `measTs` comes from ingest payload and represents measurement time.
-- `measTs` is clamped monotonic per radar to avoid backward time.
+- `clock.nowMs()` is the runtime clock source.
+- `event.ts` is required on bus events.
+- `payload.measTs` carries measurement timestamp.
+- `measTs` is clamped monotonic per radar in `TrackingPipeline` before snapshot buffering.
 
-Tracking logic must never rely on wall clock.
-
----
-
-## 2.2 Measurement Shape (Tracking Internal)
-
-A measurement is the atomic unit for association and filtering.
+## 2.2 Tracking Observation Shape (internal)
 
 ```js
 {
   measTs: number,
   radarId: number,
   zoneId: string,
-
-  xMm: number,   // world coordinates
+  xMm: number,
   yMm: number,
-
-  prov: object | null,  // minimal provenance (debug-aware)
-
-  // optional (set by fusion)
+  prov: object | null,
   sourceRadars?: number[]
 }
 ```
 
-Notes:
-- `prov` may be stripped down when debug is disabled.
-- All coordinates are world-frame.
-
----
-
-## 2.3 Track Shape (Tracking Internal)
+## 2.3 Track Shape (internal)
 
 ```js
 {
   id: string,
-
   state: 'tentative' | 'confirmed',
-
   kfState: object | null,
-
   xMm: number,
   yMm: number,
   vxMmS: number,
   vyMmS: number,
-
   createdTs: number,
   firstSeenTs: number,
   lastSeenTs: number,
   lastUpdateTs: number,
-
+  lastPredictTs: number,
+  lastMeasTsUsed: number,
+  lastMeasTsSeen: number,
   confirmHits: number,
-
   lastRadarId: number | null,
   lastZoneId: string | null,
-
+  lastLocalMm: object | null,
   sourceRadars: Set<number>,
-
   updatedThisTick: boolean,
   drop: boolean,
-
   debugLast: object | null
 }
 ```
 
 ---
 
-# 3) File-by-File Responsibilities and APIs
-
----
+# 3) Module Responsibilities and APIs
 
 ## src/domains/presence/presenceController.js
 
-### Responsibility
+Responsibility:
+- Presence domain orchestrator
+- Wires ingest adapters + tracking pipeline
+- Publishes semantic `presence:targets`
 
-Domain orchestrator.
-
-Owns:
-- ingest adapter instances
-- tracking pipeline instance
-- bus wiring
-
-It is the only component that:
-- subscribes to raw presence bus
-- publishes to main bus (semantic outputs)
-
----
-
-### Public API
-
+Public API:
 ```js
-constructor({ logger, clock, buses, controllerConfig })
+constructor({ logger, presenceInternalBus, presenceBus, mainBus, clock, controllerId, controller, devices })
 start()
 dispose()
+get streamKeyWho()
 ```
 
----
-
-### Emits / Subscribes
-
-- Subscribes: `presenceRaw:ld2450`
-- Publishes:
-  - `presence:ld2450Tracks` (via ingest)
-  - `presence:globalTracks` (from tracking)
-  - main bus semantic events (e.g., `presence:targets`)
+Notes:
+- `presence:targets` includes confirmed tracks only.
+- Payload may include `meta` and periodic `health`.
 
 ---
 
 ## src/domains/presence/ingest/ld2450IngestAdapter.js
 
-### Responsibility
+Responsibility:
+- Normalize raw LD2450 frames
+- Transform local to world coordinates
+- Emit `presence:ld2450Tracks`
 
-Normalize raw LD2450 device frames into domain events.
-
-Responsibilities:
-- validate frame shape
-- resolve `publishAs` → `radarId`
-- enforce `enabled` / `degraded`
-- attach `event.ts`
-- emit `presence:ld2450Tracks`
-
-Event schema is defined in:
-
-```
-docs/architecture/domains/presence/presence-events.contract.md
-```
-
----
-
-### Public API
-
+Public API:
 ```js
-constructor({ logger, clock, presenceInternalBus, config })
+constructor({ logger, clock, controllerId, presenceBus, presenceInternalBus, controllerConfig, devices })
 start()
 dispose()
+get streamKeyWho()
 ```
+
+Output event:
+- `domainEventTypes.presence.ld2450Tracks`
 
 ---
 
-### Output Contract (Minimum)
+## src/domains/presence/ingest/ld2410IngestAdapter.js
 
-Event type:
+Responsibility:
+- Debounce raw LD2410 presence
+- Emit stable boolean updates
 
-```
-domainEventTypes.presence.ld2450Tracks
-```
-
-Required payload fields:
-
+Public API:
 ```js
-{
-  radarId: number,
-  publishAs: string,
-  zoneId: string,
-  measTs: number,
-
-  tracks: [
-    {
-      world: { xMm, yMm },
-      provenance?: object
-    }
-  ],
-
-  meta?: {
-    slotCount?: number,
-    detectionCount?: number
-  }
-}
+constructor({ logger, clock, controllerId, presenceBus, presenceInternalBus, controllerConfig, devices })
+start()
+dispose()
+get streamKeyWho()
 ```
+
+Output event:
+- `domainEventTypes.presence.ld2410Stable`
 
 ---
 
 ## src/domains/presence/transform/transformService.js
 
-### Responsibility
+Responsibility:
+- Radar-local and world coordinate transforms
+- Precomputed transform cache from config
 
-Radar-local ↔ world coordinate transforms.
-
-Must be:
-- deterministic from config
-- stateless except for config
-
-Used by:
-- ingest
-- fusion visibility gating
-- debug rendering
-
----
-
-### Public API
-
+Public API:
 ```js
 constructor({ config, logger })
-
-toLocalMm({ radarId, xMm, yMm }) -> { xMm, yMm } | null
-toWorldMm({ radarId, xMm, yMm }) -> { xMm, yMm } | null
+toLocalMm({ radarId, xMm, yMm }) -> { xMm, yMm }
+toWorldMm({ radarId, xMm, yMm }) -> { xMm, yMm }
+validateRoundTripWorldMm({ radarId, xMm, yMm }) -> { ok, errMm, w0, w1 }
+getYawOffsetsDeg() -> number[]
+getDebugForRadar(radarId) -> object | null
 ```
+
+Behavior note:
+- Invalid `radarId` returns `{ xMm: 0, yMm: 0 }`.
 
 ---
 
 ## src/domains/presence/tracking/trackingPipeline.js
 
-### Responsibility
+Responsibility:
+- Tracking orchestration and lifecycle
+- Tick loop and publish of `presence:globalTracks`
 
-Full orchestration of tracking.
-
-Owns:
-- track lifecycle
-- tick loop
-- predict → associate → update
-- new track spawning
-- drop policy
-- publishing `presence:globalTracks`
-
-Delegates:
-- buffering → RadarSnapshotBuffer
-- filtering/variance → TrackingObservationStage
-- clustering → FusionClusterer
-- assignment → AssociationEngine
-- state math → KalmanFilterCv2d
-- monitoring → TrackingHealthPublisher
-- debug shaping → trackingDebugFormat
-
----
-
-### Public API
-
+Public API:
 ```js
-constructor({
-  logger,
-  clock,
-  controllerId,
-  presenceInternalBus,
-  controllerConfig
-})
-
+constructor({ logger, clock, controllerId, presenceInternalBus, controllerConfig })
 start()
 dispose()
-
 get streamKeyWho()
 ```
 
----
+Subscribes:
+- `domainEventTypes.presence.ld2450Tracks`
 
-### Subscribes
-
-```
-domainEventTypes.presence.ld2450Tracks
-```
-
----
-
-### Publishes
-
-```
-domainEventTypes.presence.globalTracks
-domainEventTypes.presence.trackingSnapshotHealth
-```
-
-Event schema defined in:
-
-```
-presence-events.contract.md
-```
+Publishes:
+- `domainEventTypes.presence.globalTracks`
+- `domainEventTypes.presence.trackingSnapshotHealth` (via `TrackingHealthPublisher`)
 
 ---
 
 ## src/domains/presence/tracking/snapshot/radarSnapshotBuffer.js
 
-### Responsibility
+Responsibility:
+- Per-radar buffering and snapshot sampling
+- Expected radar tracking, status classification, snapshot keying
 
-Temporal synchronization + per-radar buffering.
-
-Owns:
-- per-radar ring buffer
-- monotonic measTs clamping
-- stale/missing classification
-- snapshot meta
-- TTL cleanup
-
----
-
-### Public API (Suggested)
-
+Public API:
 ```js
 constructor({ clock, cfg })
-
-ingestLd2450TracksEvent(event)
-
-makeSnapshot(now) ->
-  {
-    measurements,
-    radars,
-    meta,
-    debug | null
-  }
-
+ingestEntry(radarId, entry, now)
+getLatestMeasTs(radarId) -> number
+makeSnapshot(now, { debugEnabled }) -> { observations, radars, meta, debug }
 cleanup(now)
-```
-
----
-
-### Snapshot Output
-
-```js
-{
-  measurements: measurement[],
-
-  radars: [
-    {
-      radarId,
-      status,       // fresh|stale|missing
-      included,
-      advanced,
-      measTs,
-      recvTs,
-      ageMs,
-      recvLagMs,
-      detectionCount,
-      slotCount,
-      publishAs,
-      zoneId
-    }
-  ],
-
-  meta: { ... },
-
-  debug?: { radars: [...] }
-}
+dispose()
 ```
 
 ---
 
 ## src/domains/presence/tracking/observation/trackingObservationStage.js
 
-### Responsibility
+Responsibility:
+- Observation filtering, deduplication, measurement variance scaling
 
-Measurement quality processing stage.
-
-Applies:
-
-- bearing cutoff filtering
-- de-duplication
-- variance inflation:
-  - edge bearing scaling
-  - range scaling
-  - jitter scaling
-  - stale scaling
-  - jump scaling
-
-Maintains per-key jitter/jump history.
-
----
-
-### Public API (Suggested)
-
+Public API:
 ```js
-constructor({ clock, cfg })
-
-process({ measurements, now }) ->
-  {
-    measurements,
-    measVarMm2ByIdx,
-    meta
-  }
-
+constructor({ cfg })
+process({ observations, now }) -> { filtered, deduped, measVarMm2ByIdx }
 cleanup(now)
+dispose()
 ```
 
----
-
-### Keying Rules
-
-Prefer per-slot key:
-
-```
-slot:${publishAs}:${slotId}
-```
-
-Fallback:
-
-```
-radar:${radarId}
-```
+Quality scaling includes:
+- bearing edge
+- range
+- jitter
+- stale age
+- suspicious jump speed
 
 ---
 
 ## src/domains/presence/tracking/fusion/fusionClusterer.js
 
-### Responsibility
+Responsibility:
+- Cluster nearby observations
+- Apply cross-radar visibility checks
+- Produce fused observations + variances
 
-Cross-radar measurement merging.
-
-Rules:
-
-- distance gate (`clusterGateMm`)
-- same-radar merges allowed
-- cross-radar merges only if visible from both radars
-- weighted centroid (inverse variance)
-- fused variance = `1 / sum(weights)`
-- representative provenance selection
-
----
-
-### Public API (Suggested)
-
+Public API:
 ```js
-constructor({ cfg, transform, debugEnabled })
-
-cluster({
-  measurements,
-  measVarMm2ByIdx,
-  now
-}) ->
-  {
-    measurements,
-    measVarMm2ByIdx,
-    debug
-  }
+constructor({ cfg, transform })
+cluster({ observations, measVarMm2ByIdx, now, debugEnabled }) ->
+  { observations, measVarMm2ByIdx, debug }
 ```
 
 ---
 
 ## src/domains/presence/tracking/associationEngine.js
 
-### Responsibility
+Responsibility:
+- Gated track/measurement association with deterministic tie-breaks
 
-Track ↔ measurement assignment.
-
-Uses:
-- Mahalanobis distance
-- `gateD2Max`
-
----
-
-### Public API
-
+Public API:
 ```js
-constructor({ gateD2Max })
-
-associate({
-  tracks,
-  measurements,
-  measVarMm2ByIdx
-}) ->
-  {
-    assignments: Map<trackId, measIdx>,
-    unassignedMeas: number[]
-  }
+constructor({ gateD2Max, tentativePenalty, radarSwitchPenaltyFn })
+associate({ tracks, measurements, measVarMm2ByIdx }) ->
+  { assignments, unassignedMeas, unassignedTracks }
 ```
 
 ---
 
 ## src/domains/presence/tracking/kalmanFilterCv2d.js
 
-### Responsibility
+Responsibility:
+- Constant-velocity 2D Kalman filtering
 
-Constant-velocity 2D Kalman Filter.
-
-State: `[x, y, vx, vy]`
-
----
-
-### Public API
-
+Public API:
 ```js
-constructor({
-  procNoiseAccelMmS2,
-  measNoiseBaseMm
-})
-
-createInitial({
-  xMm,
-  yMm,
-  initialPosVarMm2,
-  initialVelVarMm2S2
-})
-
+constructor({ procNoiseAccelMmS2, measNoiseBaseMm })
+createInitial({ xMm, yMm, initialPosVarMm2, initialVelVarMm2S2 })
 predict(state, dtSec)
-
-updateWithDebug(state, { xMm, yMm }, sigmaMm)
-  -> { state, innovationMm, sigmaMm }
+update(state, z, measSigmaMm)
+updateWithDebug(state, z, measSigmaMm)
 ```
 
 ---
 
 ## src/domains/presence/tracking/debug/trackingHealthPublisher.js
 
-### Responsibility
+Responsibility:
+- Periodic health reporting on `presenceInternalBus`
+- Sanity counters + tick lag stats
 
-Periodic health publish.
-
-Includes:
-
-- snapshot meta
-- tick lag stats
-- sanity counters
-- degraded flags
-- fusion debug
-- publish interval enforcement
-- counter reset after publish
-
----
-
-### Public API (Suggested)
-
+Public API:
 ```js
-constructor({
-  clock,
-  cfg,
-  presenceInternalBus,
-  controllerId,
-  streamKeyWho
-})
-
-noteSanity(code, details)
-
-maybePublish(now, {
-  snapshotMeta,
-  snapshotRadars,
-  tickLag,
-  measCounts,
-  fusionDebug
-})
-
-reset()
+constructor({ logger, clock, controllerId, presenceInternalBus, cfg, streamKeyWho })
+noteSanity(counterKey, details)
+computeTickLagStats(now, observations)
+maybePublish(now, { snapshotMeta, snapshotRadars, tickLag, meas, fusionDebug })
+dispose()
 ```
 
 ---
 
 ## src/domains/presence/tracking/debug/trackingDebugFormat.js
 
-### Responsibility
+Responsibility:
+- Debug payload shaping helpers
 
-Debug-only formatting utilities.
-
-Keeps debug shaping separate from tracking logic.
-
----
-
-### Public API (Suggested)
-
+Public API:
 ```js
-buildTrackDebug(...)
-roundTrackDebug(debug)
+buildDebug({ mode, updatedThisTick, m, assoc, kf })
+roundDebug(debug)
+mapScale({ v, full, cutoff, scaleMax })
 ```
 
 ---
 
 # 4) Integration Boundaries
 
-TrackingPipeline calls:
+TrackingPipeline directly calls:
+- `RadarSnapshotBuffer.ingestEntry`
+- `RadarSnapshotBuffer.makeSnapshot`
+- `TrackingObservationStage.process`
+- `FusionClusterer.cluster`
+- `AssociationEngine.associate`
+- `KalmanFilterCv2d.predict`
+- `KalmanFilterCv2d.updateWithDebug`
+- `TrackingHealthPublisher.computeTickLagStats`
+- `TrackingHealthPublisher.maybePublish`
+- `trackingDebugFormat.buildDebug`
+- `trackingDebugFormat.roundDebug`
 
-- RadarSnapshotBuffer.ingestLd2450TracksEvent
-- RadarSnapshotBuffer.makeSnapshot
-- TrackingObservationStage.process
-- FusionClusterer.cluster
-- AssociationEngine.associate
-- KalmanFilterCv2d.predict
-- KalmanFilterCv2d.updateWithDebug
-- TrackingHealthPublisher.maybePublish
-- trackingDebugFormat.* (debug only)
+FusionClusterer directly calls:
+- `TransformService.toLocalMm`
 
-FusionClusterer calls:
-
-- TransformService.toLocalMm
-
-No other cross-module dependencies are allowed.
+No other cross-module dependencies are intended.
 
 ---
 
 # 5) Config Ownership (Reference)
 
-This section documents which module reads which config keys.
+TrackingPipeline:
+- `tracking.mode`
+- `tracking.updateIntervalMs`
+- `tracking.maxDtMs`
+- `tracking.dropTimeoutMs`
+- `tracking.association.*`
+- `tracking.handover.*`
 
-### TrackingPipeline
-- tracking.mode
-- tracking.updateIntervalMs
-- tracking.maxDtMs
-- tracking.dropTimeoutMs
-- tracking.association.*
-- tracking.handover.*
+RadarSnapshotBuffer:
+- `layout.ld2450[*].enabled`
+- `tracking.snapshot.*`
 
-### RadarSnapshotBuffer
-- tracking.snapshot.*
-- tracking.health.recvLagHugeMs
-- tracking.health.slotCountMax
+TrackingObservationStage:
+- `quality.*`
+- `tracking.kf.measNoiseBaseMm`
+- `tracking.snapshot.staleMeasMaxMs`
 
-### TrackingObservationStage
-- tracking.kf.measNoiseBaseMm
-- quality.*
+FusionClusterer:
+- `tracking.fusion.*`
+- `layout.radarFovDeg`
+- `quality.edgeBearingCutoffDeg`
+- `quality.rangeCutoffMm`
 
-### FusionClusterer
-- tracking.fusion.*
-- layout.radarFovDeg
-- quality.edgeBearingCutoffDeg
-- quality.rangeCutoffMm
+AssociationEngine:
+- `tracking.association.gateD2Max`
+- `tracking.association.tentativePenalty`
 
-### AssociationEngine
-- tracking.association.gateD2Max
+KalmanFilterCv2d:
+- `tracking.kf.*`
 
-### KalmanFilterCv2d
-- tracking.kf.*
+TrackingHealthPublisher:
+- `tracking.health.*`
 
-### TrackingHealthPublisher
-- tracking.health.*
+Ld2410IngestAdapter:
+- `ld2410.enabledDefault`
+- `ld2410.debounce.*`
+- `layout.ld2410[*]`
 
----
-
-# 6) Terminology
-
-Inside tracking:
-
-- **measurement** = raw world point from ingest
-- **observation** = processed measurement used by KF
-- **track** = persistent state estimate
-
-TrackingPipeline owns lifecycle.
-Other modules are stateless processors or math engines.
-
----
-
-End of file.

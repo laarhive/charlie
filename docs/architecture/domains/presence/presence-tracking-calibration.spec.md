@@ -13,6 +13,11 @@ Implementation details live in:
 - `presence-domain.impl.md`
 - `presence-events.contract.md`
 
+Implementation status (as of 2026-02-16):
+- Multi-radar LD2450 tracking is implemented.
+- Calibration workflow is not implemented yet.
+- Zone enter/exit policy engine is not implemented in the Presence domain yet.
+
 ---
 
 # 1. Scope and Purpose

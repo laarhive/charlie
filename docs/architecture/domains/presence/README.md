@@ -1,16 +1,14 @@
 <!-- docs/architecture/domains/presence/README.md -->
 # Presence Domain — Architecture Index
 
-This is the entry point for all Presence domain documentation.
+Entry point for Presence domain docs.
 
-The Presence domain is split into four primary documents:
+The Presence docs are split into four documents:
 
-1. **Specification (requirements + high-level design)**
-2. **Event contracts (frozen schemas)**
-3. **Implementation reference (current wiring)**
-4. **Tracking modules (internal responsibilities + APIs)**
-
-Use this file as the navigation index.
+1. Specification (requirements + high-level design)
+2. Event contracts (frozen v1 schemas)
+3. Implementation reference (current wiring)
+4. Tracking modules (internal responsibilities + APIs)
 
 ---
 
@@ -20,22 +18,18 @@ Use this file as the navigation index.
 `presence-tracking-calibration.spec.md`
 
 **Purpose:**  
-Defines the system requirements and high-level design.
+Defines required behavior and high-level design.
 
 Contains:
 - Multi-radar tracking requirements
-- Presence policy rules
-- Calibration architecture
-- Geometry and coordinate conventions
-- Configuration defaults
-- Explicit non-goals
+- Presence policy requirements
+- Calibration architecture and constraints
+- Geometry conventions
 - Optional LD2410 appendix
-- Future radar extensibility notes
 
-This is the source of truth for:
-- What the system must do
-- What is in/out of scope
-- Policy-level behavior
+Status note (current implementation):
+- Calibration is not implemented yet.
+- Zone enter/exit policy engine is not implemented in the Presence domain yet.
 
 ---
 
@@ -45,24 +39,14 @@ This is the source of truth for:
 `presence-events.contract.md`
 
 **Purpose:**  
-Defines bus boundaries and event schemas.
+Defines Presence event names, bus boundaries, and payload schemas.
 
-Contains:
-- Bus ownership rules
-- Raw vs internal vs semantic bus separation
-- Frozen v1 schemas for:
-  - `presence:ld2450Tracks`
-  - `presence:globalTracks`
-  - `presence:targets`
-  - Zone events
-- Coordinate conventions
-- Versioning policy
-
-This is the source of truth for:
-- Event names
-- Payload shapes
-- What is allowed on which bus
-- Backwards compatibility constraints
+Contains frozen v1 schemas for:
+- `presence:ld2450Tracks`
+- `presence:ld2410Stable`
+- `presence:globalTracks`
+- `presence:trackingSnapshotHealth`
+- `presence:targets`
 
 ---
 
@@ -72,50 +56,31 @@ This is the source of truth for:
 `presence-domain.impl.md`
 
 **Purpose:**  
-Documents how the code is currently wired.
+Documents what is currently wired in code.
 
 Contains:
 - Directory layout
 - Bus usage
 - Component ownership
-- Example payloads
-- Current config touchpoints
-- Known behaviors / gotchas
-- Implementation roadmap
-
-This reflects:
-- What exists today
-- How components are instantiated
-- What publishes/subscribes where
-
-This document may change as the implementation evolves.
+- Current behavior notes
 
 ---
 
 # 4) Tracking Modules (Responsibilities + APIs)
 
 **File:**  
-`../../presence/tracking-modules.md`
-
-(Relative path from this folder:
-`docs/architecture/presence/tracking-modules.md`)
+`tracking-modules.md`
 
 **Purpose:**  
-Developer-level documentation for the tracking subsystem.
+Developer reference for tracking internals.
 
 Contains:
-- Data flow graph
-- Internal measurement and track shapes
+- Data flow
+- Internal observation/track shapes
 - Per-file responsibilities
-- Public APIs per class
-- Config ownership per module
+- Public APIs
+- Config ownership
 - Integration boundaries
-- Allowed cross-module calls
-
-This is the reference for:
-- Refactoring tracking safely
-- Keeping responsibilities clean
-- Avoiding hidden coupling
 
 ---
 
@@ -128,24 +93,7 @@ For new contributors:
 3. `presence-domain.impl.md`
 4. `tracking-modules.md`
 
-For refactoring tracking only:
+For tracking-only refactors:
 
 1. `tracking-modules.md`
 2. `presence-events.contract.md`
-
-For modifying presence policy or calibration:
-
-1. `presence-tracking-calibration.spec.md`
-
----
-
-# Document Roles Summary
-
-| Document | Stable? | Owns What |
-|----------|---------|-----------|
-| spec | High | Requirements + design constraints |
-| event contracts | Very high | Bus + payload schemas |
-| implementation | Medium | Current wiring |
-| tracking modules | High | Internal tracking APIs |
-
----
