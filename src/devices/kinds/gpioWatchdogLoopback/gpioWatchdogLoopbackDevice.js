@@ -216,7 +216,10 @@ export default class GpioWatchdogLoopbackDevice extends BaseDevice {
   }
 
   inject(payload) {
-    void payload
+    if (payload === undefined) {
+      return err(deviceErrorCodes.invalidInjectPayload)
+    }
+
     return err(deviceErrorCodes.notSupported, 'inject_not_supported')
   }
 
