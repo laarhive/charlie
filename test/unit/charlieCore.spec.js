@@ -1,7 +1,7 @@
 // test/charlieCore.spec.js
 import { expect } from 'chai'
 import Clock from '../../src/clock/clock.js'
-import EventBus from '../../src/core/eventBus.js'
+import EventBus, { makeStreamKey } from '../../src/core/eventBus.js'
 import TimeScheduler from '../../src/core/timeScheduler.js'
 import CharlieCore from '../../src/core/charlieCore.js'
 import FakeConversationAdapter from '../../src/conversation/fakeConversationAdapter.js'
@@ -30,6 +30,20 @@ const makeConfig = function makeConfig({ armingDelayMs = 1000, exitConfirmMs = 8
   }
 }
 
+const publishPresenceEvent = function publishPresenceEvent({ bus, clock, type, zone = 'front' }) {
+  bus.publish({
+    type,
+    ts: clock.nowMs(),
+    source: 'sim',
+    streamKey: makeStreamKey({
+      who: 'sim',
+      what: type,
+      where: bus.getBusId(),
+    }),
+    payload: { zone },
+  })
+}
+
 describe('CharlieCore + TimeScheduler', function () {
   it('starts after arming delay via time event', async function () {
     const clock = new Clock()
@@ -43,7 +57,7 @@ describe('CharlieCore + TimeScheduler', function () {
 
     const core = new CharlieCore({ clock, bus, scheduler, conversation: conv, config })
 
-    bus.publish({ type: 'presence:enter', ts: clock.nowMs(), source: 'sim', payload: { zone: 'front' } })
+    publishPresenceEvent({ bus, clock, type: 'presence:enter' })
 
     clock.advance(1000)
     await flush()
@@ -67,13 +81,13 @@ describe('CharlieCore + TimeScheduler', function () {
     const conv = new FakeConversationAdapter()
     const core = new CharlieCore({ clock, bus, scheduler, conversation: conv, config })
 
-    bus.publish({ type: 'presence:enter', ts: clock.nowMs(), source: 'sim', payload: { zone: 'front' } })
+    publishPresenceEvent({ bus, clock, type: 'presence:enter' })
     clock.advance(500)
     await flush()
 
     expect(conv.getCalls().starts.length).to.equal(1)
 
-    bus.publish({ type: 'presence:exit', ts: clock.nowMs(), source: 'sim', payload: { zone: 'front' } })
+    publishPresenceEvent({ bus, clock, type: 'presence:exit' })
     clock.advance(400)
     await flush()
 
@@ -99,17 +113,17 @@ describe('CharlieCore + TimeScheduler', function () {
     const conv = new FakeConversationAdapter()
     const core = new CharlieCore({ clock, bus, scheduler, conversation: conv, config })
 
-    bus.publish({ type: 'presence:enter', ts: clock.nowMs(), source: 'sim', payload: { zone: 'front' } })
+    publishPresenceEvent({ bus, clock, type: 'presence:enter' })
     clock.advance(500)
     await flush()
 
     expect(conv.getCalls().starts.length).to.equal(1)
 
-    bus.publish({ type: 'presence:exit', ts: clock.nowMs(), source: 'sim', payload: { zone: 'front' } })
+    publishPresenceEvent({ bus, clock, type: 'presence:exit' })
     clock.advance(200)
     await flush()
 
-    bus.publish({ type: 'presence:enter', ts: clock.nowMs(), source: 'sim', payload: { zone: 'front' } })
+    publishPresenceEvent({ bus, clock, type: 'presence:enter' })
     clock.advance(250)
     await flush()
 
@@ -136,14 +150,14 @@ describe('CharlieCore + TimeScheduler', function () {
     const core = new CharlieCore({ clock, bus, scheduler, conversation: conv, config })
 
     // Start first session
-    bus.publish({ type: 'presence:enter', ts: clock.nowMs(), source: 'sim', payload: { zone: 'front' } })
+    publishPresenceEvent({ bus, clock, type: 'presence:enter' })
     clock.advance(500)
     await flush()
 
     expect(conv.getCalls().starts.length).to.equal(1)
 
     // Leave -> stop -> cooldown
-    bus.publish({ type: 'presence:exit', ts: clock.nowMs(), source: 'sim', payload: { zone: 'front' } })
+    publishPresenceEvent({ bus, clock, type: 'presence:exit' })
     clock.advance(300)
     await flush()
 
@@ -151,7 +165,7 @@ describe('CharlieCore + TimeScheduler', function () {
     expect(core.getSnapshot().state).to.equal('COOLDOWN')
 
     // During cooldown, try to retrigger
-    bus.publish({ type: 'presence:enter', ts: clock.nowMs(), source: 'sim', payload: { zone: 'front' } })
+    publishPresenceEvent({ bus, clock, type: 'presence:enter' })
     clock.advance(500)
     await flush()
 
@@ -164,7 +178,7 @@ describe('CharlieCore + TimeScheduler', function () {
     expect(core.getSnapshot().state).to.equal('IDLE')
 
     // Trigger again after cooldown
-    bus.publish({ type: 'presence:enter', ts: clock.nowMs(), source: 'sim', payload: { zone: 'front' } })
+    publishPresenceEvent({ bus, clock, type: 'presence:enter' })
     clock.advance(500)
     await flush()
 
