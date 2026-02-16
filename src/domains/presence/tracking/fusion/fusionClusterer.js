@@ -1,7 +1,4 @@
 // src/domains/presence/tracking/fusion/fusionClusterer.js
-
-import { mapScale } from '../debug/trackingDebugFormat.js'
-
 class Uf {
   #parent
   #rank
@@ -249,6 +246,8 @@ export class FusionClusterer {
 
       const rep = meas[bestIdx]
       const repProv = rep?.prov || null
+      const sourceRadars = [...radarSet]
+      const prov = sourceRadars.length > 1 ? null : repProv
 
       const fusedItem = {
         measTs: tsMax || rep.measTs,
@@ -258,9 +257,9 @@ export class FusionClusterer {
         xMm: cx,
         yMm: cy,
 
-        sourceRadars: [...radarSet],
+        sourceRadars,
 
-        prov: repProv,
+        prov,
       }
 
       if (debugEnabled) {

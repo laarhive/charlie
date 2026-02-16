@@ -1,5 +1,4 @@
 // src/domains/presence/tracking/trackingPipeline.js
-
 import domainEventTypes from '../../domainEventTypes.js'
 import { KalmanFilterCv2d } from './kalmanFilterCv2d.js'
 import { AssociationEngine } from './associationEngine.js'
@@ -367,7 +366,7 @@ export class TrackingPipeline {
         ageMs: Math.max(0, now - (Number(t.createdTs) || now)),
         state: t.state,
         lastRadarId: t.lastRadarId ?? null,
-        lastLocalMm: t?.debugLast?.lastMeas?.localMm ?? null,
+        lastLocalMm: t.lastLocalMm ?? null,
       }))
 
       const { assignments, unassignedMeas, unassignedTracks } = this.#assoc.associate({
@@ -391,8 +390,21 @@ export class TrackingPipeline {
         if (measTs > 0 && measTs <= lastUsed) continue
 
         const varMm2 = Number(fusedVarMm2ByIdx[idx]) || 1
-        const sigmaMm = Math.sqrt(Math.max(1, varMm2))
+        let sigmaMm = Math.sqrt(Math.max(1, varMm2))
         const assocDebug = this.#computeAssocDebug(tr, m, varMm2)
+
+        const staleMeasThresholdMs = Number(this.#cfg?.tracking?.health?.recvLagHugeMs ?? 500)
+        const staleMeasSigmaScaleMax = Number(this.#cfg?.tracking?.kf?.staleMeasSigmaScaleMax ?? 1)
+        const measAgeMs = (measTs > 0) ? Math.max(0, now - measTs) : 0
+        if (
+          Number.isFinite(staleMeasThresholdMs) && staleMeasThresholdMs > 0 &&
+          Number.isFinite(staleMeasSigmaScaleMax) && staleMeasSigmaScaleMax > 1 &&
+          measAgeMs > staleMeasThresholdMs
+        ) {
+          const over = (measAgeMs - staleMeasThresholdMs) / staleMeasThresholdMs
+          const sigmaScale = Math.min(staleMeasSigmaScaleMax, 1 + Math.max(0, over))
+          sigmaMm *= sigmaScale
+        }
 
         if (kfEnabled) {
           const upd = this.#kf.updateWithDebug(tr.kfState, { xMm: m.xMm, yMm: m.yMm }, sigmaMm)
@@ -433,8 +445,13 @@ export class TrackingPipeline {
         tr.lastUpdateTs = now
         tr.lastSeenTs = now
         tr.lastMeasTsUsed = measTs || tr.lastMeasTsUsed
+        tr.lastMeasTsSeen = measTs || tr.lastMeasTsSeen
+        tr.lastLocalMm = m?.prov?.localMm ?? tr.lastLocalMm
 
-        tr.lastRadarId = m.radarId
+        const multiSource = Array.isArray(m.sourceRadars) && m.sourceRadars.length > 1
+        if (!multiSource) {
+          tr.lastRadarId = m.radarId
+        }
         tr.lastZoneId = m.zoneId
         tr.updatedThisTick = true
 
@@ -445,7 +462,13 @@ export class TrackingPipeline {
         }
 
         if (confirmEnabled && tr.state === 'tentative') {
-          tr.confirmHits += 1
+          if ((now - tr.firstSeenTs) > confirmWindowMs) {
+            tr.confirmHits = 1
+            tr.firstSeenTs = now
+          } else {
+            tr.confirmHits += 1
+          }
+
           if (tr.confirmHits >= confirmCount && (now - tr.firstSeenTs) <= confirmWindowMs) {
             tr.state = 'confirmed'
           }
@@ -492,6 +515,9 @@ export class TrackingPipeline {
 
         ageMs: now - tr.createdTs,
         lastSeenMs: now - tr.lastSeenTs,
+        lastMeasAgeMs: Number.isFinite(Number(tr.lastMeasTsSeen)) && Number(tr.lastMeasTsSeen) > 0
+          ? Math.max(0, now - Number(tr.lastMeasTsSeen))
+          : null,
 
         lastRadarId: tr.lastRadarId,
         lastZoneId: tr.lastZoneId,
@@ -568,7 +594,13 @@ export class TrackingPipeline {
 
       const publishAs = String(prov?.publishAs || '')
       const slotId = Number(prov?.slotId)
-      const id = publishAs && Number.isFinite(slotId) ? `m:${publishAs}:${slotId}` : `m:${m.radarId}:${this.#seq++}`
+      const sourceRadars = Array.isArray(m.sourceRadars) ? m.sourceRadars : [m.radarId]
+      const singleSource = sourceRadars.length <= 1
+      const id = (singleSource && publishAs && Number.isFinite(slotId))
+        ? `m:${publishAs}:${slotId}`
+        : `m:${m.radarId}:${this.#seq++}`
+      const measTs = Number(m?.measTs) || 0
+      const measAgeMs = measTs > 0 ? Math.max(0, now - measTs) : null
 
       const item = {
         id,
@@ -581,11 +613,12 @@ export class TrackingPipeline {
         speedMmS: 0,
 
         ageMs: 0,
-        lastSeenMs: Math.max(0, now - m.measTs),
+        lastSeenMs: 0,
+        lastMeasAgeMs: measAgeMs,
 
         lastRadarId: m.radarId,
         lastZoneId: m.zoneId,
-        sourceRadars: Array.isArray(m.sourceRadars) ? m.sourceRadars : [m.radarId],
+        sourceRadars,
       }
 
       if (debugEnabled) {
@@ -739,6 +772,13 @@ export class TrackingPipeline {
     const yMm = kfEnabled ? init.x[1] : m.yMm
     const vxMmS = kfEnabled ? init.x[2] : 0
     const vyMmS = kfEnabled ? init.x[3] : 0
+    const measTs = Number(m?.measTs) || 0
+    const localMm = m?.prov?.localMm ?? null
+
+    const sourceRadars = Array.isArray(m.sourceRadars) && m.sourceRadars.length > 0
+      ? m.sourceRadars
+      : [m.radarId]
+    const multiSource = sourceRadars.length > 1
 
     this.#tracksById.set(id, {
       id,
@@ -756,14 +796,16 @@ export class TrackingPipeline {
       lastUpdateTs: now,
       lastPredictTs: now,
 
-      lastMeasTsUsed: Number(m?.measTs) || 0,
+      lastMeasTsUsed: measTs,
+      lastMeasTsSeen: measTs,
 
       confirmHits: 1,
 
-      lastRadarId: m.radarId,
+      lastRadarId: multiSource ? null : m.radarId,
       lastZoneId: m.zoneId,
+      lastLocalMm: localMm,
 
-      sourceRadars: new Set(Array.isArray(m.sourceRadars) ? m.sourceRadars : [m.radarId]),
+      sourceRadars: new Set(sourceRadars),
       drop: false,
 
       updatedThisTick: true,
