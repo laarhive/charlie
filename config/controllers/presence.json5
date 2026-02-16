@@ -62,7 +62,7 @@
 
     snapshot: {
       // delay sampling slightly so late frames arrive and you fuse same-time-ish frames
-      jitterDelayMs: 40,
+      jitterDelayMs: 0,
 
       // keep defaults unless you have RAM pressure
       radarBufferMaxFrames: 5,
@@ -71,8 +71,8 @@
       staleMeasMaxMs: 250,
       radarMissingTimeoutMs: 1500,
 
-      // strongly recommended for multi-radar
-      waitForAll: { enabled: true, timeoutMs: 110 },
+      // avoid holding fast radars behind slow arrivals; favors freshness over strict alignment
+      waitForAll: { enabled: false, timeoutMs: 110 },
 
       stuckTicksWarn: 20,
     },
