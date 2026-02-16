@@ -1,4 +1,5 @@
 // public/dev/radar/monitor/ld2450RawTargetsConsistencyMonitor.js
+
 import TransformService from '../transform.js'
 import StatsWindow from '../utils/statsWindow.js'
 
@@ -29,7 +30,7 @@ export default class Ld2450RawTargetsConsistencyMonitor {
   #tol
 
   // latest raw by radar/slot
-  #rawLatestByKey = new Map() // key -> { ts, publishAs, radarId, slotId, localMm:{x,y}, worldMm:{x,y} }
+  #rawLatestByKey = new Map()
 
   // rolling stats (last N track updates)
   #wLocal = new StatsWindow({ maxN: 250 })
@@ -158,15 +159,15 @@ export default class Ld2450RawTargetsConsistencyMonitor {
 
       const levels = []
 
-      // Local compare depends on raw being present
+      // Local compare: useful signal, but not a "hard error"
       let localLevel = 'ok'
       if (!raw) localLevel = 'warn'
-      else if (!okLocal) localLevel = 'error'
+      else if (!okLocal) localLevel = 'warn'
 
-      // World compare is strong invariant: mismatch is real error
+      // World compare: strong invariant -> real error when violated
       const worldLevel = okWorld ? 'ok' : 'error'
 
-      // Timing: treat meas age violations as warn (pipeline/UI timing), raw age as warn too
+      // Timing: warnings only
       const measAgeLevel = okMeasAge ? 'ok' : 'warn'
       const rawAgeLevel = okRawAge ? 'ok' : 'warn'
 
@@ -201,7 +202,6 @@ export default class Ld2450RawTargetsConsistencyMonitor {
       })
     }
 
-    // Sort: show worst first for UI (error -> warn -> ok)
     const levelOrder = { error: 0, warn: 1, ok: 2 }
     rows.sort((a, b) => {
       const la = levelOrder[a.level] ?? 9
