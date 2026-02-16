@@ -151,12 +151,40 @@ export default class Ld2450RadarDevice extends BaseDevice {
   }
 
   inject(payload) {
+    const now = this.#clock.nowMs()
+
     if (isPlainObject(payload?.frame)) {
-      this.#publishFrame(payload?.frame)
+      const frame = this.#normalizeInjectedFrame(payload.frame, payload, now)
+      this.#publishFrame(frame)
       return ok()
     }
 
     return err(deviceErrorCodes.invalidInjectPayload)
+  }
+
+  /* keep injected frames in the current clock domain */
+  #normalizeInjectedFrame(frame, payload, now) {
+    const originalFrameTs = Number(frame?.ts)
+    const originalMeasTs = Number(payload?.measTs)
+
+    const out = {
+      ...frame,
+      ts: now,
+    }
+
+/*
+    // optional: keep provenance for debugging (doesn't affect tracking)
+    out.debug = {
+      ...(isPlainObject(frame?.debug) ? frame.debug : {}),
+      injected: true,
+      original: {
+        frameTs: Number.isFinite(originalFrameTs) ? originalFrameTs : null,
+        measTs: Number.isFinite(originalMeasTs) ? originalMeasTs : null,
+      },
+    }
+*/
+
+    return out
   }
 
   async #openLink() {
