@@ -96,6 +96,8 @@ export const roundDebug = function roundDebug(debug) {
   const kf = debug.kf ? {
     innovationMm: debug.kf.innovationMm ? { dx: roundMm(debug.kf.innovationMm.dx), dy: roundMm(debug.kf.innovationMm.dy) } : null,
     sigmaMm: round1(debug.kf.sigmaMm),
+    updateApplied: typeof debug.kf.updateApplied === 'boolean' ? debug.kf.updateApplied : null,
+    skipReason: debug.kf.skipReason ?? null,
   } : null
 
   return {

@@ -411,6 +411,8 @@ export class TrackingPipeline {
             kf: {
               innovationMm: upd.innovationMm,
               sigmaMm: upd.sigmaMm,
+              updateApplied: upd.updateApplied,
+              skipReason: upd.skipReason,
             },
           })
         } else {

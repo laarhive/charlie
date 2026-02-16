@@ -1,14 +1,16 @@
 export class KalmanFilterCv2d {
-  #q
+  #qa
   #rBase
 
   constructor({ procNoiseAccelMmS2, measNoiseBaseMm }) {
-    this.#q = Number(procNoiseAccelMmS2) || 1200
-    this.#rBase = Number(measNoiseBaseMm) || 160
+    const sigmaARaw = Number(procNoiseAccelMmS2)
+    const sigmaA = Number.isFinite(sigmaARaw) ? Math.max(0, sigmaARaw) : 1200
+    this.#qa = sigmaA * sigmaA
+    this.#rBase = Math.max(1, Number(measNoiseBaseMm) || 160)
   }
 
   createInitial({ xMm, yMm, initialPosVarMm2, initialVelVarMm2S2 }) {
-    const x = [xMm, yMm, 0, 0]
+    const x = [sanitizeFinite(xMm, 0), sanitizeFinite(yMm, 0), 0, 0]
 
     const pPos = Number(initialPosVarMm2) || 250000
     const pVel = Number(initialVelVarMm2S2) || 1440000
@@ -24,10 +26,11 @@ export class KalmanFilterCv2d {
   }
 
   predict(state, dtSec) {
+    const s = cloneState(state)
     const dt = Math.max(0, Number(dtSec) || 0)
 
     if (dt <= 0) {
-      return state
+      return s
     }
 
     const F = [
@@ -37,22 +40,20 @@ export class KalmanFilterCv2d {
       [0, 0, 0,  1],
     ]
 
-    const q = this.#q
+    const qa = this.#qa
     const dt2 = dt * dt
     const dt3 = dt2 * dt
     const dt4 = dt2 * dt2
 
-    const q2 = q * q
-
     const Q = [
-      [q2 * (dt4 / 4), 0,               q2 * (dt3 / 2), 0],
-      [0,              q2 * (dt4 / 4),  0,              q2 * (dt3 / 2)],
-      [q2 * (dt3 / 2), 0,               q2 * dt2,        0],
-      [0,              q2 * (dt3 / 2),  0,              q2 * dt2],
+      [qa * (dt4 / 4), 0,               qa * (dt3 / 2), 0],
+      [0,              qa * (dt4 / 4),  0,              qa * (dt3 / 2)],
+      [qa * (dt3 / 2), 0,               qa * dt2,        0],
+      [0,              qa * (dt3 / 2),  0,               qa * dt2],
     ]
 
-    const xPred = mulMatVec(F, state.x)
-    const PPred = addMat(mulMat(mulMat(F, state.P), transpose(F)), Q)
+    const xPred = mulMatVec(F, s.x)
+    const PPred = symmetrize4(addMat(mulMat(mulMat(F, s.P), transpose(F)), Q))
 
     return { x: xPred, P: PPred }
   }
@@ -63,11 +64,22 @@ export class KalmanFilterCv2d {
   }
 
   updateWithDebug(state, z, measSigmaMm) {
-    const zx = Number(z?.xMm) || 0
-    const zy = Number(z?.yMm) || 0
+    const s = cloneState(state)
+    const zx = Number(z?.xMm)
+    const zy = Number(z?.yMm)
 
-    const sigma = Number(measSigmaMm) || this.#rBase
+    const sigma = Math.max(1, Number(measSigmaMm) || this.#rBase)
     const r = sigma * sigma
+
+    if (!Number.isFinite(zx) || !Number.isFinite(zy)) {
+      return {
+        state: s,
+        innovationMm: null,
+        sigmaMm: sigma,
+        updateApplied: false,
+        skipReason: 'invalid_measurement',
+      }
+    }
 
     const H = [
       [1, 0, 0, 0],
@@ -79,19 +91,31 @@ export class KalmanFilterCv2d {
       [0, r],
     ]
 
-    const x = state.x
-    const P = state.P
+    const x = s.x
+    const P = s.P
 
     const zVec = [zx, zy]
     const y = subVec(zVec, mulMatVec(H, x))
 
     const S = addMat(mulMat(mulMat(H, P), transpose(H)), R)
+    if (!isFinite2(S)) {
+      return {
+        state: s,
+        innovationMm: null,
+        sigmaMm: sigma,
+        updateApplied: false,
+        skipReason: 'invalid_innovation_covariance',
+      }
+    }
+
     const SInv = inv2(S)
     if (!SInv) {
       return {
-        state,
-        innovationMm: { dx: 0, dy: 0 },
+        state: s,
+        innovationMm: null,
         sigmaMm: sigma,
+        updateApplied: false,
+        skipReason: 'invalid_innovation_covariance',
       }
     }
 
@@ -100,12 +124,27 @@ export class KalmanFilterCv2d {
     const xNew = addVec(x, mulMatVec(K, y))
     const I = ident4()
     const KH = mulMat(K, H)
-    const PNew = mulMat(subMat(I, KH), P)
+    const IMinusKH = subMat(I, KH)
+    const PNew = symmetrize4(addMat(
+      mulMat(mulMat(IMinusKH, P), transpose(IMinusKH)),
+      mulMat(mulMat(K, R), transpose(K)),
+    ))
+    if (!isFiniteMat4(PNew)) {
+      return {
+        state: s,
+        innovationMm: null,
+        sigmaMm: sigma,
+        updateApplied: false,
+        skipReason: 'invalid_posterior_covariance',
+      }
+    }
 
     return {
       state: { x: xNew, P: PNew },
       innovationMm: { dx: y[0], dy: y[1] },
       sigmaMm: sigma,
+      updateApplied: true,
+      skipReason: null,
     }
   }
 }
@@ -207,11 +246,64 @@ const ident4 = function ident4() {
   ]
 }
 
+const sanitizeFinite = function sanitizeFinite(v, fallback) {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+const cloneState = function cloneState(state) {
+  const x = isFiniteVec4(state?.x) ? [...state.x] : [0, 0, 0, 0]
+  const P = isFiniteMat4(state?.P)
+    ? state.P.map((row) => [...row])
+    : [
+      [1e6, 0,   0,   0],
+      [0,   1e6, 0,   0],
+      [0,   0,   1e6, 0],
+      [0,   0,   0,   1e6],
+    ]
+  return { x, P }
+}
+
+const isFiniteVec4 = function isFiniteVec4(v) {
+  return Array.isArray(v)
+    && v.length === 4
+    && v.every(Number.isFinite)
+}
+
+const isFiniteMat4 = function isFiniteMat4(M) {
+  return Array.isArray(M)
+    && M.length === 4
+    && M.every((row) => Array.isArray(row) && row.length === 4 && row.every(Number.isFinite))
+}
+
+const isFinite2 = function isFinite2(M) {
+  return Number.isFinite(M?.[0]?.[0])
+    && Number.isFinite(M?.[0]?.[1])
+    && Number.isFinite(M?.[1]?.[0])
+    && Number.isFinite(M?.[1]?.[1])
+}
+
+const symmetrize4 = function symmetrize4(M) {
+  const out = M.map((row) => [...row])
+  for (let i = 0; i < 4; i += 1) {
+    for (let j = i + 1; j < 4; j += 1) {
+      const m = 0.5 * (out[i][j] + out[j][i])
+      out[i][j] = m
+      out[j][i] = m
+    }
+  }
+  return out
+}
+
 const inv2 = function inv2(M) {
   const a = M[0][0]
   const b = M[0][1]
   const c = M[1][0]
   const d = M[1][1]
+
+  if (![a, b, c, d].every(Number.isFinite)) {
+    return null
+  }
 
   const det = (a * d) - (b * c)
   if (!Number.isFinite(det) || Math.abs(det) < 1e-12) {
@@ -225,4 +317,3 @@ const inv2 = function inv2(M) {
     [-c * invDet,  a * invDet],
   ]
 }
-
