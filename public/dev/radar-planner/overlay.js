@@ -1,3 +1,5 @@
+// public/dev/radar-planner/overlay.js
+import { DEFAULTS } from "./scene-state.js"
 import { drawWorldLayer } from "./world-layer.js"
 import { drawRadarLayer } from "./radar-layer.js"
 
@@ -14,35 +16,6 @@ const setText = (id, txt) => {
 }
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
-
-const read = () => {
-  const afovRaw = Number(get("afovInput").value)
-  const afov = Number.isFinite(afovRaw) ? clamp(afovRaw, 1, 359) : 120
-
-  const rRaw = Number(get("radarRadiusCm").value)
-  const radarRadiusCm = Number.isFinite(rRaw) ? clamp(rRaw, 10, 2000) : 200
-
-  const zRaw = Number(get("zoom").value)
-  const zoom = Number.isFinite(zRaw) ? clamp(zRaw, 0.5, 3) : 1
-
-  const az0 = Number(get("az0").value)
-  const az1 = Number(get("az1").value)
-  const az2 = Number(get("az2").value)
-
-  return {
-    afov,
-    radarRadiusCm,
-    zoom,
-    azimuth: [az0, az1, az2],
-    showWorld: get("showWorld").checked,
-    showRadar: get("showRadar").checked,
-    showOverlap2: get("showOverlap2").checked,
-    showOverlap3: get("showOverlap3").checked,
-    showTicks: get("showTicks").checked,
-    showAfovRadials: get("showAfovRadials").checked,
-    dimWorld: get("dimWorld").checked
-  }
-}
 
 const ensureGroups = () => {
   let gWorld = svg.querySelector("#gWorld")
@@ -64,13 +37,12 @@ const ensureGroups = () => {
 }
 
 const setCamera = ({ radarRadiusCm, zoom }) => {
-  // World extents (from your layout)
-  // X: -580..600, Y: -700..800 (in world coords)
+  // Hard world extents (from your scene)
   const worldHalfW = 650
   const worldHalfH = 850
 
-  // Ensure radar fits too (extra room for labels/ticks)
-  const radarHalf = radarRadiusCm + 90
+  // Ensure radar + tick/label ring fits
+  const radarHalf = radarRadiusCm + 100
 
   const halfW = Math.max(worldHalfW, radarHalf)
   const halfH = Math.max(worldHalfH, radarHalf)
@@ -86,13 +58,41 @@ const setCamera = ({ radarRadiusCm, zoom }) => {
   svg.setAttribute("viewBox", vb.join(" "))
 }
 
+const readState = () => {
+  const afovRaw = Number(get("afovInput").value)
+  const afov = Number.isFinite(afovRaw) ? clamp(afovRaw, 1, 359) : DEFAULTS.afovDeg
+
+  const rRaw = Number(get("radarRadiusCm").value)
+  const radarRadiusCm = Number.isFinite(rRaw) ? clamp(rRaw, 10, 2000) : DEFAULTS.radarRadiusCm
+
+  const zRaw = Number(get("zoom").value)
+  const zoom = Number.isFinite(zRaw) ? clamp(zRaw, 0.5, 3) : DEFAULTS.zoom
+
+  const az0 = Number(get("az0").value)
+  const az1 = Number(get("az1").value)
+  const az2 = Number(get("az2").value)
+
+  return {
+    afov,
+    radarRadiusCm,
+    zoom,
+    azimuth: [az0, az1, az2],
+    showWorld: get("showWorld").checked,
+    showRadar: get("showRadar").checked,
+    showOverlap2: get("showOverlap2").checked,
+    showOverlap3: get("showOverlap3").checked,
+    showTicks: get("showTicks").checked,
+    showAfovRadials: get("showAfovRadials").checked,
+    dimWorld: get("dimWorld").checked
+  }
+}
+
 const render = () => {
-  const state = read()
+  const state = readState()
   const { gWorld, gRadar } = ensureGroups()
 
   setText("zoomVal", `${state.zoom.toFixed(1)}×`)
 
-  // Camera first so radius changes are visible
   setCamera({ radarRadiusCm: state.radarRadiusCm, zoom: state.zoom })
 
   gWorld.style.display = state.showWorld ? "" : "none"
@@ -151,8 +151,18 @@ const bind = () => {
     n.addEventListener("input", render)
     n.addEventListener("change", render)
   })
-
-  render()
 }
 
+const initDefaults = () => {
+  get("radarRadiusCm").value = `${DEFAULTS.radarRadiusCm}`
+  get("afovInput").value = `${DEFAULTS.afovDeg}`
+  get("az0").value = `${DEFAULTS.azimuthCwDeg[0]}`
+  get("az1").value = `${DEFAULTS.azimuthCwDeg[1]}`
+  get("az2").value = `${DEFAULTS.azimuthCwDeg[2]}`
+  get("zoom").value = `${DEFAULTS.zoom}`
+  get("dimWorld").checked = DEFAULTS.dimWorld
+}
+
+initDefaults()
 bind()
+render()

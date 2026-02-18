@@ -1,27 +1,25 @@
+// public/dev/radar-planner/radar-layer.js
+import {
+  normalize,
+  worldToSvgY,
+  polarToXY,
+  angleDiffSigned,
+  toInternal,
+  toDisplay
+} from "./geometry.js"
+
 const ns = "http://www.w3.org/2000/svg"
 const el = (t) => document.createElementNS(ns, t)
 
-const worldToSvgY = (y) => -y
-
-const normalize = (a) => ((a % 360) + 360) % 360
-const toInternal = (cwDeg) => normalize(360 - cwDeg)
-const toDisplay = (internalDeg) => normalize(360 - internalDeg)
-
-const ANGLE_OFFSET_DEG = 45
-
-const polarToXY = (internalDeg, rCm) => {
-  const rad = (internalDeg + ANGLE_OFFSET_DEG) * Math.PI / 180
-  return { x: rCm * Math.cos(rad), y: rCm * Math.sin(rad) }
-}
-
-const splitArcSegments = (centerInternal, fovDeg) => {
+const splitArcSegments = function splitArcSegments(centerInternal, fovDeg) {
   const start = normalize(centerInternal - fovDeg / 2)
   const end = normalize(centerInternal + fovDeg / 2)
+
   if (start <= end) return [[start, end]]
   return [[start, 360], [0, end]]
 }
 
-const arcOnlyPath = (startInternal, endInternal, r) => {
+const arcOnlyPath = function arcOnlyPath(startInternal, endInternal, r) {
   const p1 = polarToXY(startInternal, r)
   const p2 = polarToXY(endInternal, r)
 
@@ -32,7 +30,7 @@ const arcOnlyPath = (startInternal, endInternal, r) => {
 A ${r} ${r} 0 ${largeArc} 0 ${p2.x} ${worldToSvgY(p2.y)}`
 }
 
-const sectorWedgePath = (startInternal, endInternal, r) => {
+const sectorWedgePath = function sectorWedgePath(startInternal, endInternal, r) {
   const p1 = polarToXY(startInternal, r)
   const p2 = polarToXY(endInternal, r)
 
@@ -45,7 +43,7 @@ A ${r} ${r} 0 ${largeArc} 0 ${p2.x} ${worldToSvgY(p2.y)}
 Z`
 }
 
-const ringSegmentPath = (startInternal, endInternal, rInner, rOuter) => {
+const ringSegmentPath = function ringSegmentPath(startInternal, endInternal, rInner, rOuter) {
   const p1o = polarToXY(startInternal, rOuter)
   const p2o = polarToXY(endInternal, rOuter)
   const p2i = polarToXY(endInternal, rInner)
@@ -61,10 +59,11 @@ A ${rInner} ${rInner} 0 ${largeArc} 1 ${p1i.x} ${worldToSvgY(p1i.y)}
 Z`
 }
 
-const angleDiffSigned = (aInternal, bInternal) => normalize(aInternal - bInternal + 180) - 180
-const inSector = (angleInternal, centerInternal, fovDeg) => Math.abs(angleDiffSigned(angleInternal, centerInternal)) <= (fovDeg / 2)
+const inSector = function inSector(angleInternal, centerInternal, fovDeg) {
+  return Math.abs(angleDiffSigned(angleInternal, centerInternal)) <= (fovDeg / 2)
+}
 
-const drawTicks45 = (group, r) => {
+const drawTicks45 = function drawTicks45(group, r) {
   const tickInner = r
   const tickOuter = r + 18
   const labelR = r + 10
@@ -97,7 +96,7 @@ const drawTicks45 = (group, r) => {
   }
 }
 
-const drawRadial = (group, angleInternal, r, stroke, dashed) => {
+const drawRadial = function drawRadial(group, angleInternal, r, stroke, dashed) {
   const p = polarToXY(angleInternal, r)
 
   const l = el("line")
@@ -111,7 +110,7 @@ const drawRadial = (group, angleInternal, r, stroke, dashed) => {
   group.appendChild(l)
 }
 
-const drawAngleLabel = (group, angleInternal, r, text, fill) => {
+const drawAngleLabel = function drawAngleLabel(group, angleInternal, r, text, fill) {
   const p = polarToXY(angleInternal, r)
 
   const t = el("text")
@@ -126,7 +125,7 @@ const drawAngleLabel = (group, angleInternal, r, text, fill) => {
   group.appendChild(t)
 }
 
-const computeVisibilityCounts = (azInternalList, afovDeg) => {
+const computeVisibilityCounts = function computeVisibilityCounts(azInternalList, afovDeg) {
   const counts = new Array(360).fill(0)
 
   for (let a = 0; a < 360; a++) {
@@ -140,7 +139,7 @@ const computeVisibilityCounts = (azInternalList, afovDeg) => {
   return counts
 }
 
-const segmentsFromPredicate = (counts, predicate) => {
+const segmentsFromPredicate = function segmentsFromPredicate(counts, predicate) {
   const segs = []
   let inSeg = false
   let start = 0
@@ -175,7 +174,7 @@ const segmentsFromPredicate = (counts, predicate) => {
   return segs
 }
 
-const computeOverlapDegrees = (counts, threshold) => {
+const computeOverlapDegrees = function computeOverlapDegrees(counts, threshold) {
   let sum = 0
   for (let a = 0; a < 360; a++) {
     if (counts[a] >= threshold) sum += 1
@@ -183,18 +182,18 @@ const computeOverlapDegrees = (counts, threshold) => {
   return sum
 }
 
-const drawRadarLayer = ({
-                          group,
-                          azimuthCwDeg,
-                          fovDeg,
-                          afovDeg,
-                          radarRadiusCm,
-                          showOverlap2,
-                          showOverlap3,
-                          showTicks,
-                          showAfovRadials,
-                          onStats
-                        }) => {
+const drawRadarLayer = function drawRadarLayer({
+                                                 group,
+                                                 azimuthCwDeg,
+                                                 fovDeg,
+                                                 afovDeg,
+                                                 radarRadiusCm,
+                                                 showOverlap2,
+                                                 showOverlap3,
+                                                 showTicks,
+                                                 showAfovRadials,
+                                                 onStats
+                                               }) {
   group.innerHTML = ""
 
   const radius = Math.max(10, Math.min(2000, Number(radarRadiusCm) || 200))
@@ -233,7 +232,7 @@ const drawRadarLayer = ({
 
   const counts = computeVisibilityCounts(azInternal, afovDeg)
 
-  const drawBand = (threshold, fill, stroke) => {
+  const drawBand = function drawBand(threshold, fill, stroke) {
     const segs = segmentsFromPredicate(counts, (c) => c >= threshold)
     segs.forEach(([s, e]) => {
       const p = el("path")
