@@ -1,11 +1,9 @@
 :root {
     color-scheme: dark;
-    --bg: #0d0f12;
+    --bg: #0b1220;
     --panel: #12161b;
-    --grid: rgba(255,255,255,0.10);
-    --ring: rgba(255,255,255,0.28);
-    --text: rgba(255,255,255,0.86);
-    --muted: rgba(255,255,255,0.58);
+    --text: rgba(255,255,255,0.88);
+    --muted: rgba(255,255,255,0.60);
 }
 
 html, body {
@@ -40,7 +38,7 @@ html, body {
     overflow: hidden;
 }
 
-svg {
+#sceneSvg {
     width: 100%;
     height: 100%;
     display: block;
@@ -61,10 +59,6 @@ h1 {
     border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
-.row:last-child {
-    border-bottom: 0;
-}
-
 .label {
     font-size: 12px;
     color: var(--muted);
@@ -76,17 +70,13 @@ h1 {
 }
 
 .num {
-    width: 96px;
+    width: 110px;
     padding: 6px 8px;
     border-radius: 8px;
     border: 1px solid rgba(255,255,255,0.12);
     background: rgba(0,0,0,0.22);
     color: var(--text);
     outline: none;
-}
-
-.num:focus {
-    border-color: rgba(255,255,255,0.30);
 }
 
 .toggles {
@@ -110,58 +100,20 @@ h1 {
     height: 18px;
     accent-color: rgba(255,255,255,0.7);
 }
+.zoomRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
 
-.note {
-    margin-top: 10px;
+.zoom {
+    width: 150px;
+}
+
+.zoomVal {
     font-size: 12px;
-    color: var(--muted);
-    line-height: 1.4;
-}
-
-/* Scalable SVG container */
-.canvasPanel {
-    display: grid;
-    place-items: center;
-}
-
-#radarSvg {
-    width: 100%;
-    height: 100%;
-    display: block;
-}
-
-/* Print: white background, hide controls, scale to page */
-@media print {
-    :root {
-        --bg: #ffffff;
-        --panel: #ffffff;
-        --text: rgba(0,0,0,0.90);
-        --muted: rgba(0,0,0,0.65);
-    }
-
-    body {
-        background: #ffffff !important;
-        color: #000000 !important;
-    }
-
-    .printHide {
-        display: none !important;
-    }
-
-    .wrap {
-        grid-template-columns: 1fr;
-        padding: 0;
-        height: auto;
-    }
-
-    .canvasPanel {
-        border: 0;
-        border-radius: 0;
-        background: #ffffff;
-    }
-
-    #radarSvg {
-        width: 190mm;
-        height: 190mm;
-    }
+    color: rgba(255,255,255,0.65);
+    font-variant-numeric: tabular-nums;
+    min-width: 46px;
+    text-align: right;
 }
