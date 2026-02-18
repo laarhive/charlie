@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Radar FOV Overlap</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="wrap">
+    <div class="panel printHide">
+        <h1>Config</h1>
+
+        <div class="row">
+            <div class="label">FOV (fixed in code)</div>
+            <div id="fovVal" class="value"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">AFOV (deg)</div>
+            <div class="value">
+                <input id="afovInput" class="num" type="number" step="1" value="120" />
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="label">AZIMUTH R0 (deg)</div>
+            <div class="value">
+                <input id="az0" class="num" type="number" step="1" value="15" />
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="label">AZIMUTH R1 (deg)</div>
+            <div class="value">
+                <input id="az1" class="num" type="number" step="1" value="75" />
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="label">AZIMUTH R2 (deg)</div>
+            <div class="value">
+                <input id="az2" class="num" type="number" step="1" value="285" />
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="label">R0 FOV / AFOV</div>
+            <div class="value"><span id="anglesR0"></span></div>
+        </div>
+
+        <div class="row">
+            <div class="label">R1 FOV / AFOV</div>
+            <div class="value"><span id="anglesR1"></span></div>
+        </div>
+
+        <div class="row">
+            <div class="label">R2 FOV / AFOV</div>
+            <div class="value"><span id="anglesR2"></span></div>
+        </div>
+
+        <div class="row">
+            <div class="label">AFOV overlap (>=2)</div>
+            <div id="overlap2Val" class="value"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">AFOV overlap (>=3)</div>
+            <div id="overlap3Val" class="value"></div>
+        </div>
+
+        <div class="toggles">
+            <label class="toggle">
+                <input id="showFov" type="checkbox" checked />
+                <span>Show FOV fill</span>
+            </label>
+
+            <label class="toggle">
+                <input id="showAfov" type="checkbox" checked />
+                <span>Show AFOV outline</span>
+            </label>
+
+            <label class="toggle">
+                <input id="showOverlap2" type="checkbox" checked />
+                <span>Highlight AFOV overlap ≥2</span>
+            </label>
+
+            <label class="toggle">
+                <input id="showOverlap3" type="checkbox" checked />
+                <span>Highlight AFOV overlap ≥3</span>
+            </label>
+
+            <label class="toggle">
+                <input id="showAxes" type="checkbox" checked />
+                <span>Show 45° ticks + labels</span>
+            </label>
+
+            <label class="toggle">
+                <input id="showFovAngles" type="checkbox" checked />
+                <span>Show FOV boundary angles</span>
+            </label>
+        </div>
+    </div>
+
+    <div class="canvasPanel">
+        <svg id="radarSvg" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid meet" aria-label="Radar FOV"></svg>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

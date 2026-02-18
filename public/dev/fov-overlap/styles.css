@@ -1,0 +1,167 @@
+:root {
+    color-scheme: dark;
+    --bg: #0d0f12;
+    --panel: #12161b;
+    --grid: rgba(255,255,255,0.10);
+    --ring: rgba(255,255,255,0.28);
+    --text: rgba(255,255,255,0.86);
+    --muted: rgba(255,255,255,0.58);
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    color: var(--text);
+}
+
+.wrap {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 14px;
+    padding: 14px;
+    box-sizing: border-box;
+    height: 100%;
+}
+
+.panel {
+    background: var(--panel);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+.canvasPanel {
+    background: var(--panel);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+h1 {
+    font-size: 14px;
+    margin: 0 0 10px 0;
+    font-weight: 600;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.row:last-child {
+    border-bottom: 0;
+}
+
+.label {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.value {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.num {
+    width: 96px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(0,0,0,0.22);
+    color: var(--text);
+    outline: none;
+}
+
+.num:focus {
+    border-color: rgba(255,255,255,0.30);
+}
+
+.toggles {
+    margin-top: 12px;
+    display: grid;
+    gap: 8px;
+}
+
+.toggle {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 10px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    user-select: none;
+}
+
+.toggle input {
+    width: 18px;
+    height: 18px;
+    accent-color: rgba(255,255,255,0.7);
+}
+
+.note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.4;
+}
+
+/* Scalable SVG container */
+.canvasPanel {
+    display: grid;
+    place-items: center;
+}
+
+#radarSvg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Print: white background, hide controls, scale to page */
+@media print {
+    :root {
+        --bg: #ffffff;
+        --panel: #ffffff;
+        --text: rgba(0,0,0,0.90);
+        --muted: rgba(0,0,0,0.65);
+    }
+
+    body {
+        background: #ffffff !important;
+        color: #000000 !important;
+    }
+
+    .printHide {
+        display: none !important;
+    }
+
+    .wrap {
+        grid-template-columns: 1fr;
+        padding: 0;
+        height: auto;
+    }
+
+    .canvasPanel {
+        border: 0;
+        border-radius: 0;
+        background: #ffffff;
+    }
+
+    #radarSvg {
+        width: 190mm;
+        height: 190mm;
+    }
+}
