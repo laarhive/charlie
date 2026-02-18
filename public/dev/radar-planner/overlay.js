@@ -2,6 +2,7 @@
 import { DEFAULTS } from "./scene-state.js"
 import { drawWorldLayer } from "./world-layer.js"
 import { drawRadarLayer } from "./radar-layer.js"
+import { WORLD_OBJECTS, computeSceneBounds } from "./scene-objects.js"
 
 const svg = document.getElementById("sceneSvg")
 
@@ -37,15 +38,17 @@ const ensureGroups = () => {
 }
 
 const setCamera = ({ radarRadiusCm, zoom }) => {
-  // Hard world extents (from your scene)
-  const worldHalfW = 650
-  const worldHalfH = 850
+  const b = computeSceneBounds(WORLD_OBJECTS)
 
-  // Ensure radar + tick/label ring fits
-  const radarHalf = radarRadiusCm + 100
+  // Center camera on Charlie (0,0) but derive extents from scene geometry
+  const sceneHalfW = Math.max(Math.abs(b.minX), Math.abs(b.maxX))
+  const sceneHalfH = Math.max(Math.abs(b.minY), Math.abs(b.maxY))
 
-  const halfW = Math.max(worldHalfW, radarHalf)
-  const halfH = Math.max(worldHalfH, radarHalf)
+  // Extra padding for radar labels/ticks beyond the circle radius
+  const radarHalf = radarRadiusCm + 110
+
+  const halfW = Math.max(sceneHalfW, radarHalf)
+  const halfH = Math.max(sceneHalfH, radarHalf)
 
   const z = zoom
   const vb = [
