@@ -2,7 +2,7 @@
 const DEFAULTS = {
   radarRadiusCm: 600,
   afovDeg: 100,
-  azimuthCwDeg: [45, 130, 320],
+  azimuthCwDeg: [45, 135, 315],
   zoom: 1,
   dimWorld: true,
 
