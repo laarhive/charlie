@@ -19,82 +19,51 @@ const normalizeDeg = function normalizeDeg(deg) {
   return a
 }
 
-const inSector = function inSector(angleInternal, centerInternal, fovDeg) {
-  return Math.abs(angleDiffSigned(angleInternal, centerInternal)) <= (fovDeg / 2)
-}
-
 const splitArcSegments = function splitArcSegments(centerInternal, fovDeg) {
   const start = normalize(centerInternal - fovDeg / 2)
   const end = normalize(centerInternal + fovDeg / 2)
-
   if (start <= end) return [[start, end]]
   return [[start, 360], [0, end]]
 }
 
-const sectorWedgePath = function sectorWedgePath(startInternal, endInternal, r, origin) {
+const arcOnlyPathCentered = function arcOnlyPathCentered(startInternal, endInternal, r) {
   const p1 = polarToXY(startInternal, r)
   const p2 = polarToXY(endInternal, r)
 
   const span = normalize(endInternal - startInternal)
   const largeArc = span > 180 ? 1 : 0
 
-  const ox = origin.x
-  const oy = origin.y
+  return `M ${p1.x} ${worldToSvgY(p1.y)}
+A ${r} ${r} 0 ${largeArc} 0 ${p2.x} ${worldToSvgY(p2.y)}`
+}
 
-  const x1 = p1.x + ox
-  const y1 = p1.y + oy
-  const x2 = p2.x + ox
-  const y2 = p2.y + oy
+const sectorWedgePathCentered = function sectorWedgePathCentered(startInternal, endInternal, r) {
+  const p1 = polarToXY(startInternal, r)
+  const p2 = polarToXY(endInternal, r)
 
-  return `M ${ox} ${worldToSvgY(oy)}
-L ${x1} ${worldToSvgY(y1)}
-A ${r} ${r} 0 ${largeArc} 0 ${x2} ${worldToSvgY(y2)}
+  const span = normalize(endInternal - startInternal)
+  const largeArc = span > 180 ? 1 : 0
+
+  return `M 0 ${worldToSvgY(0)}
+L ${p1.x} ${worldToSvgY(p1.y)}
+A ${r} ${r} 0 ${largeArc} 0 ${p2.x} ${worldToSvgY(p2.y)}
 Z`
 }
 
-const arcOnlyPath = function arcOnlyPath(startInternal, endInternal, r, origin) {
-  const p1 = polarToXY(startInternal, r)
-  const p2 = polarToXY(endInternal, r)
+const ringSegmentPath = function ringSegmentPath(startInternal, endInternal, rInner, rOuter) {
+  const p1o = polarToXY(startInternal, rOuter)
+  const p2o = polarToXY(endInternal, rOuter)
+  const p2i = polarToXY(endInternal, rInner)
+  const p1i = polarToXY(startInternal, rInner)
 
   const span = normalize(endInternal - startInternal)
   const largeArc = span > 180 ? 1 : 0
 
-  const x1 = p1.x + origin.x
-  const y1 = p1.y + origin.y
-  const x2 = p2.x + origin.x
-  const y2 = p2.y + origin.y
-
-  return `M ${x1} ${worldToSvgY(y1)}
-A ${r} ${r} 0 ${largeArc} 0 ${x2} ${worldToSvgY(y2)}`
-}
-
-const drawRadial = function drawRadial(group, angleInternal, r, origin, stroke, dashed) {
-  const p = polarToXY(angleInternal, r)
-
-  const l = el("line")
-  l.setAttribute("x1", `${origin.x}`)
-  l.setAttribute("y1", `${worldToSvgY(origin.y)}`)
-  l.setAttribute("x2", `${origin.x + p.x}`)
-  l.setAttribute("y2", `${worldToSvgY(origin.y + p.y)}`)
-  l.setAttribute("stroke", stroke)
-  l.setAttribute("stroke-width", "2.5")
-  if (dashed) l.setAttribute("stroke-dasharray", "10 8")
-  group.appendChild(l)
-}
-
-const drawAngleLabel = function drawAngleLabel(group, angleInternal, r, origin, text, fill) {
-  const p = polarToXY(angleInternal, r)
-
-  const t = el("text")
-  t.setAttribute("x", `${origin.x + p.x}`)
-  t.setAttribute("y", `${worldToSvgY(origin.y + p.y)}`)
-  t.setAttribute("text-anchor", "middle")
-  t.setAttribute("dominant-baseline", "middle")
-  t.setAttribute("fill", fill)
-  t.setAttribute("font-size", "12.5")
-  t.setAttribute("font-weight", "400")
-  t.textContent = text
-  group.appendChild(t)
+  return `M ${p1o.x} ${worldToSvgY(p1o.y)}
+A ${rOuter} ${rOuter} 0 ${largeArc} 0 ${p2o.x} ${worldToSvgY(p2o.y)}
+L ${p2i.x} ${worldToSvgY(p2i.y)}
+A ${rInner} ${rInner} 0 ${largeArc} 1 ${p1i.x} ${worldToSvgY(p1i.y)}
+Z`
 }
 
 const drawTicks45 = function drawTicks45(group, r) {
@@ -130,55 +99,69 @@ const drawTicks45 = function drawTicks45(group, r) {
   }
 }
 
-const segmentsFromPredicate = function segmentsFromPredicate(counts, predicate) {
-  const segs = []
-  let inSeg = false
-  let start = 0
-
-  for (let a = 0; a < 360; a++) {
-    const ok = predicate(counts[a])
-
-    if (ok && !inSeg) {
-      inSeg = true
-      start = a
-    }
-
-    if (!ok && inSeg) {
-      inSeg = false
-      segs.push([start, a])
-    }
-  }
-
-  if (inSeg) segs.push([start, 360])
-
-  if (segs.length >= 2) {
-    const first = segs[0]
-    const last = segs[segs.length - 1]
-    if (first[0] === 0 && last[1] === 360) {
-      const merged = [last[0], first[1]]
-      segs.pop()
-      segs.shift()
-      segs.unshift(merged)
-    }
-  }
-
-  return segs
+const svgTranslateForWorldOrigin = function svgTranslateForWorldOrigin(originWorld) {
+  return `translate(${originWorld.x} ${worldToSvgY(originWorld.y)})`
 }
 
-const ringSegmentPath = function ringSegmentPath(startInternal, endInternal, rInner, rOuter) {
-  const p1o = polarToXY(startInternal, rOuter)
-  const p2o = polarToXY(endInternal, rOuter)
-  const p2i = polarToXY(endInternal, rInner)
-  const p1i = polarToXY(startInternal, rInner)
+const drawRadialCentered = function drawRadialCentered(group, angleInternal, r, stroke, dashed, transform) {
+  const p = polarToXY(angleInternal, r)
 
-  const span = normalize(endInternal - startInternal)
-  const largeArc = span > 180 ? 1 : 0
+  const l = el("line")
+  l.setAttribute("x1", "0")
+  l.setAttribute("y1", `${worldToSvgY(0)}`)
+  l.setAttribute("x2", `${p.x}`)
+  l.setAttribute("y2", `${worldToSvgY(p.y)}`)
+  l.setAttribute("stroke", stroke)
+  l.setAttribute("stroke-width", "2.5")
+  if (dashed) l.setAttribute("stroke-dasharray", "10 8")
+  if (transform) l.setAttribute("transform", transform)
+  group.appendChild(l)
+}
 
-  return `M ${p1o.x} ${worldToSvgY(p1o.y)}
-A ${rOuter} ${rOuter} 0 ${largeArc} 0 ${p2o.x} ${worldToSvgY(p2o.y)}
-L ${p2i.x} ${worldToSvgY(p2i.y)}
-A ${rInner} ${rInner} 0 ${largeArc} 1 ${p1i.x} ${worldToSvgY(p1i.y)}
-Z`
+const drawAngleLabelCentered = function drawAngleLabelCentered(group, angleInternal, r, text, fill, transform) {
+  const p = polarToXY(angleInternal, r)
+
+  const t = el("text")
+  t.setAttribute("x", `${p.x}`)
+  t.setAttribute("y", `${worldToSvgY(p.y)}`)
+  t.setAttribute("text-anchor", "middle")
+  t.setAttribute("dominant-baseline", "middle")
+  t.setAttribute("fill", fill)
+  t.setAttribute("font-size", "12.5")
+  t.setAttribute("font-weight", "400")
+  t.textContent = text
+  if (transform) t.setAttribute("transform", transform)
+  group.appendChild(t)
+}
+
+const sectorIntervals = function sectorIntervals(centerInternal, fovDeg) {
+  const start = normalize(centerInternal - fovDeg / 2)
+  const end = normalize(centerInternal + fovDeg / 2)
+  if (start <= end) return [[start, end]]
+  return [[start, 360], [0, end]]
+}
+
+const intersectIntervals = function intersectIntervals(aList, bList) {
+  const out = []
+  for (let i = 0; i < aList.length; i++) {
+    for (let j = 0; j < bList.length; j++) {
+      const s = Math.max(aList[i][0], bList[j][0])
+      const e = Math.min(aList[i][1], bList[j][1])
+      if (e > s) out.push([s, e])
+    }
+  }
+  return out
+}
+
+const centerDistanceDeg = function centerDistanceDeg(aInternal, bInternal) {
+  let d = normalize(bInternal - aInternal)
+  if (d > 180) d = 360 - d
+  return d
+}
+
+const overlapDegContinuous = function overlapDegContinuous(aInternal, bInternal, afov) {
+  const d = centerDistanceDeg(aInternal, bInternal)
+  return Math.max(0, afov - d)
 }
 
 const drawRadarLayer = function drawRadarLayer({
@@ -199,10 +182,11 @@ const drawRadarLayer = function drawRadarLayer({
   const fov = 120
   const afov = Math.max(1, Math.min(fov, Number(afovDeg) || 100))
 
-  const afovBandOuter = radiusInset
-  const afovBandInner = Math.max(0, radiusInset - 55)
+  const bandOuter = radiusInset
+  const bandInner = Math.max(0, bandOuter - 55)
 
-  // Reference circle
+  const afovArcR = Math.max(0, bandOuter - 2)
+
   const c = el("circle")
   c.setAttribute("cx", "0")
   c.setAttribute("cy", `${worldToSvgY(0)}`)
@@ -214,7 +198,7 @@ const drawRadarLayer = function drawRadarLayer({
 
   if (showTicks) drawTicks45(group, radiusInset)
 
-  // Clip to circle so nothing bleeds
+  // Clip only the shaded fills to the Charlie circle
   const defs = el("defs")
   const clip = el("clipPath")
   clip.setAttribute("id", "clipRadarCircle")
@@ -231,106 +215,100 @@ const drawRadarLayer = function drawRadarLayer({
   gClip.setAttribute("clip-path", "url(#clipRadarCircle)")
   group.appendChild(gClip)
 
-  // We want overlap UNDER the AFOV dashed bounds, so:
-  // 1) draw FOV fills
-  // 2) draw overlap band fills
-  // 3) draw AFOV dashed bounds + labels on top
+  const gUnder = el("g")
+  gClip.appendChild(gUnder)
+
+  // IMPORTANT: top layer is NOT clipped, so radar-centered AFOV arcs remain visible
+  const gOver = el("g")
+  group.appendChild(gOver)
 
   const styles = [
-    { fovFill: "rgba(255,0,0,0.08)", stroke: "rgba(255,0,0,0.60)" },
-    { fovFill: "rgba(0,255,0,0.08)", stroke: "rgba(0,255,0,0.60)" },
-    { fovFill: "rgba(0,0,255,0.08)", stroke: "rgba(0,0,255,0.60)" }
+    { fill: "rgba(255,0,0,0.10)", stroke: "rgba(255,0,0,0.55)" },
+    { fill: "rgba(0,255,0,0.10)", stroke: "rgba(0,255,0,0.55)" },
+    { fill: "rgba(0,0,255,0.10)", stroke: "rgba(0,0,255,0.55)" }
   ]
 
-  const azCw = azimuthCwDeg.map((a) => normalizeDeg(a))
-  const azInternal = azCw.map((a) => toInternal(a))
+  const azInternal = azimuthCwDeg.map((a) => toInternal(normalizeDeg(a)))
 
   const tubeR = Number.isFinite(Number(tubeRadiusCm)) ? Number(tubeRadiusCm) : 0
-  const origins = azInternal.map((center) => polarToXY(center, tubeR))
+  const originsWorld = azInternal.map((center) => polarToXY(center, tubeR))
+  const transforms = originsWorld.map((o) => svgTranslateForWorldOrigin(o))
 
-  // FOV wedges
+  // FOV wedges (shaded) - clipped
   azInternal.forEach((center, i) => {
-    const origin = origins[i]
-    splitArcSegments(center, fov).forEach(([s, e]) => {
+    const segs = splitArcSegments(center, fovDeg)
+    segs.forEach(([s, e]) => {
       const p = el("path")
-      p.setAttribute("d", sectorWedgePath(s, e, radiusInset, origin))
-      p.setAttribute("fill", styles[i].fovFill)
+      p.setAttribute("d", sectorWedgePathCentered(s, e, radiusInset))
+      p.setAttribute("fill", styles[i].fill)
       p.setAttribute("stroke", "none")
-      gClip.appendChild(p)
+      p.setAttribute("transform", transforms[i])
+      gUnder.appendChild(p)
     })
   })
 
-  // Pairwise overlap (angular-only) rendered as AFOV band (inner..outer)
-  const counts01 = new Array(360).fill(0)
-  const counts12 = new Array(360).fill(0)
-  const counts20 = new Array(360).fill(0)
+  // Overlap shading – clipped (Charlie centered)
+  const drawPairOverlap = function drawPairOverlap(iA, iB, fill) {
+    const aSegs = sectorIntervals(azInternal[iA], afov)
+    const bSegs = sectorIntervals(azInternal[iB], afov)
+    const segs = intersectIntervals(aSegs, bSegs)
 
-  for (let a = 0; a < 360; a++) {
-    const r0 = inSector(a, azInternal[0], afov)
-    const r1 = inSector(a, azInternal[1], afov)
-    const r2 = inSector(a, azInternal[2], afov)
-
-    counts01[a] = (r0 && r1) ? 1 : 0
-    counts12[a] = (r1 && r2) ? 1 : 0
-    counts20[a] = (r2 && r0) ? 1 : 0
-  }
-
-  const drawOverlapBand = function drawOverlapBand(counts, fill) {
-    const segs = segmentsFromPredicate(counts, (v) => v >= 1)
     segs.forEach(([s, e]) => {
       const p = el("path")
-      p.setAttribute("d", ringSegmentPath(s, e, afovBandInner, afovBandOuter))
+      p.setAttribute("d", ringSegmentPath(s, e, bandInner, bandOuter))
       p.setAttribute("fill", fill)
       p.setAttribute("stroke", "none")
-      gClip.appendChild(p)
+      gUnder.appendChild(p)
     })
   }
 
-  drawOverlapBand(counts01, "rgba(255,255,255,0.20)")
-  drawOverlapBand(counts12, "rgba(255,255,255,0.16)")
-  drawOverlapBand(counts20, "rgba(255,255,255,0.12)")
+  drawPairOverlap(0, 1, "rgba(255,255,255,0.50)")
+  drawPairOverlap(1, 2, "rgba(255,255,255,0.40)")
+  drawPairOverlap(2, 0, "rgba(255,255,255,0.30)")
 
-  // AFOV bounds: dashed outer arc AND dashed inner arc (restored band)
+  // AFOV arcs + radials + labels (NOT clipped)
   azInternal.forEach((center, i) => {
-    const origin = origins[i]
-
     const start = normalize(center - afov / 2)
     const end = normalize(center + afov / 2)
 
-    const drawArcAtR = (r) => {
-      splitArcSegments(center, afov).forEach(([s, e]) => {
-        const p = el("path")
-        p.setAttribute("d", arcOnlyPath(s, e, r, origin))
-        p.setAttribute("fill", "none")
-        p.setAttribute("stroke", styles[i].stroke)
-        p.setAttribute("stroke-width", "3")
-        p.setAttribute("stroke-dasharray", "10 8")
-        gClip.appendChild(p)
-      })
-    }
+    splitArcSegments(center, afov).forEach(([s, e]) => {
+      const p = el("path")
+      p.setAttribute("d", arcOnlyPathCentered(s, e, afovArcR))
+      p.setAttribute("fill", "none")
+      p.setAttribute("stroke", styles[i].stroke)
+      p.setAttribute("stroke-width", "3")
+      p.setAttribute("stroke-dasharray", "10 8")
+      p.setAttribute("stroke-linecap", "round")
+      p.setAttribute("stroke-linejoin", "round")
+      p.setAttribute("transform", transforms[i])
+      gOver.appendChild(p)
+    })
 
-    drawArcAtR(afovBandOuter)
-    drawArcAtR(afovBandInner)
-
-    drawRadial(gClip, start, afovBandOuter, origin, styles[i].stroke, true)
-    drawRadial(gClip, end, afovBandOuter, origin, styles[i].stroke, true)
+    drawRadialCentered(gOver, start, bandOuter, styles[i].stroke, true, transforms[i])
+    drawRadialCentered(gOver, end, bandOuter, styles[i].stroke, true, transforms[i])
 
     const labelR = radiusInset + 10
-    drawAngleLabel(group, start, labelR, origin, `${toDisplay(start)}°`, "rgba(255,255,255,0.55)")
-    drawAngleLabel(group, end, labelR, origin, `${toDisplay(end)}°`, "rgba(255,255,255,0.55)")
+    drawAngleLabelCentered(
+      group,
+      start,
+      labelR,
+      `${toDisplay(start)}°`,
+      "rgba(255,255,255,0.55)",
+      transforms[i]
+    )
+    drawAngleLabelCentered(
+      group,
+      end,
+      labelR,
+      `${toDisplay(end)}°`,
+      "rgba(255,255,255,0.55)",
+      transforms[i]
+    )
   })
 
-  const overlapDeg = function overlapDeg(aInt, bInt) {
-    let sum = 0
-    for (let a = 0; a < 360; a++) {
-      if (inSector(a, aInt, afov) && inSector(a, bInt, afov)) sum += 1
-    }
-    return sum
-  }
-
-  const ov01 = overlapDeg(azInternal[0], azInternal[1])
-  const ov12 = overlapDeg(azInternal[1], azInternal[2])
-  const ov20 = overlapDeg(azInternal[2], azInternal[0])
+  const ov01 = overlapDegContinuous(azInternal[0], azInternal[1], afov)
+  const ov12 = overlapDegContinuous(azInternal[1], azInternal[2], afov)
+  const ov20 = overlapDegContinuous(azInternal[2], azInternal[0], afov)
 
   if (onPairOverlap) onPairOverlap({ ov01, ov12, ov20 })
 }
