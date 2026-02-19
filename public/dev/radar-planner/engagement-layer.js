@@ -1,17 +1,11 @@
 // public/dev/radar-planner/engagement-layer.js
 import { worldToSvgY, polarToXY, toInternal, normalize } from "./geometry.js"
+import { RINGS } from "./ring-definitions.js"
 
 const ns = "http://www.w3.org/2000/svg"
 const el = (t) => document.createElementNS(ns, t)
 
 const degToRad = (deg) => (deg * Math.PI) / 180
-
-/* Hardcoded rings (cm) */
-const RINGS = {
-  monitor: { frontCm: 600, backCm: 350, p: 1.4 },
-  arm: { frontCm: 450, backCm: 250, p: 1.6 },
-  speak: { frontCm: 300, backCm: 40, p: 2.0 }
-}
 
 const STYLES = {
   monitor: { fill: "rgba(170,170,170,0.06)", stroke: "rgba(255,255,255,0.20)", dash: "10 8" },
@@ -25,24 +19,7 @@ const normalizeDeg = function normalizeDeg(deg) {
   return a
 }
 
-const cosineWeightedRadius = function cosineWeightedRadius(thetaRad, ring) {
-  const c = Math.cos(thetaRad)
-  const base = (1 + c) / 2
-
-  const pRaw = Number(ring.p)
-  const p = Number.isFinite(pRaw) ? Math.max(0.6, Math.min(6, pRaw)) : 1.6
-
-  const f = Math.pow(base, p)
-
-  const front = Number(ring.frontCm)
-  const back = Number(ring.backCm)
-
-  if (!Number.isFinite(front) || !Number.isFinite(back)) return 0
-
-  return back + ((front - back) * f)
-}
-
-// Uses geometry.js internal-angle polar pipeline
+// Local sampling (relDeg) + render-time rotation
 const ringPathD = function ringPathD({ facingCwDeg, stepDeg, ring }) {
   const step = Math.max(1, Math.min(15, Number(stepDeg) || 3))
   const pts = []
@@ -50,11 +27,11 @@ const ringPathD = function ringPathD({ facingCwDeg, stepDeg, ring }) {
   const cwFromNorth = normalizeDeg(Number(facingCwDeg) || 0)
   const facingInt = toInternal(cwFromNorth)
 
-  for (let rel = 0; rel <= 360; rel += step) {
-    const theta = degToRad(rel)
-    const r = cosineWeightedRadius(theta, ring)
+  for (let relDeg = 0; relDeg <= 360; relDeg += step) {
+    const thetaRad = degToRad(relDeg)
+    const r = ring.radius(thetaRad)
 
-    const aInt = normalize(facingInt + rel)
+    const aInt = normalize(facingInt + relDeg)
     pts.push(polarToXY(aInt, r))
   }
 
@@ -87,7 +64,6 @@ const drawRing = function drawRing(group, { name, facingCwDeg }) {
 
 const drawCharlieSemi = function drawCharlieSemi(group, facingCwDeg) {
   const r = 32
-
   const facing = normalizeDeg(Number(facingCwDeg) || 0)
 
   // Geometry flipped 180°
@@ -112,7 +88,7 @@ Z`
   path.setAttribute("stroke-width", "2")
   group.appendChild(path)
 
-  // Label stays in FRONT and shows FRONT angle value
+  // Label in FRONT (actual facing direction)
   const frontInt = toInternal(facing)
   const tip = polarToXY(frontInt, r + 16)
 
