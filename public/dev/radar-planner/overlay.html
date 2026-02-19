@@ -1,3 +1,4 @@
+<!-- public/dev/radar-planner/overlay.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,69 +12,16 @@
     <div class="panel">
         <h1>Overlay</h1>
 
-        <div class="row">
-            <div class="label">Radar radius (cm)</div>
-            <div class="value">
-                <input id="radarRadiusCm" class="num" type="number" step="10" />
+        <div class="section">
+            <div class="sectionTitle">View</div>
+
+            <div class="row">
+                <div class="label">Zoom</div>
+                <div class="value zoomRow">
+                    <input id="zoom" class="zoom" type="range" min="0.5" max="3" step="0.1" />
+                    <span id="zoomVal" class="zoomVal">1.0×</span>
+                </div>
             </div>
-        </div>
-
-        <div class="row">
-            <div class="label">Zoom</div>
-            <div class="value zoomRow">
-                <input id="zoom" class="zoom" type="range" min="0.5" max="3" step="0.1" />
-                <span id="zoomVal" class="zoomVal">1.0×</span>
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="label">AFOV (deg)</div>
-            <div class="value">
-                <input id="afovInput" class="num" type="number" step="1" />
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="label">AZ R0 (deg, cw)</div>
-            <div class="value">
-                <input id="az0" class="num" type="number" step="1" />
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="label">AZ R1 (deg, cw)</div>
-            <div class="value">
-                <input id="az1" class="num" type="number" step="1" />
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="label">AZ R2 (deg, cw)</div>
-            <div class="value">
-                <input id="az2" class="num" type="number" step="1" />
-            </div>
-        </div>
-
-        <div class="toggles">
-            <label class="toggle">
-                <input id="showWorld" type="checkbox" checked />
-                <span>World layer</span>
-            </label>
-
-            <label class="toggle">
-                <input id="showRadar" type="checkbox" checked />
-                <span>Radar layer</span>
-            </label>
-
-            <label class="toggle">
-                <input id="showOverlap2" type="checkbox" checked />
-                <span>AFOV overlap ≥2</span>
-            </label>
-
-            <label class="toggle">
-                <input id="showOverlap3" type="checkbox" checked />
-                <span>AFOV overlap ≥3</span>
-            </label>
 
             <label class="toggle">
                 <input id="showTicks" type="checkbox" checked />
@@ -81,24 +29,115 @@
             </label>
 
             <label class="toggle">
-                <input id="showAfovRadials" type="checkbox" checked />
-                <span>AFOV radial bounds + labels</span>
+                <input id="showGrid" type="checkbox" checked />
+                <span>Grid (50 cm, bold 100 cm)</span>
             </label>
+        </div>
+
+        <div class="section">
+            <div class="sectionTitle">World layer</div>
 
             <label class="toggle">
+                <input id="showWorld" type="checkbox" checked />
+                <span>Visible</span>
+            </label>
+
+            <label class="toggle indent">
                 <input id="dimWorld" type="checkbox" />
                 <span>Make world less intrusive</span>
             </label>
         </div>
 
-        <div class="row">
-            <div class="label">AFOV overlap ≥2</div>
-            <div id="overlap2Val" class="value"></div>
+        <div class="section">
+            <div class="sectionTitle">Engagement layer</div>
+
+            <label class="toggle">
+                <input id="showEngagement" type="checkbox" checked />
+                <span>Visible</span>
+            </label>
+
+            <div class="row">
+                <div class="label">Charlie facing (deg)</div>
+                <div class="value">
+                    <input id="charlieFacingDeg" class="num" type="number" step="1" />
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="label">Charlie bearing (deg, cw from N)</div>
+                <div id="charlieBearingVal" class="value"></div>
+            </div>
         </div>
 
-        <div class="row">
-            <div class="label">AFOV overlap ≥3</div>
-            <div id="overlap3Val" class="value"></div>
+        <div class="section">
+            <div class="sectionTitle">Radar layer</div>
+
+            <label class="toggle">
+                <input id="showRadar" type="checkbox" checked />
+                <span>Visible</span>
+            </label>
+
+            <div class="row">
+                <div class="label">Radar radius (cm)</div>
+                <div class="value">
+                    <input id="radarRadiusCm" class="num" type="number" step="10" />
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="label">AFOV (deg, max 120)</div>
+                <div class="value">
+                    <input id="afovInput" class="num" type="number" step="1" min="1" max="120" />
+                </div>
+            </div>
+
+            <label class="toggle">
+                <input id="mountRadarsToCharlie" type="checkbox" />
+                <span>Rotate radars when Charlie rotates</span>
+            </label>
+
+            <div class="row">
+                <div class="label">Rig yaw (deg) (R0 to Charlie)</div>
+                <div class="value">
+                    <input id="rigYaw" class="num" type="number" step="1" />
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="label">AZ R0 (deg, cw)</div>
+                <div class="value">
+                    <input id="az0" class="num" type="number" step="1" />
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="label">AZ R1 (deg, cw)</div>
+                <div class="value">
+                    <input id="az1" class="num" type="number" step="1" />
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="label">AZ R2 (deg, cw)</div>
+                <div class="value">
+                    <input id="az2" class="num" type="number" step="1" />
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="label">AFOV overlap R0–R1</div>
+                <div id="overlap01Val" class="value"></div>
+            </div>
+
+            <div class="row">
+                <div class="label">AFOV overlap R1–R2</div>
+                <div id="overlap12Val" class="value"></div>
+            </div>
+
+            <div class="row">
+                <div class="label">AFOV overlap R2–R0</div>
+                <div id="overlap20Val" class="value"></div>
+            </div>
         </div>
     </div>
 

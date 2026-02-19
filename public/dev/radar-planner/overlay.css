@@ -1,3 +1,4 @@
+/* public/dev/radar-planner/overlay.css */
 :root {
     color-scheme: dark;
     --bg: #0b1220;
@@ -29,6 +30,7 @@ html, body {
     border-radius: 12px;
     padding: 12px;
     box-sizing: border-box;
+    overflow: auto;
 }
 
 .canvasPanel {
@@ -48,6 +50,19 @@ h1 {
     font-size: 14px;
     margin: 0 0 10px 0;
     font-weight: 600;
+}
+
+.section {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.sectionTitle {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.70);
+    margin-bottom: 8px;
 }
 
 .row {
@@ -70,19 +85,13 @@ h1 {
 }
 
 .num {
-    width: 110px;
+    width: 120px;
     padding: 6px 8px;
     border-radius: 8px;
     border: 1px solid rgba(255,255,255,0.12);
     background: rgba(0,0,0,0.22);
     color: var(--text);
     outline: none;
-}
-
-.toggles {
-    margin-top: 12px;
-    display: grid;
-    gap: 8px;
 }
 
 .toggle {
@@ -93,6 +102,11 @@ h1 {
     font-size: 12px;
     color: var(--muted);
     user-select: none;
+    padding: 6px 0;
+}
+
+.toggle.indent {
+    padding-left: 18px;
 }
 
 .toggle input {

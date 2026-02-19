@@ -17,7 +17,6 @@ const FILL = {
   door: "url(#patDoor)"
 }
 
-// Default (unchecked) is more vivid. Checked makes it less intrusive.
 const OPACITY = {
   hedge: 0.60,
   roses: 0.60,
@@ -58,41 +57,17 @@ const drawRect = function drawRect(group, obj) {
   }
 }
 
-const drawCharlie = function drawCharlie(group) {
-  const r = 30
-  const facingDeg = 45
-  const startDeg = facingDeg - 90
-  const endDeg = facingDeg + 90
+const drawCharlieDot = function drawCharlieDot(group) {
+  const dot = el("circle")
+  dot.setAttribute("cx", "0")
+  dot.setAttribute("cy", `${worldToSvgY(0)}`)
+  dot.setAttribute("r", "5")
+  dot.setAttribute("fill", "rgba(0,220,255,0.90)")
+  dot.setAttribute("stroke", "rgba(255,255,255,0.50)")
+  dot.setAttribute("stroke-width", "1.5")
+  group.appendChild(dot)
 
-  const p1 = { x: r * Math.cos(startDeg * Math.PI / 180), y: r * Math.sin(startDeg * Math.PI / 180) }
-  const p2 = { x: r * Math.cos(endDeg * Math.PI / 180), y: r * Math.sin(endDeg * Math.PI / 180) }
-
-  const path = el("path")
-  const d = `M 0 ${worldToSvgY(0)}
-L ${p1.x} ${worldToSvgY(p1.y)}
-A ${r} ${r} 0 0 0 ${p2.x} ${worldToSvgY(p2.y)}
-Z`
-
-  path.setAttribute("d", d)
-  path.setAttribute("fill", "rgba(0,220,255,0.38)")
-  path.setAttribute("stroke", "rgba(255,255,255,0.60)")
-  path.setAttribute("stroke-width", "2")
-  group.appendChild(path)
-
-  const fx = r * Math.cos(facingDeg * Math.PI / 180)
-  const fy = r * Math.sin(facingDeg * Math.PI / 180)
-
-  const face = el("line")
-  face.setAttribute("x1", "0")
-  face.setAttribute("y1", `${worldToSvgY(0)}`)
-  face.setAttribute("x2", `${fx}`)
-  face.setAttribute("y2", `${worldToSvgY(fy)}`)
-  face.setAttribute("stroke", "rgba(0,220,255,0.55)")
-  face.setAttribute("stroke-width", "2")
-  face.setAttribute("stroke-dasharray", "6 6")
-  group.appendChild(face)
-
-  addLabel(group, 0, 0, "Charlie")
+  addLabel(group, 0, -18, "Charlie")
 }
 
 const applyWorldTone = function applyWorldTone(group, lessIntrusive) {
@@ -112,11 +87,11 @@ const drawWorldLayer = function drawWorldLayer({ svg, group, dim }) {
 
   applyWorldTone(group, dim)
 
-  drawCharlie(group)
-
   WORLD_OBJECTS.forEach((obj) => {
     if (obj.kind === "rect") drawRect(group, obj)
   })
+
+  drawCharlieDot(group)
 }
 
 export { drawWorldLayer }
