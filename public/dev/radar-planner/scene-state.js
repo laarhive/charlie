@@ -1,8 +1,8 @@
 // public/dev/radar-planner/scene-state.js
 const DEFAULTS = {
-  radarRadiusCm: 500,
+  radarRadiusCm: 600,
   afovDeg: 100,
-  azimuthCwDeg: [0, 85, 275],
+  azimuthCwDeg: [45, 130, 320],
   zoom: 1,
   dimWorld: true,
 
@@ -10,7 +10,7 @@ const DEFAULTS = {
   showTicks: true,
 
   showEngagement: true,
-  charlieFacingDeg: 34,
+  charlieFacingDeg: 54,
 
   mountRadarsToCharlie: false,
 

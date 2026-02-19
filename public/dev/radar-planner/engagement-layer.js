@@ -4,77 +4,102 @@ import { worldToSvgY, polarToXY, toInternal, normalize } from "./geometry.js"
 const ns = "http://www.w3.org/2000/svg"
 const el = (t) => document.createElementNS(ns, t)
 
+const degToRad = (deg) => (deg * Math.PI) / 180
+
+/* Hardcoded rings (cm) */
+const RINGS = {
+  monitor: { frontCm: 600, backCm: 350, p: 1.4 },
+  arm: { frontCm: 450, backCm: 250, p: 1.6 },
+  speak: { frontCm: 300, backCm: 40, p: 2.0 }
+}
+
+const STYLES = {
+  monitor: { fill: "rgba(170,170,170,0.06)", stroke: "rgba(255,255,255,0.20)", dash: "10 8" },
+  arm: { fill: "rgba(255,255,255,0.08)", stroke: "rgba(255,255,255,0.32)", dash: "8 7" },
+  speak: { fill: "rgba(0,220,255,0.12)", stroke: "rgba(0,220,255,0.45)", dash: null }
+}
+
 const normalizeDeg = function normalizeDeg(deg) {
-  let a = Number(deg)
-  if (!Number.isFinite(a)) a = 0
-  a = a % 360
+  let a = deg % 360
   if (a < 0) a += 360
   return a
 }
 
-// relDeg: 0 front, ±90 sides, 180 back
-const radiusCmAtRel = function radiusCmAtRel(relDeg, ring) {
+const cosineWeightedRadius = function cosineWeightedRadius(thetaRad, ring) {
+  const c = Math.cos(thetaRad)
+  const base = (1 + c) / 2
+
+  const pRaw = Number(ring.p)
+  const p = Number.isFinite(pRaw) ? Math.max(0.6, Math.min(6, pRaw)) : 1.6
+
+  const f = Math.pow(base, p)
+
   const front = Number(ring.frontCm)
-  const side = Number(ring.sideCm)
   const back = Number(ring.backCm)
-  const p = Math.max(1.0, Math.min(6.0, Number(ring.p)))
 
-  const c = Math.cos((relDeg * Math.PI) / 180)           // 1..-1
-  const s = Math.abs(Math.sin((relDeg * Math.PI) / 180)) // 0..1
+  if (!Number.isFinite(front) || !Number.isFinite(back)) return 0
 
-  const t = (c + 1) / 2
-  const fb = back + (front - back) * Math.pow(t, p)
-
-  const w = Math.pow(s, 1.6)
-  return fb * (1 - w) + side * w
+  return back + ((front - back) * f)
 }
 
-const ringPathD = function ringPathD(facingCwDeg, ring) {
+// Uses geometry.js internal-angle polar pipeline
+const ringPathD = function ringPathD({ facingCwDeg, stepDeg, ring }) {
+  const step = Math.max(1, Math.min(15, Number(stepDeg) || 3))
   const pts = []
-  const step = 1.5
 
-  for (let rel = -180; rel <= 180; rel += step) {
-    const absCw = normalizeDeg(facingCwDeg + rel)
-    const r = radiusCmAtRel(rel, ring)
-    const aInt = toInternal(absCw)
-    const p = polarToXY(aInt, r)
-    pts.push(p)
+  const cwFromNorth = normalizeDeg(Number(facingCwDeg) || 0)
+  const facingInt = toInternal(cwFromNorth)
+
+  for (let rel = 0; rel <= 360; rel += step) {
+    const theta = degToRad(rel)
+    const r = cosineWeightedRadius(theta, ring)
+
+    const aInt = normalize(facingInt + rel)
+    pts.push(polarToXY(aInt, r))
   }
 
   if (pts.length < 2) return ""
 
   let d = `M ${pts[0].x} ${worldToSvgY(pts[0].y)}`
   for (let i = 1; i < pts.length; i++) {
-    d += ` L ${pts[i].x} ${worldToSvgY(pts[i].y)}`
+    const p = pts[i]
+    d += ` L ${p.x} ${worldToSvgY(p.y)}`
   }
   d += " Z"
+
   return d
 }
 
-const drawRing = function drawRing(group, facingCwDeg, ring, fill, stroke) {
+const drawRing = function drawRing(group, { name, facingCwDeg }) {
+  const ring = RINGS[name]
+  const style = STYLES[name]
+
   const p = el("path")
-  p.setAttribute("d", ringPathD(facingCwDeg, ring))
-  p.setAttribute("fill", fill)
-  p.setAttribute("stroke", stroke)
+  p.setAttribute("d", ringPathD({ facingCwDeg, stepDeg: 3, ring }))
+  p.setAttribute("fill", style.fill)
+  p.setAttribute("stroke", style.stroke)
   p.setAttribute("stroke-width", "2")
-  p.setAttribute("stroke-linejoin", "round")
-  p.setAttribute("stroke-linecap", "round")
+
+  if (style.dash) p.setAttribute("stroke-dasharray", style.dash)
+
   group.appendChild(p)
 }
 
 const drawCharlieSemi = function drawCharlieSemi(group, facingCwDeg) {
   const r = 32
 
-  const startCw = normalizeDeg(facingCwDeg - 90)
-  const endCw = normalizeDeg(facingCwDeg + 90)
+  const facing = normalizeDeg(Number(facingCwDeg) || 0)
 
-  const s = toInternal(startCw)
-  const e = toInternal(endCw)
+  // Geometry flipped 180°
+  const flippedFacing = normalizeDeg(facing + 180)
+  const centerInt = toInternal(flippedFacing)
 
-  const p1 = polarToXY(s, r)
-  const p2 = polarToXY(e, r)
+  const startInt = normalize(centerInt - 90)
+  const endInt = normalize(centerInt + 90)
 
-  // internal angles increase CCW; we want the shorter arc (180°)
+  const p1 = polarToXY(startInt, r)
+  const p2 = polarToXY(endInt, r)
+
   const d = `M 0 ${worldToSvgY(0)}
 L ${p1.x} ${worldToSvgY(p1.y)}
 A ${r} ${r} 0 0 1 ${p2.x} ${worldToSvgY(p2.y)}
@@ -87,7 +112,9 @@ Z`
   path.setAttribute("stroke-width", "2")
   group.appendChild(path)
 
-  const tip = polarToXY(toInternal(facingCwDeg), r + 16)
+  // Label stays in FRONT and shows FRONT angle value
+  const frontInt = toInternal(facing)
+  const tip = polarToXY(frontInt, r + 16)
 
   const txt = el("text")
   txt.setAttribute("x", `${tip.x}`)
@@ -96,12 +123,12 @@ Z`
   txt.setAttribute("dominant-baseline", "middle")
   txt.setAttribute("fill", "rgba(255,255,255,0.72)")
   txt.setAttribute("font-size", "12")
-  txt.textContent = `${normalizeDeg(facingCwDeg)}°`
+  txt.textContent = `${facing}°`
   group.appendChild(txt)
 }
 
 const drawFacingLine = function drawFacingLine(group, facingCwDeg) {
-  const aInt = toInternal(facingCwDeg)
+  const aInt = toInternal(normalizeDeg(Number(facingCwDeg) || 0))
   const tip = polarToXY(aInt, 72)
 
   const l = el("line")
@@ -119,19 +146,14 @@ const drawEngagementLayer = function drawEngagementLayer({ group, show, charlieF
   group.innerHTML = ""
   if (!show) return
 
-  const facing = normalizeDeg(charlieFacingDeg)
+  const facingCwDeg = Number.isFinite(Number(charlieFacingDeg)) ? Number(charlieFacingDeg) : 0
 
-  // Keep hardcoded rings
-  const monitor = { frontCm: 600, sideCm: 260, backCm: 180, p: 1.6 }
-  const arm = { frontCm: 420, sideCm: 180, backCm: 120, p: 2.0 }
-  const speak = { frontCm: 300, sideCm: 120, backCm: 60, p: 2.8 }
+  drawRing(group, { name: "monitor", facingCwDeg })
+  drawRing(group, { name: "arm", facingCwDeg })
+  drawRing(group, { name: "speak", facingCwDeg })
 
-  drawRing(group, facing, monitor, "rgba(255,255,255,0.04)", "rgba(255,255,255,0.18)")
-  drawRing(group, facing, arm, "rgba(255,255,255,0.06)", "rgba(255,255,255,0.24)")
-  drawRing(group, facing, speak, "rgba(0,220,255,0.10)", "rgba(0,220,255,0.40)")
-
-  drawCharlieSemi(group, facing)
-  drawFacingLine(group, facing)
+  drawCharlieSemi(group, facingCwDeg)
+  drawFacingLine(group, facingCwDeg)
 }
 
 export { drawEngagementLayer }
