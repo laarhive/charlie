@@ -56,6 +56,20 @@ Optional:
 }
 ```
 
+### ld2450 radar pinned to hub port (Windows, Debian)
+```js
+{
+  id: 'ch340A',
+  domain: 'example',
+  kind: 'exampleKind',
+  protocol: {
+    type: 'serial',
+    usbId: { vid: '1a86', pid: '7523', hubPosition: '3' },
+    baudRate: 115200
+  }
+}
+```
+
 ### ld2450 radar (sensor)
 ```js
 {

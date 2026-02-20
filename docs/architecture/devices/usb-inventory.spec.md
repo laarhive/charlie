@@ -46,7 +46,9 @@ Each USB device is identified by a normalized **usbId**:
 {
   vid: string,     // lowercase hex, no prefix (e.g. "10c4")
   pid: string,     // lowercase hex, no prefix (e.g. "ea60")
-  serial?: string  // optional, trimmed; case preserved
+  serial?: string,      // optional, trimmed; case preserved
+  hubPosition?: string, // optional, digits; derived from USB topology (Windows + Linux)
+  iface?: string        // optional, lowercase hex byte (e.g. "00")
 }
 ```
 
@@ -54,6 +56,12 @@ Normalization rules:
 - `vid` / `pid` are lowercase hex strings
 - no `0x` prefix
 - `serial` is optional and not modified beyond trimming
+- `hubPosition` is optional; must be digits; leading zeros are normalized away
+- `iface` is optional; must be a 2-hex-digit string
+
+Notes:
+- `hubPosition` is best-effort and may not be available on all hosts.
+- `hubPosition` is not globally unique: if multiple identical adapters exist on different hubs but same port index, the match can still be ambiguous.
 
 ---
 
@@ -173,4 +181,3 @@ Notes:
 - Scan interval should be short but configurable
 
 Platform differences are **fully encapsulated** inside UsbInventory.
-

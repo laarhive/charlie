@@ -1,0 +1,178 @@
+// config/devices/devices.json5
+[
+  {
+    id: 'gpioWatchdog1',
+    kind: 'gpioWatchdogLoopback',
+    domain: 'main',
+    modes: ['rpi4'],
+    state: 'active',
+    publishAs: 'gpioWatchdog1',
+
+    protocol: {
+      type: 'gpio',
+      chip: 'gpiochip0',
+      outLine: 17,
+      inLine: 27,
+      consumerTag: 'charlie',
+      reclaimOnBusy: true
+    },
+
+    params: {
+      toggleMs: 1000,
+      bias: 'pull-down'
+    }
+  },
+
+  {
+    id: 'buttonVirt1',
+    publishAs: 'button1',
+
+    domain: 'button',
+    role: 'button',
+
+    kind: 'buttonEdge',
+    protocol: { type: 'virt', initial: false },
+
+    modes: ['win11'],
+    state: 'active',
+    params: { cooldownMs: 250 }
+  },
+
+  {
+    id: 'buttonLine26',
+    publishAs: 'buttonGpioLine26',
+
+    domain: 'button',
+    role: 'button',
+
+    kind: 'buttonEdge',
+    protocol: { type: 'gpio', chip: 'gpiochip0', line: 26, activeHigh: false },
+
+    modes: ['rpi4'],
+    state: 'active',
+    params: { cooldownMs: 250 }
+  },
+
+  {
+    id: 'LD2450A',
+    publishAs: 'LD2450A',
+    domain: 'presence',
+    kind: 'ld2450Radar',
+    protocol: {
+      type: 'serial',
+      usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-93-LD2450A' },
+      baudRate: 256000,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+      highWaterMark: 2400,
+    },
+    modes: ['rpi4', 'win11'],
+    state: 'active'
+  },
+
+  {
+    id: 'LD2450B',
+    publishAs: 'LD2450B',
+    domain: 'presence',
+    kind: 'ld2450Radar',
+    protocol: {
+      type: 'serial',
+      usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-37-LD2450B' },
+      baudRate: 256000,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+      //      highWaterMark: 2400,
+    },
+    modes: ['rpi4', 'win11'],
+    state: 'active'
+  },
+
+  {
+    id: 'LD2450C',
+    publishAs: 'LD2450C',
+    domain: 'presence',
+    kind: 'ld2450Radar',
+    protocol: {
+      type: 'serial',
+      usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-84-LD2450C' },
+      baudRate: 256000,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+      //      highWaterMark: 2400,
+    },
+    modes: ['rpi4', 'win11'],
+    state: 'active'
+  },
+
+  {
+    id: 'LD2450D',
+    publishAs: 'LD2450D',
+    domain: 'presence',
+    kind: 'ld2450Radar',
+    protocol: {
+      type: 'serial',
+      usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-61-LD2450D' },
+      baudRate: 256000,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+      //      highWaterMark: 2400,
+    },
+    modes: ['rpi4', 'win11'],
+    state: 'active'
+  },
+
+  {
+    id: 'LD2410A',
+    publishAs: 'LD2410A',
+    domain: 'presence',
+    kind: 'ld2410Radar',
+    protocol: {
+      type: 'serial',
+      usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-76-LD2410A' },
+      baudRate: 256000,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+    },
+    modes: ['rpi4', 'win11'],
+    state: 'active'
+  },
+
+  {
+    id: 'LD2410C',
+    publishAs: 'LD2410C',
+    domain: 'presence',
+    kind: 'ld2410Radar',
+    protocol: {
+      type: 'serial',
+      usbId: { vid: '10c4', pid: 'ea60', serial: 'CP2102-15-LD2410C' },
+      baudRate: 256000,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+    },
+    modes: ['rpi4', 'win11'],
+    state: 'active'
+  },
+
+  {
+    id: 'statusLed1',
+    publishAs: 'statusLed',
+    domain: 'led',
+    kind: 'ws2812Led',
+    protocol: {
+      type: 'serial',
+      usbId: { vid: '2e8a', pid: '101f', serial: '6&68C07EB&0&0002' },
+      baudRate: 115200,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+    },
+    modes: ['rpi4', 'win11'],
+    state: 'active'
+  }
+]

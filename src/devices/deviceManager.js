@@ -573,11 +573,17 @@ export class DeviceManager {
     const aSerial = (cfgUsbId?.serial !== undefined && cfgUsbId?.serial !== null)
       ? String(cfgUsbId.serial).trim()
       : null
+    const aHubPosition = (cfgUsbId?.hubPosition !== undefined && cfgUsbId?.hubPosition !== null)
+      ? String(cfgUsbId.hubPosition).trim()
+      : null
 
     const bVid = String(runtimeUsbId?.vid || '').trim().toLowerCase().replace(/^0x/, '')
     const bPid = String(runtimeUsbId?.pid || '').trim().toLowerCase().replace(/^0x/, '')
     const bSerial = (runtimeUsbId?.serial !== undefined && runtimeUsbId?.serial !== null)
       ? String(runtimeUsbId.serial).trim()
+      : null
+    const bHubPosition = (runtimeUsbId?.hubPosition !== undefined && runtimeUsbId?.hubPosition !== null)
+      ? String(runtimeUsbId.hubPosition).trim()
       : null
 
     if (!aVid || !aPid || !bVid || !bPid) return false
@@ -585,6 +591,10 @@ export class DeviceManager {
 
     if (aSerial) {
       return aSerial === bSerial
+    }
+
+    if (aHubPosition) {
+      return aHubPosition === bHubPosition
     }
 
     return true

@@ -24,12 +24,43 @@ const normalizeIface = function normalizeIface(value) {
   return m ? s : null
 }
 
+const normalizeHubPosition = function normalizeHubPosition(value) {
+  if (value === undefined || value === null) return null
+  const s = String(value || '').trim()
+  if (!s) return null
+
+  const m = s.match(/^\d+$/)
+  if (!m) return null
+
+  const n = Number.parseInt(s, 10)
+  if (!Number.isFinite(n)) return null
+  return String(n)
+}
+
 const extractIfaceFromLinuxById = function extractIfaceFromLinuxById(byIdPath) {
   const s = String(byIdPath || '')
   if (!s) return null
 
   const m = s.match(/-if([0-9a-f]{2})/i)
   return m ? m[1].toLowerCase() : null
+}
+
+const extractHubPositionFromLinuxByPath = function extractHubPositionFromLinuxByPath(byPath) {
+  const s = String(byPath || '')
+  if (!s) return null
+
+  // Common /dev/serial/by-path name shapes:
+  // - "...-usb-0:3:1.0-port0"     -> 3
+  // - "...-usb-0:1.2.3:1.0-port0" -> 3
+  const m = s.match(/usb-\d+:(\d+(?:\.\d+)*):\d+\.\d+/i)
+  if (!m) return null
+
+  const chain = String(m[1] || '').trim()
+  if (!chain) return null
+
+  const parts = chain.split('.').filter(Boolean)
+  const last = parts.length > 0 ? parts[parts.length - 1] : null
+  return normalizeHubPosition(last)
 }
 
 const extractIfaceFromPnpId = function extractIfaceFromPnpId(pnpId) {
@@ -40,12 +71,22 @@ const extractIfaceFromPnpId = function extractIfaceFromPnpId(pnpId) {
   return m ? m[1].toLowerCase() : null
 }
 
+const extractHubPositionFromWindowsInstanceId = function extractHubPositionFromWindowsInstanceId(instanceId) {
+  const s = String(instanceId || '')
+  if (!s) return null
+
+  // Common Windows instance-id suffix for USB devices behind a hub: "...&0&3"
+  const m = s.match(/&0&(\d+)$/i)
+  return m ? normalizeHubPosition(m[1]) : null
+}
+
 const makeKey = function makeKey(usbId) {
   const vid = usbId?.vid || ''
   const pid = usbId?.pid || ''
   const serial = usbId?.serial || ''
+  const hubPosition = usbId?.hubPosition || ''
   const iface = usbId?.iface || ''
-  return `${vid}:${pid}:${serial}:${iface}`
+  return `${vid}:${pid}:${serial}:${hubPosition}:${iface}`
 }
 
 const stableStringifyEndpoints = function stableStringifyEndpoints(endpoints) {
@@ -74,6 +115,33 @@ const stableStringifyEndpoints = function stableStringifyEndpoints(endpoints) {
 
 const readLinuxByIdMap = async function readLinuxByIdMap() {
   const base = '/dev/serial/by-id'
+  const map = new Map()
+
+  let entries = []
+  try {
+    entries = await fs.readdir(base)
+  } catch {
+    return map
+  }
+
+  for (const name of entries) {
+    const full = path.join(base, name)
+
+    try {
+      const target = await fs.realpath(full)
+      if (target) {
+        map.set(target, full)
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return map
+}
+
+const readLinuxByPathMap = async function readLinuxByPathMap() {
+  const base = '/dev/serial/by-path'
   const map = new Map()
 
   let entries = []
@@ -169,32 +237,14 @@ export class UsbInventory extends EventEmitter {
     if (!norm.ok) return norm
 
     const want = norm.usbId
-    const keyPrefix = `${want.vid}:${want.pid}:`
 
     const matches = []
-    for (const [k, v] of this.#byKey.entries()) {
-      if (!k.startsWith(keyPrefix)) continue
-
-      if (want.serial) {
-        const wantSerialKeyPrefix = `${want.vid}:${want.pid}:${want.serial}:`
-
-        if (!k.startsWith(wantSerialKeyPrefix)) continue
-
-        if (want.iface) {
-          const wantKey = makeKey(want)
-          if (k === wantKey) matches.push(v)
-          continue
-        }
-
-        matches.push(v)
-        continue
-      }
-
-      if (want.iface) {
-        const wantIfaceSuffix = `:${want.iface}`
-        if (!k.endsWith(wantIfaceSuffix)) continue
-      }
-
+    for (const v of this.#byKey.values()) {
+      const have = v.usbId || {}
+      if (have.vid !== want.vid || have.pid !== want.pid) continue
+      if (want.serial && have.serial !== want.serial) continue
+      if (want.hubPosition && have.hubPosition !== want.hubPosition) continue
+      if (want.iface && have.iface !== want.iface) continue
       matches.push(v)
     }
 
@@ -207,6 +257,13 @@ export class UsbInventory extends EventEmitter {
     }
 
     const endpoints = matches[0].endpoints || []
+    // If multiple endpoints match the same {vid,pid,serial?,iface?}, we cannot safely pick one.
+    // This happens in practice for USB-serial adapters that expose no unique serial number.
+    if (endpoints.length !== 1) {
+      return endpoints.length === 0
+        ? { ok: false, error: 'USB_NOT_FOUND' }
+        : { ok: false, error: 'USB_AMBIGUOUS' }
+    }
     const best = endpoints.find((e) => e.serialPath) || endpoints[0]
 
     return { ok: true, serialPath: best?.serialPath || null }
@@ -215,6 +272,7 @@ export class UsbInventory extends EventEmitter {
   async #scanOnce() {
     const ports = await SerialPort.list()
     const byIdMap = this.#platform === 'linux' ? await readLinuxByIdMap() : new Map()
+    const byPathMap = this.#platform === 'linux' ? await readLinuxByPathMap() : new Map()
 
     const next = new Map()
 
@@ -226,9 +284,16 @@ export class UsbInventory extends EventEmitter {
 
       const ttyPath = String(p.path || '').trim() || null
       const linuxById = (this.#platform === 'linux' && ttyPath) ? byIdMap.get(ttyPath) : null
+      const linuxByPath = (this.#platform === 'linux' && ttyPath) ? byPathMap.get(ttyPath) : null
 
       const serial = normalizeSerial(p.serialNumber)
       const pnpId = this.#platform === 'windows' ? (String(p.pnpId || '').trim() || null) : null
+      let hubPosition = null
+      if (this.#platform === 'windows') {
+        hubPosition = extractHubPositionFromWindowsInstanceId(serial || pnpId)
+      } else if (this.#platform === 'linux') {
+        hubPosition = extractHubPositionFromLinuxByPath(linuxByPath)
+      }
 
       const ifaceFromLinux = this.#platform === 'linux' ? extractIfaceFromLinuxById(linuxById) : null
       const ifaceFromWindows = this.#platform === 'windows' ? extractIfaceFromPnpId(pnpId) : null
@@ -238,6 +303,7 @@ export class UsbInventory extends EventEmitter {
         vid,
         pid,
         ...(serial ? { serial } : {}),
+        ...(hubPosition ? { hubPosition } : {}),
         ...(iface ? { iface } : {}),
       }
 
@@ -249,6 +315,8 @@ export class UsbInventory extends EventEmitter {
           manufacturer: p.manufacturer || undefined,
           product: p.product || undefined,
           pnpId: pnpId || undefined,
+          byPath: linuxByPath || undefined,
+          hubPosition: hubPosition || undefined,
           iface: iface || undefined,
         },
       }
@@ -312,6 +380,7 @@ export class UsbInventory extends EventEmitter {
     const vid = normalizeHex(usbId.vid)
     const pid = normalizeHex(usbId.pid)
     const serial = normalizeSerial(usbId.serial)
+    const hubPosition = normalizeHubPosition(usbId.hubPosition)
     const iface = normalizeIface(usbId.iface)
 
     if (!vid || !pid) {
@@ -324,6 +393,7 @@ export class UsbInventory extends EventEmitter {
         vid,
         pid,
         ...(serial ? { serial } : {}),
+        ...(hubPosition ? { hubPosition } : {}),
         ...(iface ? { iface } : {}),
       },
     }
