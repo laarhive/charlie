@@ -110,7 +110,7 @@ export const decodeLd2460TrackingFrames = function decodeLd2460TrackingFrames(bu
 
       const target = {
         id: t + 1,
-        xMm: decodePosMm(xRaw),
+        xMm: -decodePosMm(xRaw),
         yMm: decodePosMm(yRaw),
       }
 
