@@ -112,11 +112,6 @@ export const decodeLd2460TrackingFrames = function decodeLd2460TrackingFrames(bu
         id: t + 1,
         xMm: decodePosMm(xRaw),
         yMm: decodePosMm(yRaw),
-
-        // LD2460 report frame (per provided table) only carries X/Y.
-        // Keep shape aligned with LD2450 targets.
-        speedCms: 0,
-        resolutionMm: 0,
       }
 
       target.valid = isValidByRule(target, validRule)
