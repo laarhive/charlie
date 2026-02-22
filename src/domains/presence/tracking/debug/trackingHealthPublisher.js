@@ -186,13 +186,21 @@ export class TrackingHealthPublisher {
     const expected = Number(snapshotMeta?.radarsExpected) || 0
     const fresh = Number(snapshotMeta?.radarsFresh) || 0
     const adv = Number(snapshotMeta?.radarsAdvancedCount) || 0
+    const stuckTicks = Number(snapshotMeta?.stuckTicks) || 0
+    const noAdvanceGraceTicksCfg = Number(this.#cfg?.tracking?.health?.noAdvanceGraceTicks ?? 2)
+    const noAdvanceGraceTicks = Number.isFinite(noAdvanceGraceTicksCfg) && noAdvanceGraceTicksCfg > 0
+      ? Math.floor(noAdvanceGraceTicksCfg)
+      : 2
 
     if (degraded) {
       degradedList.push({ code: 'PARTIAL_SNAPSHOT', details: { fresh, expected } })
     }
 
-    if (fresh > 0 && expected > 0 && adv === 0) {
-      warnings.push({ code: 'NO_ADVANCE_WHILE_FRESH', details: { fresh, expected } })
+    if (fresh > 0 && expected > 0 && adv === 0 && stuckTicks >= noAdvanceGraceTicks) {
+      warnings.push({
+        code: 'NO_ADVANCE_WHILE_FRESH',
+        details: { fresh, expected, stuckTicks, noAdvanceGraceTicks },
+      })
     }
 
     const lagP95 = Number(tickLag?.tickLagMsP95) || 0
