@@ -9,9 +9,9 @@
     // 90° = East (right)
     // 180° = South (back)
     // 270° = West (left)
-    radarAzimuthDeg: [0, 75, 285], //15
+    radarAzimuthDeg: [0, 90, 270],
     radarFovDeg: 120,
-    tubeDiameterMm: 100,
+    tubeDiameterMm: 103,
 
     ld2450: [
       { publishAs: 'LD2450A', enabled: true }, // radarId 0

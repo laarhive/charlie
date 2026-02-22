@@ -54,13 +54,14 @@
   },
 
   {
-    id: 'LD2460A',
-    publishAs: 'LD2460A',
+    id: 'LD2450A',
+    publishAs: 'LD2450A',
     domain: 'presence',
     kind: 'ld2460Radar',
     protocol: {
       type: 'serial',
-      usbId: { vid: '1a86', pid: '7523', hubPosition: '1' },
+      // 4th hub port from top
+      usbId: { vid: '1a86', pid: '7523', hubPosition: '2' },
       baudRate: 115200,
       dataBits: 8,
       stopBits: 1,
@@ -69,7 +70,40 @@
     modes: ['rpi4', 'win11'],
     state: 'active'
   },
-
+  {
+    id: 'LD2450B',
+    publishAs: 'LD2450B',
+    domain: 'presence',
+    kind: 'ld2460Radar',
+    protocol: {
+      type: 'serial',
+      // 3rd hub port from top
+      usbId: { vid: '1a86', pid: '7523', hubPosition: '3' },
+      baudRate: 115200,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+    },
+    modes: ['rpi4', 'win11'],
+    state: 'active'
+  },
+  {
+    id: 'LD2450C',
+    publishAs: 'LD2450C',
+    domain: 'presence',
+    kind: 'ld2460Radar',
+    protocol: {
+      type: 'serial',
+      // 2nd hub port from top
+      usbId: { vid: '1a86', pid: '7523', hubPosition: '4' },
+      baudRate: 115200,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+    },
+    modes: ['rpi4', 'win11'],
+    state: 'active'
+  },
   {
     id: 'statusLed1',
     publishAs: 'statusLed',
