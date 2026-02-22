@@ -168,8 +168,6 @@ export class Ld2450IngestAdapter {
         slotId: Number(t.id),
         xMm: Number(t.xMm) || 0,
         yMm: Number(t.yMm) || 0,
-        speedMmS: Number.isFinite(Number(t.speedCms)) ? Number(t.speedCms) * 10 : 0,
-        resolutionMm: Number(t.resolutionMm) || 0,
       }))
 
     const tracks = detections.map((d) => {
@@ -221,7 +219,6 @@ export class Ld2450IngestAdapter {
 
         vxMmS: 0,
         vyMmS: 0,
-        speedMmS: Math.abs(d.speedMmS),
 
         ageMs: 0,
         lastSeenMs: 0,
