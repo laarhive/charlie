@@ -61,6 +61,8 @@ const fmtM = function fmtM(mm) {
   return (n / 1000).toFixed(2)
 }
 
+const MAX_TARGETS_PER_RADAR = 5
+
 const renderSidebar = function renderSidebar({ cfg, state }) {
   const layoutInfo = byId('layoutInfo')
   const tracksTable = byId('tracksTable')
@@ -77,7 +79,7 @@ rMaxMm: ${cfg.draw.rMaxMm}`
 
   const stats = state.getStats()
 
-  // Targets panel: only LD2450A/B/C, show ts + per-target dist
+  // Targets panel: LD2450A/B/C, show ts + per-target dist (up to 5 slots)
   const radarLines = []
   const perRadar = [...stats.lastLd2450ByRadar.entries()]
     .sort((a, b) => a[0] - b[0])
@@ -89,7 +91,7 @@ rMaxMm: ${cfg.draw.rMaxMm}`
     radarLines.push(`${name} ts=${x.ts} valid=${x.validCount}`)
 
     const targets = Array.isArray(x.targets) ? x.targets : []
-    for (const t of targets.slice(0, 3)) {
+    for (const t of targets.slice(0, MAX_TARGETS_PER_RADAR)) {
       radarLines.push(`  T${t.localId} dist=${fmtM(t.distMm)}m`)
     }
   }

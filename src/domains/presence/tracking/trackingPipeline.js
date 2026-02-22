@@ -190,7 +190,7 @@ export class TrackingPipeline {
       this.#health.noteSanity('recvLagHuge', { radarId, recvLagMs, hugeRecvLagMs })
     }
 
-    const slotCountMax = Number(this.#cfg?.tracking?.health?.slotCountMax ?? 3)
+    const slotCountMax = Number(this.#cfg?.tracking?.health?.slotCountMax ?? 5)
     const slotCount = Number(p?.meta?.slotCount)
     if (Number.isFinite(slotCountMax) && slotCountMax > 0 && Number.isFinite(slotCount) && slotCount > slotCountMax) {
       this.#health.noteSanity('slotCountTooHigh', { radarId, slotCount, slotCountMax })

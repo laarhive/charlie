@@ -15,11 +15,13 @@ export class PresenceRenderer {
   /* 4 reserved base hues for raw targets: R, G, B, (4th = amber) */
   #rawBaseHueByRadar = [0, 120, 240, 45]
 
-  /* 3 nuanced shades per radar (same base hue, different lightness/alpha) */
+  /* 5 nuanced shades per radar (same base hue, different lightness/alpha) */
   #rawShadeBySlot = [
     { s: 95, l: 58, a: 0.90 },
     { s: 90, l: 50, a: 0.75 },
     { s: 85, l: 42, a: 0.60 },
+    { s: 82, l: 36, a: 0.52 },
+    { s: 80, l: 30, a: 0.46 },
   ]
 
   constructor({ canvas, cfg }) {
@@ -122,7 +124,7 @@ export class PresenceRenderer {
 
     const i = Math.round(n) - 1
     if (i < 0) return 0
-    if (i > 2) return 2
+    if (i > 4) return 4
     return i
   }
 
