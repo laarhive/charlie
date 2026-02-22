@@ -61,12 +61,6 @@ const fmtM = function fmtM(mm) {
   return (n / 1000).toFixed(2)
 }
 
-const fmtSpeed = function fmtSpeed(mmS) {
-  const n = Number(mmS)
-  if (!Number.isFinite(n)) return '-'
-  return (n / 1000).toFixed(2)
-}
-
 const renderSidebar = function renderSidebar({ cfg, state }) {
   const layoutInfo = byId('layoutInfo')
   const tracksTable = byId('tracksTable')
@@ -83,7 +77,7 @@ rMaxMm: ${cfg.draw.rMaxMm}`
 
   const stats = state.getStats()
 
-  // Targets panel: only LD2450A/B/C, show ts + per-target dist/speed
+  // Targets panel: only LD2450A/B/C, show ts + per-target dist
   const radarLines = []
   const perRadar = [...stats.lastLd2450ByRadar.entries()]
     .sort((a, b) => a[0] - b[0])
@@ -96,7 +90,7 @@ rMaxMm: ${cfg.draw.rMaxMm}`
 
     const targets = Array.isArray(x.targets) ? x.targets : []
     for (const t of targets.slice(0, 3)) {
-      radarLines.push(`  T${t.localId} dist=${fmtM(t.distMm)}m sp=${fmtSpeed(t.speedMmS)}m/s`)
+      radarLines.push(`  T${t.localId} dist=${fmtM(t.distMm)}m`)
     }
   }
 
@@ -253,6 +247,21 @@ const main = async function main() {
   btnFreeze.onclick = () => {
     frozen = !frozen
     setFreezeUi()
+  }
+
+  btnClearTrails.onclick = () => {
+    state.clearPlotData()
+
+    renderer.render({
+      measurements: state.getMeasurements(),
+      tracks: state.getTracks(),
+      rawTrails: state.getRawTrails(),
+      trackTrails: state.getTrackTrails(),
+    })
+
+    const s = state.getStats()
+    statLine.textContent = `raw=${s.measCount} tracks=${s.trackCount}`
+    renderSidebar({ cfg: cfgPresence, state })
   }
 
   tglConnect.onchange = () => {

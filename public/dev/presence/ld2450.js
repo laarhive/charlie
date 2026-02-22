@@ -9,7 +9,5 @@ export const parseLd2450Detections = function parseLd2450Detections(frame) {
       localId: t.id,
       xMm: Number(t.xMm) || 0,
       yMm: Number(t.yMm) || 0,
-      speedMmS: Number.isFinite(Number(t.speedCms)) ? Number(t.speedCms) * 10 : 0,
-      resolutionMm: Number(t.resolutionMm) || 0,
     }))
 }

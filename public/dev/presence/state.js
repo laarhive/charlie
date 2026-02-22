@@ -11,7 +11,7 @@ const emptyStats = function emptyStats() {
     measCount: 0,
     trackCount: 0,
 
-    // radarId -> { ts, validCount, publishAs, targets: [{ localId, distMm, speedMmS }] }
+    // radarId -> { ts, validCount, publishAs, targets: [{ localId, distMm }] }
     lastLd2450ByRadar: new Map(),
   }
 }
@@ -113,6 +113,15 @@ export class PresenceUiState {
     this.#trackTrailById.clear()
   }
 
+  clearPlotData() {
+    this.#measurements = []
+    this.#tracks = []
+    this.#stats.lastLd2450ByRadar.clear()
+    this.#stats.measCount = 0
+    this.#stats.trackCount = 0
+    this.clearTrails()
+  }
+
   #radarOriginWorldMm = (radarId) => {
     const az = Array.isArray(this.#cfg?.layout?.radarAzimuthDeg) ? this.#cfg.layout.radarAzimuthDeg : []
     const tubeDiameterMm = Number(this.#cfg?.layout?.tubeDiameterMm) || 100
@@ -167,7 +176,6 @@ export class PresenceUiState {
       targetsForPanel.push({
         localId: d.localId,
         distMm,
-        speedMmS: d.speedMmS,
       })
 
       const m = {
@@ -177,8 +185,6 @@ export class PresenceUiState {
         localId: d.localId,
         xMm: w.xMm,
         yMm: w.yMm,
-
-        speedMmS: d.speedMmS,
       }
 
       this.#measurements.push(m)

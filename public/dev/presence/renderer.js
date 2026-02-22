@@ -275,6 +275,36 @@ export class PresenceRenderer {
     return 10 - (22 * t) // slow => +10, fast => -12
   }
 
+  #drawArrowMarker({ ctx, x, y, ux, uy, sizePx }) {
+    const len = Number(sizePx) || 6
+    const head = Math.max(2, len * 0.45)
+
+    const tx = x - (ux * len * 0.5)
+    const ty = y - (uy * len * 0.5)
+    const hx = x + (ux * len * 0.5)
+    const hy = y + (uy * len * 0.5)
+
+    const px = -uy
+    const py = ux
+
+    const lx = hx - (ux * head) + (px * head * 0.65)
+    const ly = hy - (uy * head) + (py * head * 0.65)
+    const rx = hx - (ux * head) - (px * head * 0.65)
+    const ry = hy - (uy * head) - (py * head * 0.65)
+
+    ctx.beginPath()
+    ctx.moveTo(tx, ty)
+    ctx.lineTo(hx, hy)
+    ctx.stroke()
+
+    ctx.beginPath()
+    ctx.moveTo(hx, hy)
+    ctx.lineTo(lx, ly)
+    ctx.lineTo(rx, ry)
+    ctx.closePath()
+    ctx.fill()
+  }
+
   #drawRawTrails({ ctx, cx, cy, scale, rawTrails }) {
     const keepS = Number(this.#cfg?.draw?.rawTrailKeepS)
     if (keepS === 0) return
@@ -282,61 +312,83 @@ export class PresenceRenderer {
     if (!rawTrails || typeof rawTrails.entries !== 'function') return
 
     ctx.save()
-    ctx.lineWidth = 2
+    ctx.lineWidth = 1
 
     for (const [, list] of rawTrails.entries()) {
-      if (!Array.isArray(list) || list.length < 2) continue
+      if (!Array.isArray(list) || list.length === 0) continue
 
-      for (let i = 1; i < list.length; i += 1) {
-        const a = list[i - 1]
-        const b = list[i]
+      if (list.length >= 2) {
+        for (let i = 1; i < list.length; i += 1) {
+          const a = list[i - 1]
+          const b = list[i]
 
-        const alpha = this.#trailAlpha({ ts: a.ts, keepS, base: 0.70 })
+          const alpha = this.#trailAlpha({ ts: a.ts, keepS, base: 0.65 })
+          if (alpha <= 0.001) continue
+
+          const segSpeed = this.#segmentSpeedMmS({ a, b })
+          const lOff = this.#lightnessOffsetBySpeed(segSpeed, 1800)
+
+          const ax = cx + (Number(a.yMm) * scale)
+          const ay = cy - (Number(a.xMm) * scale)
+          const bx = cx + (Number(b.yMm) * scale)
+          const by = cy - (Number(b.xMm) * scale)
+
+          if (![ax, ay, bx, by].every(Number.isFinite)) continue
+
+          ctx.globalAlpha = 1
+          ctx.strokeStyle = this.#rawStyle({
+            radarId: a.radarId,
+            localId: a.localId,
+            lightnessOffset: lOff,
+            alphaMul: alpha,
+          })
+
+          ctx.beginPath()
+          ctx.moveTo(ax, ay)
+          ctx.lineTo(bx, by)
+          ctx.stroke()
+        }
+      }
+
+      for (let i = 0; i < list.length; i += 1) {
+        const p = list[i]
+        const prev = i > 0 ? list[i - 1] : null
+        const next = (i + 1) < list.length ? list[i + 1] : null
+        const segRef = prev ? { a: prev, b: p } : (next ? { a: p, b: next } : null)
+        const pointSpeed = segRef ? this.#segmentSpeedMmS(segRef) : null
+        const lOff = this.#lightnessOffsetBySpeed(pointSpeed, 1800)
+        const alpha = this.#trailAlpha({ ts: p.ts, keepS, base: 0.9 })
         if (alpha <= 0.001) continue
 
-        const segSpeed = this.#segmentSpeedMmS({ a, b })
-        const lOff = this.#lightnessOffsetBySpeed(segSpeed, 1800)
+        const px = cx + (Number(p.yMm) * scale)
+        const py = cy - (Number(p.xMm) * scale)
+        if (![px, py].every(Number.isFinite)) continue
 
-        const ax = cx + (Number(a.yMm) * scale)
-        const ay = cy - (Number(a.xMm) * scale)
-        const bx = cx + (Number(b.yMm) * scale)
-        const by = cy - (Number(b.xMm) * scale)
+        const dx = prev
+          ? (Number(p.yMm) - Number(prev.yMm))
+          : (next ? (Number(next.yMm) - Number(p.yMm)) : 0)
+        const dy = prev
+          ? (Number(prev.xMm) - Number(p.xMm))
+          : (next ? (Number(p.xMm) - Number(next.xMm)) : 0)
+        const mag = Math.sqrt((dx * dx) + (dy * dy))
+        if (!Number.isFinite(mag) || mag < 1e-6) continue
+        const ux = dx / mag
+        const uy = dy / mag
 
-        if (![ax, ay, bx, by].every(Number.isFinite)) continue
+        const isLatest = i === (list.length - 1)
+        const arrowSize = isLatest ? 12 : 10
 
         ctx.globalAlpha = 1
-        ctx.strokeStyle = this.#rawStyle({
-          radarId: a.radarId,
-          localId: a.localId,
+        const color = this.#rawStyle({
+          radarId: p.radarId,
+          localId: p.localId,
           lightnessOffset: lOff,
           alphaMul: alpha,
         })
+        ctx.strokeStyle = color
+        ctx.fillStyle = color
 
-        ctx.beginPath()
-        ctx.moveTo(ax, ay)
-        ctx.lineTo(bx, by)
-        ctx.stroke()
-      }
-
-      const last = list[list.length - 1]
-      const prev = list.length >= 2 ? list[list.length - 2] : null
-      const curSpeed = prev ? this.#segmentSpeedMmS({ a: prev, b: last }) : null
-      const lOffCur = this.#lightnessOffsetBySpeed(curSpeed, 1800)
-
-      const lx = cx + (Number(last.yMm) * scale)
-      const ly = cy - (Number(last.xMm) * scale)
-      if ([lx, ly].every(Number.isFinite)) {
-        ctx.globalAlpha = 1
-        ctx.fillStyle = this.#rawStyle({
-          radarId: last.radarId,
-          localId: last.localId,
-          lightnessOffset: lOffCur,
-          alphaMul: 0.85,
-        })
-
-        ctx.beginPath()
-        ctx.arc(lx, ly, 5, 0, Math.PI * 2)
-        ctx.fill()
+        this.#drawArrowMarker({ ctx, x: px, y: py, ux, uy, sizePx: arrowSize })
       }
     }
 
