@@ -2,7 +2,11 @@
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { SerialPort } from 'serialport'
+
+const execFileAsync = promisify(execFile)
 
 const normalizeHex = function normalizeHex(value) {
   const s = String(value || '').trim().toLowerCase()
@@ -50,8 +54,12 @@ const extractHubPositionFromLinuxByPath = function extractHubPositionFromLinuxBy
   if (!s) return null
 
   // Common /dev/serial/by-path name shapes:
-  // - "...-usb-0:3:1.0-port0"     -> 3
-  // - "...-usb-0:1.2.3:1.0-port0" -> 3
+  // - "...-usb-0:3:1.0-port0"        -> 3
+  // - "...-usb-0:1.2.3:1.0-port0"    -> 3
+  // - "...-usb-0:1.2.3:1.0"          -> 3
+  //
+  // We treat the *last* segment in the hub chain as the downstream port on the
+  // last hub (your "hubPosition"). This is a topology-derived identifier.
   const m = s.match(/usb-\d+:(\d+(?:\.\d+)*):\d+\.\d+/i)
   if (!m) return null
 
@@ -71,12 +79,23 @@ const extractIfaceFromPnpId = function extractIfaceFromPnpId(pnpId) {
   return m ? m[1].toLowerCase() : null
 }
 
-const extractHubPositionFromWindowsInstanceId = function extractHubPositionFromWindowsInstanceId(instanceId) {
-  const s = String(instanceId || '')
+const extractHubPositionFromWindowsLocationId = function extractHubPositionFromWindowsLocationId(locationId) {
+  const s = String(locationId || '').trim()
   if (!s) return null
 
-  // Common Windows instance-id suffix for USB devices behind a hub: "...&0&3"
-  const m = s.match(/&0&(\d+)$/i)
+  // Example: "Port_#0003.Hub_#0014" -> 3
+  const m = s.match(/\bPort_#0*([0-9]+)\b/i)
+  return m ? normalizeHubPosition(m[1]) : null
+}
+
+const extractHubPositionFromWindowsLocationPath = function extractHubPositionFromWindowsLocationPath(locationPath) {
+  const s = String(locationPath || '')
+  if (!s) return null
+
+  // LocationPaths are strings like:
+  // "PCIROOT(0)#PCI(1400)#USBROOT(0)#USB(3)#USB(1)"
+  // We want the *last* USB(n), which corresponds to downstream port on the last hub.
+  const m = s.match(/USB\((\d+)\)(?!.*USB\()/i)
   return m ? normalizeHubPosition(m[1]) : null
 }
 
@@ -101,6 +120,9 @@ const stableStringifyEndpoints = function stableStringifyEndpoints(endpoints) {
       product: e.debug.product ?? null,
       pnpId: e.debug.pnpId ?? null,
       iface: e.debug.iface ?? null,
+      locationId: e.debug.locationId ?? null,
+      locationPath: e.debug.locationPath ?? null,
+      byPath: e.debug.byPath ?? null,
     } : null,
   }))
 
@@ -129,9 +151,7 @@ const readLinuxByIdMap = async function readLinuxByIdMap() {
 
     try {
       const target = await fs.realpath(full)
-      if (target) {
-        map.set(target, full)
-      }
+      if (target) map.set(target, full)
     } catch {
       // ignore
     }
@@ -156,15 +176,69 @@ const readLinuxByPathMap = async function readLinuxByPathMap() {
 
     try {
       const target = await fs.realpath(full)
-      if (target) {
-        map.set(target, full)
-      }
+      if (target) map.set(target, full)
     } catch {
       // ignore
     }
   }
 
   return map
+}
+
+const readWindowsLocationPathMap = async function readWindowsLocationPathMap({ logger } = {}) {
+  // Returns Map(instanceId -> locationPathString)
+  //
+  // Uses PowerShell PnP cmdlets:
+  // - Enumerate present "Ports" devices
+  // - Read DEVPKEY_Device_LocationPaths
+  //
+  // We join this map against SerialPort.list().pnpId (which matches InstanceId).
+  const map = new Map()
+
+  const ps = [
+    '$ErrorActionPreference="SilentlyContinue"',
+    '$k="DEVPKEY_Device_LocationPaths"',
+    '$out=@()',
+    'Get-PnpDevice -PresentOnly -Class Ports | ForEach-Object {',
+    '  $id=$_.InstanceId',
+    '  $p=Get-PnpDeviceProperty -InstanceId $id -KeyName $k',
+    '  $v=$null',
+    '  if ($p -and $p.Data) {',
+    '    if ($p.Data -is [Array]) { $v=($p.Data | Select-Object -First 1) } else { $v=$p.Data }',
+    '  }',
+    '  $out += [pscustomobject]@{ instanceId=$id; locationPath=$v }',
+    '}',
+    '$out | ConvertTo-Json -Depth 3 -Compress'
+  ].join('; ')
+
+  try {
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], {
+      windowsHide: true,
+      timeout: 4000,
+      maxBuffer: 1024 * 1024
+    })
+
+    const text = String(stdout || '').trim()
+    if (!text) return map
+
+    const parsed = JSON.parse(text)
+    const arr = Array.isArray(parsed) ? parsed : [parsed]
+
+    for (const row of arr) {
+      const instanceId = String(row?.instanceId || '').trim()
+      const locationPath = String(row?.locationPath || '').trim()
+
+      if (!instanceId) continue
+      if (!locationPath) continue
+
+      map.set(instanceId, locationPath)
+    }
+
+    return map
+  } catch (e) {
+    logger?.warn?.('usb_inventory_windows_locationpaths_failed', { error: e?.message || String(e) })
+    return map
+  }
 }
 
 export class UsbInventory extends EventEmitter {
@@ -248,51 +322,62 @@ export class UsbInventory extends EventEmitter {
       matches.push(v)
     }
 
-    if (matches.length === 0) {
-      return { ok: false, error: 'USB_NOT_FOUND' }
-    }
-
-    if (matches.length > 1) {
-      return { ok: false, error: 'USB_AMBIGUOUS' }
-    }
+    if (matches.length === 0) return { ok: false, error: 'USB_NOT_FOUND' }
+    if (matches.length > 1) return { ok: false, error: 'USB_AMBIGUOUS' }
 
     const endpoints = matches[0].endpoints || []
-    // If multiple endpoints match the same {vid,pid,serial?,iface?}, we cannot safely pick one.
-    // This happens in practice for USB-serial adapters that expose no unique serial number.
     if (endpoints.length !== 1) {
       return endpoints.length === 0
         ? { ok: false, error: 'USB_NOT_FOUND' }
         : { ok: false, error: 'USB_AMBIGUOUS' }
     }
-    const best = endpoints.find((e) => e.serialPath) || endpoints[0]
 
+    const best = endpoints.find((e) => e.serialPath) || endpoints[0]
     return { ok: true, serialPath: best?.serialPath || null }
   }
 
   async #scanOnce() {
     const ports = await SerialPort.list()
+
     const byIdMap = this.#platform === 'linux' ? await readLinuxByIdMap() : new Map()
     const byPathMap = this.#platform === 'linux' ? await readLinuxByPathMap() : new Map()
+
+    const winLocMap = this.#platform === 'windows'
+      ? await readWindowsLocationPathMap({ logger: this.#logger })
+      : new Map()
 
     const next = new Map()
 
     for (const p of ports) {
       const vid = normalizeHex(p.vendorId)
       const pid = normalizeHex(p.productId)
-
       if (!vid || !pid) continue
 
       const ttyPath = String(p.path || '').trim() || null
+
       const linuxById = (this.#platform === 'linux' && ttyPath) ? byIdMap.get(ttyPath) : null
       const linuxByPath = (this.#platform === 'linux' && ttyPath) ? byPathMap.get(ttyPath) : null
 
       const serial = normalizeSerial(p.serialNumber)
       const pnpId = this.#platform === 'windows' ? (String(p.pnpId || '').trim() || null) : null
+
+      const locationId = this.#platform === 'windows'
+        ? (String(p.locationId || '').trim() || null)
+        : null
+
+      const locationPath = (this.#platform === 'windows' && pnpId)
+        ? (winLocMap.get(pnpId) || null)
+        : null
+
       let hubPosition = null
-      if (this.#platform === 'windows') {
-        hubPosition = extractHubPositionFromWindowsInstanceId(serial || pnpId)
-      } else if (this.#platform === 'linux') {
+      if (this.#platform === 'linux') {
         hubPosition = extractHubPositionFromLinuxByPath(linuxByPath)
+      } else if (this.#platform === 'windows') {
+        hubPosition = extractHubPositionFromWindowsLocationId(locationId)
+
+        if (!hubPosition) {
+          hubPosition = extractHubPositionFromWindowsLocationPath(locationPath)
+        }
       }
 
       const ifaceFromLinux = this.#platform === 'linux' ? extractIfaceFromLinuxById(linuxById) : null
@@ -308,13 +393,15 @@ export class UsbInventory extends EventEmitter {
       }
 
       const endpoint = {
-        serialPath: linuxById || ttyPath,
+        serialPath: this.#platform === 'linux' ? (linuxById || ttyPath) : ttyPath,
         ttyPath: this.#platform === 'linux' ? ttyPath : null,
         platform: this.#platform,
         debug: {
           manufacturer: p.manufacturer || undefined,
           product: p.product || undefined,
           pnpId: pnpId || undefined,
+          locationId: locationId || undefined,
+          locationPath: locationPath || undefined,
           byPath: linuxByPath || undefined,
           hubPosition: hubPosition || undefined,
           iface: iface || undefined,
@@ -373,9 +460,7 @@ export class UsbInventory extends EventEmitter {
   }
 
   #normalizeUsbId(usbId) {
-    if (!usbId || typeof usbId !== 'object') {
-      return { ok: false, error: 'INVALID_USB_ID' }
-    }
+    if (!usbId || typeof usbId !== 'object') return { ok: false, error: 'INVALID_USB_ID' }
 
     const vid = normalizeHex(usbId.vid)
     const pid = normalizeHex(usbId.pid)
@@ -383,9 +468,7 @@ export class UsbInventory extends EventEmitter {
     const hubPosition = normalizeHubPosition(usbId.hubPosition)
     const iface = normalizeIface(usbId.iface)
 
-    if (!vid || !pid) {
-      return { ok: false, error: 'INVALID_USB_ID' }
-    }
+    if (!vid || !pid) return { ok: false, error: 'INVALID_USB_ID' }
 
     return {
       ok: true,
