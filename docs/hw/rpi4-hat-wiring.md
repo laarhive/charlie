@@ -22,6 +22,7 @@ No onboard regulators.
 ## Power Rails (Perfboard)
 
 Continuous copper strips:
+
 - +3V3 rail
 - GND rail
 - +5V rail
@@ -57,7 +58,7 @@ J_SIG1 provides the following signals from RPi4:
 | 2   | SCL    | SCL       |
 | 3   | TXD    | TXD       |
 | 4   | RXD    | RXD       |
-| 7   | GPIO18 | GPIO18    |
+| 7   | GPIO13 | GPIO13    |
 | 10  | GPIO23 | LOOP_LINE |
 | 11  | GPIO24 | LOOP_LINE |
 | 21  | GPIO18 | GPIO18    |
@@ -88,7 +89,7 @@ Direct 3.3V logic.
 
 ## WS2812 Control
 
-GP27 → U1A.A (74AHCT125 Gate A)
+GP27 → U1C.A (74AHCT125 Gate C)
 
 No direct connection to LED.
 
@@ -126,7 +127,7 @@ RUN high → LED OFF
 
 ---
 
-## Gate B – GPIO13 Level Shift
+## Gate B – GPIO18 Level Shift
 
 OE → GND  
 A  → GPIO18  
@@ -149,7 +150,7 @@ Provides clean 5V data signal.
 
 ---
 
-## Gate D – GPIO18 Level Shift
+## Gate D – GPIO13 Level Shift
 
 OE → GND  
 A  → GPIO13  
@@ -175,7 +176,7 @@ RUN_IN connects to:
 - J_RESET1 Pin 2
 - J_RUN1 Pin 2 (parallel connector to RPi4 motherboard)
 - SW1 (push button to GND)
-- U1C input (RUN LED monitor)
+- U1A input (RUN LED monitor)
 - Q_RUN1 collector
 
 RPi4 provides internal pull-up.
@@ -231,7 +232,7 @@ DIN → DATA_IN
 
 ---
 
-## External LED Connector (J_WS, 1×3)
+## External LED Connector (J_WS1, 1×3)
 
 | Pin | Signal |
 |-----|--------|
