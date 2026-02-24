@@ -1,3 +1,4 @@
+<--! docs/hw/rpi4-hardware-connections.spec.md -->
 # Charlie – Raspberry Pi 4 Hardware Connection Specification
 
 This document defines the **hardware connectivity requirements** for Charlie
