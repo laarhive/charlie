@@ -1,5 +1,5 @@
 <!-- docs/hw/rpi4-hat-wiring.md -->
-# Charlie HAT – Complete Wiring Diagram & Electrical Specification
+# Charlie HAT – Wiring Diagram & Electrical Specification
 
 This document defines the internal wiring of the Raspberry Pi 4 HAT.
 
@@ -42,7 +42,7 @@ Continuous copper strips:
 - Near module pins
 
 ### WS2812 Bulk Capacitor
-- 470–1000 µF electrolytic
+- 2 × 470 µF electrolytic (10 V)
 - Between +5V and GND
 - Near LED power entry
 
@@ -52,18 +52,16 @@ Continuous copper strips:
 
 J_SIG1 provides the following signals from RPi4:
 
-| PIN | Signal | Net Name  |
-|-----|--------|-----------|
-| 1   | SDA    | SDA       |
-| 2   | SCL    | SCL       |
-| 3   | TXD    | TXD       |
-| 4   | RXD    | RXD       |
-| 7   | GPIO13 | GPIO13    |
-| 10  | GPIO23 | LOOP_LINE |
-| 11  | GPIO24 | LOOP_LINE |
-| 21  | GPIO18 | GPIO18    |
-
-These nets distribute across the board.
+| PIN | Signal | Net Name |
+|-----|--------|----------|
+| 1   | SDA    | SDA |
+| 2   | SCL    | SCL |
+| 3   | TXD    | TXD |
+| 4   | RXD    | RXD |
+| 20  | GPIO12 | GPIO12 |
+| 21  | GPIO13 | GPIO13 |
+| 24  | GPIO20 | LOOP_LINE |
+| 25  | GPIO21 | LOOP_LINE |
 
 ---
 
@@ -81,26 +79,32 @@ GND → GND
 ## UART to Raspberry Pi
 
 GP4 → TXD  
-GP5 → RXD
-
-Direct 3.3V logic.
+GP3 → RXD
 
 ---
 
 ## WS2812 Control
 
-GP27 → U1C.A (74AHCT125 Gate C)
+GP0 → U1B.A  
+U1B.Y → R_WS1 (330 Ω) → DATA_IN
 
-No direct connection to LED.
+---
+
+## Button Input
+
+J_BUTTON1 Pin1 → GND  
+J_BUTTON1 Pin2 → R_BUTTON1 (330 Ω) → GP12
+
+R_BUTTON_PU1 (10 kΩ) → GP12 → +3V3
+
+GP12 configured as INPUT.
 
 ---
 
 ## RUN Control
 
-GP0 → R_RUN_BASE1 (4.7 kΩ) → Q_RUN1 base  
-Q_RUN1 base → R_RUN_BASE_PD1 (100 kΩ) → GND
-
-See RUN section below.
+GP29 → R_BASE1 (4.7 kΩ) → Q_RUN1 base  
+Q_RUN1 base → R_BASE_PD1 (100 kΩ) → GND
 
 ---
 
@@ -110,62 +114,45 @@ Powered at +5V.
 
 ---
 
-## Gate A – RUN LED Driver
-
-OE → GND  
-A  → RUN_IN  
-Y  → RUN_LED_DRV
-
-LED wiring:
-
-+5V → R_RUN (1 kΩ) → D_RUN → RUN_LED_DRV
-
-Behavior:
-
-RUN low → LED ON  
-RUN high → LED OFF
-
----
-
-## Gate B – GPIO18 Level Shift
-
-OE → GND  
-A  → GPIO18  
-Y  → GPIO18_5V
-
----
-
-## Gate C – WS2812 Level Shift
-
-OE → GND  
-A  → GP27  
-Y  → R_WS1 (330 Ω) → DATA_IN
-
-This drives:
-
-- Onboard WS2812 DIN
-- J_WS1 Pin 3
-
-Provides clean 5V data signal.
-
----
-
-## Gate D – GPIO13 Level Shift
+## Gate A – GPIO13 Level Shift
 
 OE → GND  
 A  → GPIO13  
-Y  → GPIO13_5V
+Y  → GPIO13_5V → J_GPIO13 Pin4
+
+---
+
+## Gate B – WS2812 Level Shift
+
+OE → GND  
+A  → GP0  
+Y  → R_WS1 (330 Ω) → DATA_IN
+
+---
+
+## Gate C – GPIO12 Level Shift
+
+OE → GND  
+A  → GPIO12  
+Y  → GPIO12_5V → J_GPIO12 Pin4
+
+---
+
+## Gate D – UNUSED
+
+All pins left unconnected.
 
 ---
 
 # 5. RUN Circuit
 
-## Q_RUN1 (PN2222)
+## Q_RUN1 (BC338)
 
 Emitter → GND  
-Collector → RUN_IN  
-Base → R_RUN_BASE1 (4.7 kΩ) → GP0  
-Base → R_RUN_BASE_PD1 (100 kΩ) → GND
+Collector → RUN_IN
+
+Base → R_BASE1 (4.7 kΩ) → GP29  
+Base → R_BASE_PD1 (100 kΩ) → GND
 
 ---
 
@@ -173,10 +160,8 @@ Base → R_RUN_BASE_PD1 (100 kΩ) → GND
 
 RUN_IN connects to:
 
-- J_RESET1 Pin 2
-- J_RUN1 Pin 2 (parallel connector to RPi4 motherboard)
+- J_RUN1 Pin 2 (to Raspberry Pi RUN pin)
 - SW1 (push button to GND)
-- U1A input (RUN LED monitor)
 - Q_RUN1 collector
 
 RPi4 provides internal pull-up.
@@ -185,32 +170,26 @@ RPi4 provides internal pull-up.
 
 ## Reset Logic
 
-GP0 HIGH → Q_RUN1 ON → RUN_IN pulled LOW → Reset  
-GP0 LOW or INPUT → Q_RUN1 OFF → RUN released
-
-Recommended firmware:
-
-Normal state → GP0 = INPUT  
-Reset → GP0 = OUTPUT HIGH (100–200 ms)  
-Release → GP0 = INPUT
+GP29 HIGH → transistor ON → RUN_IN LOW → Reset  
+GP29 LOW or INPUT → transistor OFF → RUN released
 
 ---
 
-# 6. RUN Connectors
+# 6. RUN Indicator LED
 
-## J_RESET1 (1×2)
++3V3 → R_RUN1 (4.7 kΩ) → D_RUN1 → RUN_IN
 
-| Pin | Signal |
-|------|--------|
-| 1 | GND |
-| 2 | RUN_IN |
+RUN high → LED OFF  
+RUN low → LED ON
+
+---
+
+# 7. RUN Connectors
 
 ## J_RUN1 (1×2)
 
-Wired in parallel with J_RESET1.
-
 | Pin | Signal |
-|------|--------|
+|-----|--------|
 | 1 | GND |
 | 2 | RUN_IN |
 
@@ -218,11 +197,11 @@ Wired in parallel with J_RESET1.
 
 ## SW1
 
-Between RUN_IN and GND.
+RUN_IN → GND
 
 ---
 
-# 7. WS2812 Section
+# 8. WS2812 Section
 
 ## Onboard WS2812
 
@@ -240,102 +219,74 @@ DIN → DATA_IN
 | 2 | GND |
 | 3 | DATA_IN |
 
-Parallel mode:
-
-- Onboard LED and external strip receive identical data.
-- External strip chaining continues from its own DOUT.
-
 ---
 
-# 8. GPIO Connectors
+# 9. GPIO Connectors
+
+## J_GPIO12
+
+| Pin | Signal |
+|-----|--------|
+| 1 | +3V3 |
+| 2 | GND |
+| 3 | GPIO12 |
+| 4 | GPIO12_5V |
+| 5 | +5V |
+
+---
 
 ## J_GPIO13
 
 | Pin | Signal |
-|------|--------|
+|-----|--------|
 | 1 | +3V3 |
 | 2 | GND |
 | 3 | GPIO13 |
 | 4 | GPIO13_5V |
 | 5 | +5V |
 
-## J_GPIO18
-
-| Pin | Signal |
-|------|--------|
-| 1 | +3V3 |
-| 2 | GND |
-| 3 | GPIO18 |
-| 4 | GPIO18_5V |
-| 5 | +5V |
-
 ---
 
-# 9. I2C Connectors (J_I2C1..4)
+# 10. I2C Connectors (J_I2C1..3)
 
 | Pin | Signal |
-|------|--------|
+|-----|--------|
 | 1 | +3V3 |
 | 2 | GND |
 | 3 | SDA |
 | 4 | SCL |
 
-Direct connection to J_SIG1 SDA/SCL.
+---
+
+# 11. LOOP Indicator Circuit
+
+LOOP_LINE → R_LOOP1 (1 kΩ) → D_LOOP1 → GND
 
 ---
 
-# 10. LOOP Indicator Circuit
-
-LOOP_LINE connects between:
-
-GPIO23 ↔ GPIO24 (via J_SIG1)
-
-Indicator LED:
-
-LOOP_LINE → R_LOOP (1 kΩ) → D_LOOP → GND
-
-LED lights when LOOP_LINE is HIGH.
-
----
-
-# 11. Component Values
+# 12. Component Values
 
 R_WS1 = 330 Ω  
-R_RUN = 1 kΩ  
-R_LOOP = 1 kΩ  
-R_RUN_BASE1 = 4.7 kΩ  
-R_RUN_BASE_PD1 = 100 kΩ
+R_RUN1 = 4.7 kΩ  
+R_LOOP1 = 1 kΩ  
+R_BASE1 = 4.7 kΩ  
+R_BASE_PD1 = 100 kΩ  
+R_BUTTON1 = 330 Ω  
+R_BUTTON_PI1 = 10 kΩ
 
-Decoupling capacitors = 100 nF  
-LED bulk capacitor = 470–1000 µF
-
----
-
-# 12. Safety Properties
-
-- No 5V fed into RP2040 pins
-- WS2812 data properly level shifted to 5V
-- RUN driven via open-collector transistor
-- Default RUN state is safe (no unintended reset)
-- Decoupling implemented
-- Power domains separated
-- JST connectors follow documented convention
+Capacitors:
+- 100 nF decoupling
+- 2 × 470 µF bulk
 
 ---
 
-# 13. Final Electrical Topology
+# 13. Safety Notes
 
-RPi4 (via J_SIG1)  
-→ Provides +5V, +3V3, SDA, SCL, TXD, RXD, GPIO13, GPIO18, LOOP_LINE
-
-RP2040 (3.3V domain)  
-→ UART to RPi  
-→ Drives WS2812 via AHCT level shift  
-→ Controls RUN via PN2222
-
-74AHCT125 (5V domain)  
-→ Level shifts GPIO13 and GPIO18  
-→ Drives RUN status LED  
-→ Level shifts WS2812 data
+- No 5V enters RP2040 GPIOs
+- RUN line open-collector driven
+- WS2812 properly level shifted
+- External button protected via series resistor
+- External button uses defined pull-up (R_BUTTON_PI1)
+- All connectors follow consistent pin convention
 
 ---
